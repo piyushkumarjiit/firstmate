@@ -98,7 +98,7 @@ To prevent child components from pushing parent boundaries or causing horizontal
 - If a component requires custom colors, declare them inside the component's root selector:
   ```css
   .<prefix>-<component> {
-    --radar-ring-color: rgba(99, 102, 241, 0.2);
-    --radar-sweep-speed: 2.5s;
+    --component-accent-color: rgba(99, 102, 241, 0.2);
+    --component-transition-speed: 2.5s;
   }
   ```

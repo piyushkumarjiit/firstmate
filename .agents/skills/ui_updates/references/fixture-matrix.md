@@ -26,21 +26,21 @@ Visual Regression Testing (VRT) must be 100% deterministic, reproducible offline
 ## 2. Playwright Route Mocking Pattern
 
 ```javascript
-// Intercept state endpoint with static test fixture
-await page.route('**/api/state', async (route) => {
+// Intercept API endpoint with static test fixture
+await page.route('**/api/items', async (route) => {
   await route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify(MOCK_FIXTURE_STATE),
+    body: JSON.stringify(MOCK_FIXTURE_ITEMS),
   });
 });
 
-// Intercept telemetry endpoint
-await page.route('**/api/telemetry', async (route) => {
+// Intercept secondary/detail endpoint
+await page.route('**/api/item-detail', async (route) => {
   await route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify(MOCK_FIXTURE_TELEMETRY),
+    body: JSON.stringify(MOCK_FIXTURE_DETAIL),
   });
 });
 ```
@@ -53,9 +53,10 @@ Each scenario should test a specific component state:
 
 | Scenario ID | Title | Route / State | Interaction Target |
 | :--- | :--- | :--- | :--- |
-| `01-picker-default` | Column Picker (Closed) | Default state | None |
-| `01-picker-open` | Column Picker (Dropdown Open) | Default state | Click `.<prefix>-col-picker__btn` |
-| `02-headroom-default` | Fleet Headroom (Default 50) | Full mock state | None |
-| `02-headroom-sim-all` | Fleet Headroom (Simulate All) | Full mock state | Click `.<prefix>-fleet-headroom__sim-btn:has-text("All")` |
-| `05-radar-full` | Quota Radar | Multiple accounts | None |
-| `07-drawer-open` | Account Drawer (Open) | Account selected | Click row or trigger drawer open |
+| `01-button-default` | Button (Default) | Default state | None |
+| `01-button-active` | Button (Active) | Default state | Click `.<prefix>-button__btn--active` |
+| `02-card-default` | Card (Default) | Full mock state | None |
+| `02-card-expanded` | Card (Expanded) | Full mock state | Click `.<prefix>-card__toggle-btn` |
+| `03-list-empty` | Item List (Empty) | Empty mock state | None |
+| `03-list-populated` | Item List (Populated) | Multi-item state | None |
+| `04-drawer-open` | Drawer (Open) | Item selected | Click trigger or open drawer |

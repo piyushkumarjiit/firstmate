@@ -53,3 +53,10 @@ Never attempt to approve visual changes.
 Project-specific details live in each project's own documentation rather than this skill.
 Consult the target project's documentation for its component prefix, component paths, and VRT capture command.
 This skill contains no project-specific paths or prefixes.
+
+## 5. References & Resources
+
+- `references/css-isolation-rules.md`: Scoped BEM conventions, banned bare selectors, and layout containment rules.
+- `references/fixture-matrix.md`: Deterministic route mocking patterns, scenario matrix guidelines, and VRT determinism requirements.
+- `templates/Component.tsx.template`: Starter template for isolated, scoped React components. Replace `{{prefix}}` with the project prefix.
+- `templates/Component.css.template`: Starter template for scoped BEM styling companion. Replace `{{prefix}}` with the project prefix.
