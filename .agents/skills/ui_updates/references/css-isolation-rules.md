@@ -9,7 +9,7 @@ These rules ensure that UI components remain completely isolated and never cause
 The following selector patterns are **strictly prohibited** in component-level stylesheets:
 
 ```css
-/* ? BANNED: Bare element selectors */
+/* BANNED: Bare element selectors */
 button { ... }
 input { ... }
 select { ... }
@@ -20,7 +20,7 @@ th, td { ... }
 h1, h2, h3, h4, h5, h6 { ... }
 p, span, a { ... }
 
-/* ? BANNED: Generic un-prefixed class names */
+/* BANNED: Generic un-prefixed class names */
 .card { ... }
 .header { ... }
 .active { ... }
@@ -28,7 +28,7 @@ p, span, a { ... }
 .title { ... }
 .container { ... }
 
-/* ? BANNED: Universal or loose wildcard selectors */
+/* BANNED: Universal or loose wildcard selectors */
 * { ... }
 *:before, *:after { ... }
 div > button { ... }
@@ -38,11 +38,11 @@ div > button { ... }
 
 ## 2. Mandatory Scoped BEM Conventions
 
-All styles must belong to a scoped block prefixed with the project and component name:
+All styles must belong to a scoped block prefixed with the project component prefix:
 
 ```css
 /* Component Block */
-.<project>-<component> {
+.<prefix>-<component> {
   box-sizing: border-box;
   /* Local design tokens */
   --comp-bg: #111827;
@@ -51,13 +51,13 @@ All styles must belong to a scoped block prefixed with the project and component
 }
 
 /* Component Elements */
-.<project>-<component>__header {
+.<prefix>-<component>__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.<project>-<component>__btn {
+.<prefix>-<component>__btn {
   appearance: none;
   border: 1px solid var(--comp-border);
   background: var(--comp-bg);
@@ -68,13 +68,13 @@ All styles must belong to a scoped block prefixed with the project and component
 }
 
 /* Component Modifiers */
-.<project>-<component>__btn--active {
+.<prefix>-<component>__btn--active {
   background: var(--brand-accent, #3b82f6);
   border-color: var(--brand-accent, #3b82f6);
   color: #ffffff;
 }
 
-.<project>-<component>__btn--disabled {
+.<prefix>-<component>__btn--disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -97,7 +97,7 @@ To prevent child components from pushing parent boundaries or causing horizontal
 - Read global variables (`var(--bg-main)`, `var(--text-primary)`, `var(--border-subtle)`), but **never override `:root`** in a component CSS file.
 - If a component requires custom colors, declare them inside the component's root selector:
   ```css
-  .fqd-quota-radar {
+  .<prefix>-<component> {
     --radar-ring-color: rgba(99, 102, 241, 0.2);
     --radar-sweep-speed: 2.5s;
   }

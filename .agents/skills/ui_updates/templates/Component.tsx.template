@@ -23,19 +23,19 @@ export const {{ComponentName}}: React.FC<{{ComponentName}}Props> = ({
   };
 
   return (
-    <div className={`fqd-{{component-kebab}} ${className}`}>
-      <div className="fqd-{{component-kebab}}__header">
-        <h3 className="fqd-{{component-kebab}}__title">{title}</h3>
+    <div className={`<prefix>-{{component-kebab}} ${className}`}>
+      <div className="<prefix>-{{component-kebab}}__header">
+        <h3 className="<prefix>-{{component-kebab}}__title">{title}</h3>
         <button
           type="button"
-          className={`fqd-{{component-kebab}}__btn ${isActive ? 'fqd-{{component-kebab}}__btn--active' : ''}`}
+          className={`<prefix>-{{component-kebab}}__btn ${isActive ? '<prefix>-{{component-kebab}}__btn--active' : ''}`}
           onClick={handleToggle}
           aria-pressed={isActive}
         >
           {isActive ? 'Active' : 'Enable'}
         </button>
       </div>
-      <div className="fqd-{{component-kebab}}__content">
+      <div className="<prefix>-{{component-kebab}}__content">
         {/* Child elements */}
       </div>
     </div>

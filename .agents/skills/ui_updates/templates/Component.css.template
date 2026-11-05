@@ -1,9 +1,9 @@
 /* ==========================================================================
    Scoped Component Styling: {{ComponentName}}
-   BEM Prefix: .fqd-{{component-kebab}}
+   BEM Prefix: .<prefix>-{{component-kebab}}
    ========================================================================== */
 
-.fqd-{{component-kebab}} {
+.<prefix>-{{component-kebab}} {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -15,14 +15,14 @@
   color: var(--text-primary, #f9fafb);
 }
 
-.fqd-{{component-kebab}}__header {
+.<prefix>-{{component-kebab}}__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.fqd-{{component-kebab}}__title {
+.<prefix>-{{component-kebab}}__title {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
@@ -31,7 +31,7 @@
   letter-spacing: 0.05em;
 }
 
-.fqd-{{component-kebab}}__btn {
+.<prefix>-{{component-kebab}}__btn {
   appearance: none;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -44,18 +44,18 @@
   transition: all 0.15s ease;
 }
 
-.fqd-{{component-kebab}}__btn:hover {
+.<prefix>-{{component-kebab}}__btn:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-.fqd-{{component-kebab}}__btn--active {
+.<prefix>-{{component-kebab}}__btn--active {
   background: var(--brand-accent, #3b82f6);
   border-color: var(--brand-accent, #3b82f6);
   color: #ffffff;
 }
 
-.fqd-{{component-kebab}}__content {
+.<prefix>-{{component-kebab}}__content {
   display: flex;
   flex-direction: column;
   gap: 8px;
