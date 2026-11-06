@@ -690,15 +690,15 @@
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/ui_updates/SKILL.md",
+      "path": ".agents/skills/ui-updates/SKILL.md",
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/ui_updates/references/css-isolation-rules.md",
+      "path": ".agents/skills/ui-updates/references/css-isolation-rules.md",
       "audience": "agent-runtime"
     },
     {
-      "path": ".agents/skills/ui_updates/references/fixture-matrix.md",
+      "path": ".agents/skills/ui-updates/references/fixture-matrix.md",
       "audience": "agent-runtime"
     }
   ]
