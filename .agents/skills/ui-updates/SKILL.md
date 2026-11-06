@@ -1,5 +1,5 @@
 ---
-name: ui_updates
+name: ui-updates
 description: >-
   Load before briefing, supervising, or promoting any task that changes a user interface; owns the mockup-scout → captain approval → promoted ship flow and the vrt gate expectations.
 user-invocable: true
@@ -7,7 +7,7 @@ metadata:
   internal: true
 ---
 
-# ui_updates
+# ui-updates
 
 ## 1. Scope
 
@@ -43,7 +43,7 @@ When firstmate briefs a UI ship, add this block to the brief:
 
 ```markdown
 ### UI implementation requirements
-Follow `.agents/skills/ui_updates/references/css-isolation-rules.md`.
+Follow `.agents/skills/ui-updates/references/css-isolation-rules.md`.
 Do not edit VRT capture fixtures, mocks, or baselines unless the intent says so (SU003/SC001 will park it anyway).
 Never attempt to approve visual changes.
 ```
