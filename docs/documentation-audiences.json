@@ -134,6 +134,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/argon-review/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/ask-user-authority/SKILL.md",
       "audience": "agent-runtime"
     },
