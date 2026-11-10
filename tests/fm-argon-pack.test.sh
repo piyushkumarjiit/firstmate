@@ -334,6 +334,178 @@ test_resolve_target_from_fm_home_projects() {
   pass "target name resolves against \$FM_HOME/projects/<name>"
 }
 
+test_scope_pipefail_large_listing() {
+  local fix_dir="$TMP_ROOT/pipefail-fixture" packet_out="$TMP_ROOT/pipefail-packet.md" out rc empty_blob
+  mkdir -p "$fix_dir/large_scope"
+  git -C "$fix_dir" init -q
+
+  # Efficiently stage 400 files to exceed pipe buffer (>64KB output from git ls-tree)
+  empty_blob=$(git -C "$fix_dir" hash-object -w --stdin < /dev/null)
+  python3 -c "
+import sys
+blob = sys.argv[1]
+lines = [f'100644 {blob}\tlarge_scope/padding_path_segment_to_fill_the_pipe_buffer_quickly_{i:05d}.txt\n' for i in range(400)]
+sys.stdout.write(''.join(lines))
+" "$empty_blob" | git -C "$fix_dir" update-index --index-info
+  git -C "$fix_dir" commit -qm "add large scope tree"
+
+  out=$("$ARGON_PACK" "$fix_dir" --scope large_scope --max-bytes 10000000 --out "$packet_out" 2>&1); rc=$?
+  assert_equals 0 "$rc" "packer with large scope must exit 0 without pipefail/SIGPIPE abort (got: $out)"
+  assert_present "$packet_out" "output packet must exist for large scope"
+
+  pass "scope validation does not abort under pipefail on large trees"
+}
+
+test_diff_mode_deleted_files() {
+  local fix_dir="$TMP_ROOT/diff-del-fixture" packet_out="$TMP_ROOT/diff-del-packet.md" out rc packet
+  mkdir -p "$fix_dir"
+  git -C "$fix_dir" init -q
+
+  printf 'keep me\n' > "$fix_dir/keep.txt"
+  printf 'delete me later\n' > "$fix_dir/to_delete.txt"
+  printf 'SECRET_DATA\n' > "$fix_dir/.env"
+  git -C "$fix_dir" add .
+  git -C "$fix_dir" commit -qm "base commit with files to delete"
+
+  # Commit 2: only delete to_delete.txt and .env
+  rm -f "$fix_dir/to_delete.txt" "$fix_dir/.env"
+  git -C "$fix_dir" rm -q to_delete.txt .env
+  git -C "$fix_dir" commit -qm "delete files only"
+
+  out=$("$ARGON_PACK" "$fix_dir" --diff HEAD~1 --out "$packet_out" 2>&1); rc=$?
+  assert_equals 0 "$rc" "diff mode on deletion-only commit must exit 0 (got: $out)"
+  assert_present "$packet_out" "diff packet must exist"
+
+  packet=$(cat "$packet_out")
+  assert_contains "$packet" "deleted:" "manifest must include deleted section"
+  assert_contains "$packet" "to_delete.txt" "manifest must list deleted file"
+  assert_no_regex "^  \.env$" "$packet_out" "deleted secret file must not be listed in deleted manifest"
+  assert_contains "$packet" ".env (credential-shaped name)" "deleted secret file must be listed in skipped section"
+  assert_contains "$packet" "-delete me later" "diff must include deletion of to_delete.txt"
+  assert_not_contains "$packet" "SECRET_DATA" "deleted secret content must not appear in diff"
+
+  pass "diff mode handles deleted files, excludes deleted secrets, and works on deletion-only commits"
+}
+
+test_literal_pathspecs_colon_path() {
+  local fix_dir="$TMP_ROOT/colon-fixture" packet_out="$TMP_ROOT/colon-packet.md" out rc packet
+  mkdir -p "$fix_dir"
+  git -C "$fix_dir" init -q
+
+  printf 'colon file content\n' > "$fix_dir/:file.txt"
+  git -C "$fix_dir" add .
+  git -C "$fix_dir" commit -qm "add file with colon prefix"
+
+  out=$("$ARGON_PACK" "$fix_dir" --out "$packet_out" 2>&1); rc=$?
+  assert_equals 0 "$rc" "packer with colon-prefixed file must exit 0 (got: $out)"
+
+  packet=$(cat "$packet_out")
+  assert_contains "$packet" ":file.txt" "colon-prefixed file must be packed"
+  assert_contains "$packet" "colon file content" "colon-prefixed file content must be in packet"
+
+  pass "literal pathspecs preserve colon-prefixed file paths"
+}
+
+test_spec_validation_and_line_numbers() {
+  local fix_dir="$TMP_ROOT/spec-val-fixture" packet_out="$TMP_ROOT/spec-val-packet.md" out rc packet
+  mkdir -p "$fix_dir"
+  git -C "$fix_dir" init -q
+  echo "code" > "$fix_dir/code.ts"
+  git -C "$fix_dir" add code.ts
+  git -C "$fix_dir" commit -qm "init"
+
+  # 1. Spec file with credential name
+  local secret_spec="$TMP_ROOT/service-account.json"
+  printf '{"fake":"spec"}\n' > "$secret_spec"
+  out=$("$ARGON_PACK" "$fix_dir" --spec "$secret_spec" 2>&1); rc=$?
+  assert_equals 1 "$rc" "spec file with credential name must exit 1"
+  assert_contains "$out" "--spec file has credential-shaped name" "credential-named spec must be rejected"
+  rm -f "$secret_spec"
+
+  # 2. Spec file exceeding --max-file-bytes
+  local big_spec="$TMP_ROOT/big-spec.md"
+  printf '%*s\n' 500 'x' > "$big_spec"
+  out=$("$ARGON_PACK" "$fix_dir" --spec "$big_spec" --max-file-bytes 100 2>&1); rc=$?
+  assert_equals 1 "$rc" "oversize spec file must exit 1"
+  assert_contains "$out" "--spec file exceeds --max-file-bytes" "oversize spec must be rejected"
+  rm -f "$big_spec"
+
+  # 3. Binary spec file
+  local bin_spec="$TMP_ROOT/bin-spec.md"
+  printf 'spec\000binary\n' > "$bin_spec"
+  out=$("$ARGON_PACK" "$fix_dir" --spec "$bin_spec" 2>&1); rc=$?
+  assert_equals 1 "$rc" "binary spec file must exit 1"
+  assert_contains "$out" "--spec file is binary" "binary spec must be rejected"
+  rm -f "$bin_spec"
+
+  # 4. Valid spec lines are numbered with %5d|
+  local valid_spec="$TMP_ROOT/valid-spec.md"
+  printf 'spec line 1\nspec line 2\n' > "$valid_spec"
+  out=$("$ARGON_PACK" "$fix_dir" --spec "$valid_spec" --out "$packet_out" 2>&1); rc=$?
+  assert_equals 0 "$rc" "valid spec pack must exit 0"
+  packet=$(cat "$packet_out")
+  assert_contains "$packet" "    1| spec line 1" "spec line 1 must be numbered"
+  assert_contains "$packet" "    2| spec line 2" "spec line 2 must be numbered"
+  rm -f "$valid_spec"
+
+  pass "spec file validation rejects credential names, oversize, and binary files, and numbers lines"
+}
+
+test_remote_url_sanitization_edge_cases() {
+  local fix_dir="$TMP_ROOT/remote-fixture" packet_out="$TMP_ROOT/remote-packet.md" out rc packet
+  mkdir -p "$fix_dir"
+  git -C "$fix_dir" init -q
+  echo "code" > "$fix_dir/code.ts"
+  git -C "$fix_dir" add code.ts
+  git -C "$fix_dir" commit -qm "init"
+
+  local pat_token
+  pat_token=$(printf '%s%s' 'ghp_' 'SECRETTOKEN123')
+
+  # Case 1: https with user:p@ss (password contains @)
+  git -C "$fix_dir" remote add origin "https://user:p@ss@github.com/acme/repo.git"
+  out=$("$ARGON_PACK" "$fix_dir" --out "$packet_out" 2>&1); rc=$?
+  assert_equals 0 "$rc" "pack with complex remote URL must exit 0"
+  packet=$(cat "$packet_out")
+  assert_contains "$packet" "Remote: https://github.com/acme/repo.git" "https user:pass with @ must be sanitized"
+  assert_not_contains "$packet" "p@ss" "password must not leak into remote line"
+
+  # Case 2: scp-style user:token@host:path
+  git -C "$fix_dir" remote set-url origin "user:${pat_token}@github.com:acme/repo.git"
+  out=$("$ARGON_PACK" "$fix_dir" --out "$packet_out" 2>&1); rc=$?
+  assert_equals 0 "$rc" "pack with scp-style remote URL must exit 0"
+  packet=$(cat "$packet_out")
+  assert_contains "$packet" "Remote: git@github.com:acme/repo.git" "scp user:token URL must be sanitized"
+  assert_not_contains "$packet" "$pat_token" "scp token must not leak into remote line"
+
+  pass "remote URL userinfo is sanitized across complex schemes and scp-style formats"
+}
+
+test_branch_metadata_non_head_ref() {
+  local fix_dir="$TMP_ROOT/branch-meta-fixture" packet_out="$TMP_ROOT/branch-meta-packet.md" out rc packet
+  mkdir -p "$fix_dir"
+  git -C "$fix_dir" init -q
+  echo "initial" > "$fix_dir/file.txt"
+  git -C "$fix_dir" add file.txt
+  git -C "$fix_dir" commit -qm "initial on main"
+  git -C "$fix_dir" branch feature-branch
+  git -C "$fix_dir" tag v1.0.0
+
+  # Checked out on main, but packing --ref feature-branch
+  out=$("$ARGON_PACK" "$fix_dir" --ref feature-branch --out "$packet_out" 2>&1); rc=$?
+  assert_equals 0 "$rc" "pack with non-HEAD branch ref must exit 0"
+  packet=$(cat "$packet_out")
+  assert_contains "$packet" "Branch: feature-branch" "packet metadata must report specified branch ref"
+
+  # Checked out on main, but packing --ref v1.0.0 (tag)
+  out=$("$ARGON_PACK" "$fix_dir" --ref v1.0.0 --out "$packet_out" 2>&1); rc=$?
+  assert_equals 0 "$rc" "pack with tag ref must exit 0"
+  packet=$(cat "$packet_out")
+  assert_contains "$packet" "Branch: detached (v1.0.0)" "packet metadata must report detached tag ref"
+
+  pass "branch metadata reports specified ref accurately when not HEAD"
+}
+
 test_help_and_usage
 test_validation_errors
 test_pack_full_hostile_fixture
@@ -342,3 +514,9 @@ test_max_bytes_budget_refusal
 test_gitleaks_detection_and_override
 test_writes_never_to_project_when_run_from_inside
 test_resolve_target_from_fm_home_projects
+test_scope_pipefail_large_listing
+test_diff_mode_deleted_files
+test_literal_pathspecs_colon_path
+test_spec_validation_and_line_numbers
+test_remote_url_sanitization_edge_cases
+test_branch_metadata_non_head_ref

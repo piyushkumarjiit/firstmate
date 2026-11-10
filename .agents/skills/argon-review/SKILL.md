@@ -27,7 +27,7 @@ The captain uploads the packet as a file attachment in a fresh conversation, sen
 
 Firstmate does not judge the findings.
 It sends the authoring worker (or a scout or ship when none is live) the findings path and packet path, asking for one disposition per finding id: accepted with the commit, rejected with `path:line` or test evidence, needs-captain with the question, or out-of-scope with a follow-up note.
-The worker first verifies each cited location exists at the packet's commit and rejects citations that do not.
+The worker first verifies each cited code location exists at the packet's commit and each spec citation matches the packet's SPEC section, rejecting citations that do not.
 Accepted changes go through the task's normal delivery path; needs-captain rows go to `captain-hold-lifecycle`.
 Firstmate relays the disposition summary to the captain.
 

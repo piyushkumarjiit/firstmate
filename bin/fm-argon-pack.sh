@@ -63,7 +63,22 @@ while [ $# -gt 0 ]; do
   shift 2
 done
 case "$MAX_BYTES$MAX_FILE_BYTES" in *[!0-9]*) die "--max-bytes/--max-file-bytes must be integers" ;; esac
-[ -z "$SPEC_FILE" ] || [ -f "$SPEC_FILE" ] || die "--spec file not found: $SPEC_FILE"
+
+EXCLUDE_RE='(^|/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock|Pipfile\.lock|Gemfile\.lock|composer\.lock|go\.sum|flake\.lock|packages\.lock\.json|mix\.lock|pubspec\.lock|Podfile\.lock)$'
+EXCLUDE_RE+='|\.(png|jpe?g|gif|webp|bmp|tiff?|ico|icns|svg|pdf|psd|ai|mp[34]|mov|webm|wav|ogg|flac|woff2?|ttf|otf|eot|zip|tar|t?gz|bz2|xz|7z|rar|jar|war|class|o|a|so|dylib|dll|exe|wasm|pyc|pyo|pyd|db|sqlite3?|har|bin|dat|iso|img|map|snap|ipynb)$'
+EXCLUDE_RE+='|[.-]min\.(js|css)$|[.-](bundle|chunk)\.[a-z0-9]+$|(^|/)(node_modules|vendor|dist|build|out|coverage|\.next|target|__pycache__)/'
+SECRET_RE='(^|/)(\.env(\..*)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|\.htpasswd|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|.*\.(pem|key|p12|pfx|jks|keystore|asc|gpg|kdbx|tfstate(\.backup)?|tfvars)|.*(secret|credential|service[-_]?account).*\.(json|ya?ml|toml|ini)|\.aws/credentials|\.docker/config\.json|kubeconfig)$'
+
+if [ -n "$SPEC_FILE" ]; then
+  [ -f "$SPEC_FILE" ] || die "--spec file not found: $SPEC_FILE"
+  if printf '%s\n' "$(basename "$SPEC_FILE")" | grep -Eiq "$SECRET_RE"; then
+    die "--spec file has credential-shaped name: $SPEC_FILE"
+  fi
+  spec_size=$(wc -c < "$SPEC_FILE" | tr -d ' ')
+  [ "$spec_size" -le "$MAX_FILE_BYTES" ] || die "--spec file exceeds --max-file-bytes: $SPEC_FILE"
+  spec_non_nul=$(tr -d '\000' < "$SPEC_FILE" | wc -c | tr -d ' ')
+  [ "$spec_non_nul" -eq "$spec_size" ] || die "--spec file is binary: $SPEC_FILE"
+fi
 
 if [ -d "$TARGET" ]; then
   REPO_DIR=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null) || die "not a git repository: $TARGET"
@@ -79,13 +94,23 @@ if [ -n "$DIFF_BASE" ]; then
 fi
 for s in ${SCOPES[@]+"${SCOPES[@]}"}; do
   case "$s" in /*|-*|*..*) die "--scope must be a repo-relative path: $s" ;; esac
-  [ -n "$(git -C "$REPO_DIR" ls-tree -r --name-only "$COMMIT" -- "$s" | head -n1)" ] || die "--scope matches no files at $SHORT: $s"
+  first_match=$(git --literal-pathspecs -C "$REPO_DIR" ls-tree -r --name-only "$COMMIT" -- "$s" | { IFS= read -r f && printf '%s' "$f"; } || true)
+  [ -n "$first_match" ] || die "--scope matches no files at $SHORT: $s"
 done
 
 PROJECT_NAME=$(basename "$REPO_DIR")
-BRANCH=$(git -C "$REPO_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)
+if [ "$REF" != "HEAD" ]; then
+  if git -C "$REPO_DIR" show-ref --verify --quiet "refs/heads/$REF"; then
+    BRANCH="$REF"
+  else
+    BRANCH="detached ($REF)"
+  fi
+else
+  BRANCH=$(git -C "$REPO_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)
+fi
 REMOTE=$(git -C "$REPO_DIR" config --get remote.origin.url 2>/dev/null || echo local)
-REMOTE=$(printf '%s' "$REMOTE" | sed -E 's#^([a-z+]+://)[^/@]*@#\1#')
+REMOTE=$(printf '%s' "$REMOTE" | sed -E 's#^([a-zA-Z0-9+.-]+://)[^/]*@#\1#')
+REMOTE=$(printf '%s' "$REMOTE" | sed -E 's#^[^/@:]+:[^/@]+@#git@#')
 DIRTY=$(git -C "$REPO_DIR" status --porcelain --untracked-files=no | wc -l | tr -d ' ')
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 [ -n "$OUT_FILE" ] || OUT_FILE="$FM_HOME/data/argon-review/${PROJECT_NAME}-${SHORT}-${STAMP}.md"
@@ -94,37 +119,54 @@ mkdir -p "$(dirname "$OUT_FILE")"
 NONCE=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
 FENCE="@@ARGON-$NONCE"
 
-EXCLUDE_RE='(^|/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock|Pipfile\.lock|Gemfile\.lock|composer\.lock|go\.sum|flake\.lock|packages\.lock\.json|mix\.lock|pubspec\.lock|Podfile\.lock)$'
-EXCLUDE_RE+='|\.(png|jpe?g|gif|webp|bmp|tiff?|ico|icns|svg|pdf|psd|ai|mp[34]|mov|webm|wav|ogg|flac|woff2?|ttf|otf|eot|zip|tar|t?gz|bz2|xz|7z|rar|jar|war|class|o|a|so|dylib|dll|exe|wasm|pyc|pyo|pyd|db|sqlite3?|har|bin|dat|iso|img|map|snap|ipynb)$'
-EXCLUDE_RE+='|[.-]min\.(js|css)$|[.-](bundle|chunk)\.[a-z0-9]+$|(^|/)(node_modules|vendor|dist|build|out|coverage|\.next|target|__pycache__)/'
-SECRET_RE='(^|/)(\.env(\..*)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|\.htpasswd|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|.*\.(pem|key|p12|pfx|jks|keystore|asc|gpg|kdbx|tfstate(\.backup)?|tfvars)|.*(secret|credential|service[-_]?account).*\.(json|ya?ml|toml|ini)|\.aws/credentials|\.docker/config\.json|kubeconfig)$'
-
 list_files() {
   if [ -n "$DIFF_BASE" ]; then
-    git -C "$REPO_DIR" diff --name-only --diff-filter=AMRT -z "$BASE_COMMIT" "$COMMIT" -- ${SCOPES[@]+"${SCOPES[@]}"}
+    local -a changed=()
+    while IFS= read -r -d '' f; do
+      changed+=("$f")
+    done < <(git --literal-pathspecs -C "$REPO_DIR" diff --name-only --diff-filter=AMRT -z "$BASE_COMMIT" "$COMMIT" -- ${SCOPES[@]+"${SCOPES[@]}"})
+    if [ "${#changed[@]}" -gt 0 ]; then
+      git --literal-pathspecs -C "$REPO_DIR" ls-tree -r -l -z "$COMMIT" -- "${changed[@]}"
+    fi
   else
-    git -C "$REPO_DIR" ls-tree -r -z --name-only "$COMMIT" -- ${SCOPES[@]+"${SCOPES[@]}"}
+    git --literal-pathspecs -C "$REPO_DIR" ls-tree -r -l -z "$COMMIT" -- ${SCOPES[@]+"${SCOPES[@]}"}
   fi
 }
 
-INCLUDED=() SKIPPED=()
-while IFS= read -r -d '' f; do
-  mode_type=$(git -C "$REPO_DIR" ls-tree "$COMMIT" -- "$f" | awk '{print $1" "$2}')
-  case "$mode_type" in
-    "100644 blob"|"100755 blob") ;;
-    *) SKIPPED+=("$f (non-regular: ${mode_type%% *})"); continue ;;
-  esac
+list_deleted_files() {
+  if [ -n "$DIFF_BASE" ]; then
+    git --literal-pathspecs -C "$REPO_DIR" diff --name-only --diff-filter=D -z "$BASE_COMMIT" "$COMMIT" -- ${SCOPES[@]+"${SCOPES[@]}"}
+  fi
+}
+
+INCLUDED=() SKIPPED=() DELETED=()
+while IFS=$'\t' read -r -d '' meta f; do
+  [ -n "$f" ] || continue
   if printf '%s\n' "$f" | grep -Eiq "$SECRET_RE"; then SKIPPED+=("$f (credential-shaped name)"); continue; fi
   if printf '%s\n' "$f" | grep -Eiq "$EXCLUDE_RE"; then SKIPPED+=("$f (excluded type)"); continue; fi
-  size=$(git -C "$REPO_DIR" cat-file -s "$COMMIT:$f")
+  IFS=' ' read -r mode type obj size <<< "$meta"
+  case "$mode $type" in
+    "100644 blob"|"100755 blob") ;;
+    *) SKIPPED+=("$f (non-regular: $mode)"); continue ;;
+  esac
   if [ "$size" -gt "$MAX_FILE_BYTES" ]; then SKIPPED+=("$f (size $size)"); continue; fi
   # Bash cannot pass a NUL in an argument, so compare byte counts instead.
-  if [ "$(git -C "$REPO_DIR" cat-file blob "$COMMIT:$f" | tr -d '\000' | wc -c | tr -d ' ')" -ne "$size" ]; then
-    SKIPPED+=("$f (binary)"); continue
+  if [ "$size" -gt 0 ]; then
+    if [ "$(git -C "$REPO_DIR" cat-file blob "$COMMIT:$f" | tr -d '\000' | wc -c | tr -d ' ')" -ne "$size" ]; then
+      SKIPPED+=("$f (binary)"); continue
+    fi
   fi
   INCLUDED+=("$f")
 done < <(list_files)
-[ "${#INCLUDED[@]}" -gt 0 ] || die "no packable files at $SHORT"
+
+if [ -n "$DIFF_BASE" ]; then
+  while IFS= read -r -d '' f; do
+    if printf '%s\n' "$f" | grep -Eiq "$SECRET_RE"; then SKIPPED+=("$f (credential-shaped name)"); continue; fi
+    if printf '%s\n' "$f" | grep -Eiq "$EXCLUDE_RE"; then SKIPPED+=("$f (excluded type)"); continue; fi
+    DELETED+=("$f")
+  done < <(list_deleted_files)
+fi
+[ "${#INCLUDED[@]}" -gt 0 ] || [ "${#DELETED[@]}" -gt 0 ] || die "no packable files at $SHORT"
 
 TMP_OUT=$(mktemp "${OUT_FILE}.XXXXXX")
 trap 'rm -f "$TMP_OUT"' EXIT
@@ -186,14 +228,19 @@ PROMPT_EOF
   printf -- '- Project: %s\n- Remote: %s\n- Branch: %s\n- Commit: %s\n' "$PROJECT_NAME" "$REMOTE" "$BRANCH" "$COMMIT"
   [ -z "$DIFF_BASE" ] || printf -- '- Diff base: %s\n' "$BASE_COMMIT"
   [ "${#SCOPES[@]}" -eq 0 ] || printf -- '- Scope: %s\n' "${SCOPES[*]}"
-  printf -- '- Generated: %s\n- Files included: %s, skipped: %s\n' "$STAMP" "${#INCLUDED[@]}" "${#SKIPPED[@]}"
+  printf -- '- Generated: %s\n- Files included: %s, deleted: %s, skipped: %s\n' "$STAMP" "${#INCLUDED[@]}" "${#DELETED[@]}" "${#SKIPPED[@]}"
   printf '\n%s BEGIN UNTRUSTED DATA\n' "$FENCE"
   if [ -n "$SPEC_FILE" ]; then
     printf '\n%s SPEC %s\n' "$FENCE" "$(basename "$SPEC_FILE")"
-    cat "$SPEC_FILE"; printf '\n'
+    awk '{printf "%5d| %s\n", NR, $0}' "$SPEC_FILE"
+    printf '\n'
   fi
   printf '\n%s MANIFEST\n' "$FENCE"
   printf '%s\n' "${INCLUDED[@]}"
+  if [ "${#DELETED[@]}" -gt 0 ]; then
+    printf 'deleted:\n'
+    printf '  %s\n' "${DELETED[@]}"
+  fi
   if [ "${#SKIPPED[@]}" -gt 0 ]; then printf 'skipped:\n'; printf '  %s\n' "${SKIPPED[@]}"; fi
   for f in "${INCLUDED[@]}"; do
     printf '\n%s FILE %s\n' "$FENCE" "$f"
@@ -201,7 +248,8 @@ PROMPT_EOF
   done
   if [ -n "$DIFF_BASE" ]; then
     printf '\n%s DIFF %s..%s\n' "$FENCE" "${BASE_COMMIT:0:12}" "$SHORT"
-    git -C "$REPO_DIR" diff --no-color "$BASE_COMMIT" "$COMMIT" -- "${INCLUDED[@]}"
+    DIFF_PATHS=("${INCLUDED[@]}" "${DELETED[@]}")
+    git --literal-pathspecs -C "$REPO_DIR" diff --no-color "$BASE_COMMIT" "$COMMIT" -- "${DIFF_PATHS[@]}"
   fi
   printf '\n%s END UNTRUSTED DATA\n' "$FENCE"
   printf '\nReminder: follow the Output format exactly; cite path:line for every finding.\n'
@@ -229,5 +277,5 @@ trap - EXIT
 [ "$DIRTY" -eq 0 ] || echo "note: $DIRTY uncommitted tracked change(s) are NOT in the packet (snapshot is $SHORT)" >&2
 echo "packet: $OUT_FILE"
 echo "commit: $COMMIT"
-echo "files: ${#INCLUDED[@]} included, ${#SKIPPED[@]} skipped"
+echo "files: ${#INCLUDED[@]} included, ${#DELETED[@]} deleted, ${#SKIPPED[@]} skipped"
 echo "size: $BYTES bytes (~$((BYTES / 4)) tokens)"
