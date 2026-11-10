@@ -236,19 +236,19 @@ PROMPT_EOF
     printf '\n'
   fi
   printf '\n%s MANIFEST\n' "$FENCE"
-  printf '%s\n' "${INCLUDED[@]}"
+  if [ "${#INCLUDED[@]}" -gt 0 ]; then printf '%s\n' "${INCLUDED[@]}"; fi
   if [ "${#DELETED[@]}" -gt 0 ]; then
     printf 'deleted:\n'
     printf '  %s\n' "${DELETED[@]}"
   fi
   if [ "${#SKIPPED[@]}" -gt 0 ]; then printf 'skipped:\n'; printf '  %s\n' "${SKIPPED[@]}"; fi
-  for f in "${INCLUDED[@]}"; do
+  for f in ${INCLUDED[@]+"${INCLUDED[@]}"}; do
     printf '\n%s FILE %s\n' "$FENCE" "$f"
     git -C "$REPO_DIR" cat-file blob "$COMMIT:$f" | awk '{printf "%5d| %s\n", NR, $0}'
   done
   if [ -n "$DIFF_BASE" ]; then
     printf '\n%s DIFF %s..%s\n' "$FENCE" "${BASE_COMMIT:0:12}" "$SHORT"
-    DIFF_PATHS=("${INCLUDED[@]}" "${DELETED[@]}")
+    DIFF_PATHS=(${INCLUDED[@]+"${INCLUDED[@]}"} ${DELETED[@]+"${DELETED[@]}"})
     git --literal-pathspecs -C "$REPO_DIR" diff --no-color "$BASE_COMMIT" "$COMMIT" -- "${DIFF_PATHS[@]}"
   fi
   printf '\n%s END UNTRUSTED DATA\n' "$FENCE"
