@@ -445,6 +445,7 @@ family_for_basename() {
     fm-backend-hc.test.sh|fm-backend-hc-smoke.test.sh|fm-backend-hc-appdetect-smoke.test.sh)
       printf '%s\n' hc
       ;;
+    fm-argon-pack.test.sh|\
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
     fm-busy-state.test.sh|fm-capacity.test.sh|fm-classify-corr-token.test.sh|\
     fm-claude-account-quota.test.sh|\
