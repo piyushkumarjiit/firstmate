@@ -1137,6 +1137,44 @@ EOF2
   pass "--conversation pins the call to the owning account and exits 75 when that account is exhausted"
 }
 
+test_stdin_prompt_survives_quota_rotation() {
+  local fx="$TMP_ROOT/stdin_rotate"
+  mkdir -p "$fx/bin" "$fx/state"
+  printf '%s\n' gpro1 gpro2 > "$fx/pool.conf"
+  printf '%s\n' '*neon* gpro1,gpro2' > "$fx/models.conf"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac
+done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+cat > "$fx/stdin.\${SUDO_TARGET_USER}"
+if [[ "\${SUDO_TARGET_USER}" == "gpro1" ]]; then
+  echo "antigravity reported error: Individual quota reached. Resets in 1h0m0s." >&2
+  exit 1
+fi
+exit 0
+EOF
+  chmod +x "$fx/bin/"*
+  local prompt='{"event":"user","message":{"role":"user","content":[{"type":"text","text":"review this diff"}]}}'
+  local rc=0 out
+  out=$(printf '%s\n' "$prompt" | env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" \
+    "$POOL" --model gemini-4-neon-high --print= --input-format stream-json --output-format stream-json 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "rotation must succeed on the second account, got $rc: $out"
+  [ "$(cat "$fx/stdin.gpro1")" = "$prompt" ] || fail "first account must get the prompt: $(cat "$fx/stdin.gpro1")"
+  [ "$(cat "$fx/stdin.gpro2")" = "$prompt" ] || fail "retried account must get the same stdin prompt, got: $(cat "$fx/stdin.gpro2" 2>/dev/null)"
+  pass "stdin prompt is replayed to the next account after a quota rotation"
+}
+
 fm_test_run \
   test_symlink_refuses_claude_model \
   test_pool_model_env_refuses_claude \
@@ -1151,4 +1189,5 @@ fm_test_run \
   test_queued_messages_setting \
   test_large_used_sec_without_exhausted_never_skips \
   test_individual_quota_exhaustion_and_model_allowlist_failover \
-  test_conversation_affinity_pins_owner_account
+  test_conversation_affinity_pins_owner_account \
+  test_stdin_prompt_survives_quota_rotation

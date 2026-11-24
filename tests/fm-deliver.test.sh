@@ -7,6 +7,7 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 DELIVER="$ROOT/bin/fm-deliver.sh"
+NL=$'\n'
 
 TMP_ROOT=$(fm_test_tmproot fm-deliver)
 
@@ -1209,6 +1210,71 @@ test_nm_agy_defaults_are_neon_medium_without_record() {
   pass "nm-agy defaults review and fix to gemini-4-neon-medium for runs belonging to no task"
 }
 
+test_blocker_kind_follows_pool_exit_75_cause() {
+  local case_name text kind expect tdir status_line
+  for case_name in \
+    "allex|[fm-agy-pool] ERROR: All eligible accounts for model 'm' are exhausted.${NL}step review failed: exit status 75|out of quota" \
+    "owner|[fm-agy-pool] ERROR: account 'a' owns conversation 'c' but cannot take the call now; not running it elsewhere.${NL}step fix failed: exit status 75|owns this agent conversation" \
+    "capbare|step review failed: exit status 75|pool account capacity"; do
+    kind=${case_name%%|*}
+    text=${case_name#*|}; text=${text%|*}
+    expect=${case_name##*|}
+    setup_fixture "task_x75_$kind" >/dev/null
+    tdir="$TMP_ROOT/task_x75_$kind"
+    mkdir -p "$tdir/config" "$tdir/agy-state"
+    make_failing_nm "$tdir" "$text"
+    deliver_env "$tdir" "$DELIVER" "task_x75_$kind" run >/dev/null 2>&1
+    status_line=$(tail -n 1 "$tdir/state/task_x75_$kind.status")
+    assert_contains "$status_line" "$expect" "$kind: blocker names the real cause of exit 75"
+  done
+  pass "exit status 75 is classified by its cause: quota, conversation owner, then capacity"
+}
+
+test_run_passes_base_branch_from_meta() {
+  local tdir="$TMP_ROOT/task_base"
+  setup_fixture task_base >/dev/null
+  printf 'base_branch=release-x\n' >> "$tdir/state/task_base.meta"
+  mkdir -p "$tdir/bin" "$tdir/config" "$tdir/agy-state"
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-} \${2:-}" == "axi run" ]]; then
+  printf '%s\n' "\$*" >> "$tdir/run-argv.log"
+elif [[ "\${1:-} \${2:-}" == "axi status" ]]; then
+  printf 'run:\n  id: "01B"\n  status: completed\noutcome: passed\nbranch_sync:\n  next_action:\n    command: "no-mistakes axi sync"\n'
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  deliver_env "$tdir" "$DELIVER" task_base run >/dev/null 2>&1 || true
+  assert_contains "$(cat "$tdir/run-argv.log")" "--base-branch release-x" "meta base_branch must reach axi run"
+  pass "run passes the task's base_branch to no-mistakes"
+}
+
+test_nm_agy_detects_review_role_from_stdin_prompt() {
+  local tdir="$TMP_ROOT/nm_stdin"
+  mkdir -p "$tdir/bin" "$tdir/logs" "$tdir/state" "$tdir/data"
+  cat > "$tdir/bin/fake-pool" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$tdir/pool-args.log"
+cat >> "$tdir/pool-stdin.log"
+exit 0
+EOF
+  chmod +x "$tdir/bin/fake-pool"
+  local prompt review fix
+  prompt='{"event":"user","message":{"role":"user","content":[{"type":"text","text":"Focus findings on risks introduced by changed code"}]}}'
+  review=$(printf '%s\n' "$prompt" | env FM_HOME="$tdir" FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_NM_HERDR_TAB=off FM_NM_REVIEW_MODEL=gemini-4-neon-high FM_NM_FIX_MODEL=gemini-4-hydrogen-high \
+    FM_AGY_POOL_BIN="$tdir/bin/fake-pool" "$ROOT/bin/agy-pool/nm-agy" --print= --input-format stream-json 2>&1)
+  fix=$(printf '%s\n' '{"event":"user","message":{"content":[{"type":"text","text":"Fix finding f1"}]}}' | env FM_HOME="$tdir" FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_NM_HERDR_TAB=off FM_NM_REVIEW_MODEL=gemini-4-neon-high FM_NM_FIX_MODEL=gemini-4-hydrogen-high \
+    FM_AGY_POOL_BIN="$tdir/bin/fake-pool" "$ROOT/bin/agy-pool/nm-agy" --print= --input-format stream-json 2>&1)
+  assert_contains "$review" "role=review model=gemini-4-neon-high" "review prompt on stdin selects the review role"
+  assert_contains "$fix" "role=fix model=gemini-4-hydrogen-high" "other stdin prompts select the fix role"
+  assert_contains "$(cat "$tdir/pool-stdin.log")" "Focus findings on risks" "the pool still receives the stdin prompt"
+  assert_contains "$(cat "$tdir/pool-stdin.log")" "Fix finding f1" "the pool receives the fix prompt too"
+  pass "nm-agy detects the review role from a stdin prompt and forwards stdin intact"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -1232,4 +1298,7 @@ fm_test_run \
   test_nm_agy_reads_role_file_without_daemon_env \
   test_non_code_failures_report_blocker_and_never_restart \
   test_non_gemini_task_is_untouched_by_gemini_plumbing \
-  test_nm_agy_defaults_are_neon_medium_without_record
+  test_nm_agy_defaults_are_neon_medium_without_record \
+  test_blocker_kind_follows_pool_exit_75_cause \
+  test_run_passes_base_branch_from_meta \
+  test_nm_agy_detects_review_role_from_stdin_prompt
