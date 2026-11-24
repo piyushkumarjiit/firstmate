@@ -26,7 +26,7 @@ chmod 1777 "$STATE_DIR" 2>/dev/null || true
 if [[ -f "$POOL_CONF" ]]; then
   mapfile -t GPRO_USERS < <(grep -Ev '^\s*(#|$)' "$POOL_CONF" | awk '{print $1}')
 else
-  read -r -a GPRO_USERS <<< "${GPRO_POOL_USERS:-gpro1 gpro2}"
+  GPRO_USERS=()
 fi
 
 now_epoch() { date +%s; }
@@ -654,9 +654,12 @@ MAX_ACTIVE="${FM_AGY_MAX_ACTIVE:-2}"
 select_pool_user() {
   local active_users=() active_user picked=""
   mapfile -t active_users < <(find_active_pool_users)
-  # Prefer reusing an account that is already active and fits this request.
   for active_user in "${active_users[@]}"; do
-    [[ -n "$EXPLICIT_USER" && "$EXPLICIT_USER" != "$active_user" ]] && continue
+    if [[ -n "$EXPLICIT_USER" ]]; then
+      [[ "$EXPLICIT_USER" == "$active_user" ]] || continue
+    elif (( ${#active_users[@]} < MAX_ACTIVE )); then
+      break
+    fi
     is_user_allowed_for_model "$active_user" "$ROUTE_MODEL" || continue
     is_user_exhausted "$active_user" "$ROUTE_MODEL" && continue
     picked="$active_user"

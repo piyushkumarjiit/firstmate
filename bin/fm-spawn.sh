@@ -760,6 +760,10 @@ shopt -u patsub_replacement 2>/dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+agy_pool_configured() {
+  [ -x "$SCRIPT_DIR/agy-pool/agy" ] && [ -s "${POOL_CONF:-/etc/firstmate/gpro-pool.conf}" ]
+}
+
 usage() {
   # The whole leading comment block, ending at the first line that is not a
   # comment. Derived rather than a fixed line range, which silently truncated
@@ -3449,7 +3453,7 @@ omp)
 agy)
   # The account-pool launcher is reached through bin/agy-pool/agy so the live
   # process is named agy; bin/fm-agy-pool.sh's header owns why.
-  if [ -x "$SCRIPT_DIR/agy-pool/agy" ]; then
+  if agy_pool_configured; then
     AGY_BIN="$SCRIPT_DIR/agy-pool/agy"
   else
     AGY_BIN=$(resolve_pi_executable agy) || {
@@ -4514,7 +4518,7 @@ if [ "$KIND" = ship ]; then
   # Brief/spawn pool-builder agreement
   BRIEF_BUILDER=$(sed -n 's/^Delivery contract: mode=[^ ]*.*[[:space:]]builder=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
   IS_AGY_POOL=0
-  if [ "$HARNESS" = agy ] && [ -x "$SCRIPT_DIR/agy-pool/agy" ]; then
+  if [ "$HARNESS" = agy ] && agy_pool_configured; then
     IS_AGY_POOL=1
   fi
   if [ "$IS_AGY_POOL" -eq 1 ] && [ "$MODE" != local-only ]; then

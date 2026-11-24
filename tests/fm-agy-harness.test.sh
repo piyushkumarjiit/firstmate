@@ -620,6 +620,7 @@ run_agy_spawn() {
     FM_FAKE_AGY_ASSUME_TRUSTED="${FM_FAKE_AGY_ASSUME_TRUSTED:-0}" \
     FM_FAKE_AGY_RACE="${FM_FAKE_AGY_RACE:-0}" \
     FM_FAKE_AGY_ANSWER="${FM_FAKE_AGY_ANSWER:-works}" \
+    POOL_CONF="${POOL_CONF:-$case_dir/no-pool.conf}" \
     FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=${FM_AGY_MODELS_TIMEOUT:-1} \
     PATH="$fakebin:$BASE_PATH" \
     "$SPAWN" "$id" "$proj" --harness agy --mode no-mistakes --yolo off "$@" 2>&1
@@ -848,6 +849,33 @@ test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn() {
   pass "fm-spawn: an agy dialog that never turns busy fails the spawn and closes the endpoint"
 }
 
+test_agy_pool_route_requires_real_pool_config() {
+  local id rec out rc launch pc
+  id="agy-poolroute-a1-$$"
+  rec=$(make_agy_spawn_case poolroute "$id")
+  read_agy_spawn_record "$rec"
+  pc="$CASE_DIR/gpro-pool.conf"
+  rc=0
+  out=$(POOL_CONF="$CASE_DIR/absent-pool.conf" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low --effort low) || rc=$?
+  expect_code 0 "$rc" "without pool config agy must launch the plain binary without a pool-builder brief: $out"
+  launch=$(cat "$CASE_DIR/launch.log")
+  assert_contains "$launch" "$FAKEBIN_DIR/agy" "no pool config must keep the plain agy path"
+  assert_not_contains "$launch" "agy-pool/agy" "no pool config must not route through the pool launcher"
+
+  id="agy-poolroute-a2-$$"
+  rec=$(make_agy_spawn_case poolroute2 "$id")
+  read_agy_spawn_record "$rec"
+  pc="$CASE_DIR/gpro-pool.conf"
+  printf '%s\n' gpro1 > "$pc"
+  rc=0
+  out=$(POOL_CONF="$pc" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low --effort low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "with pool config a non-local-only agy ship needs a pool-builder brief"
+  assert_contains "$out" "requires a pool-builder brief" "pool config must select the pool route"
+  pass "fm-spawn: agy routes through the pool only when real pool config exists"
+}
+
 test_agy_missing_binary_refuses_before_pane_creation() {
   local id rec out rc
   id="agy-missing-z5-$$"
@@ -942,5 +970,6 @@ test_agy_unregistered_path_ignores_busy_until_the_dialog_is_answered
 test_agy_unregistered_path_without_a_dialog_fails_the_spawn
 test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
 test_agy_missing_binary_refuses_before_pane_creation
+test_agy_pool_route_requires_real_pool_config
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
 test_agy_spawn_arms_no_busy_wiring

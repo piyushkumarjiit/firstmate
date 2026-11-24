@@ -1175,6 +1175,51 @@ EOF
   pass "stdin prompt is replayed to the next account after a quota rotation"
 }
 
+test_configured_order_wins_over_active_account_until_cap() {
+  local fx="$TMP_ROOT/order_first"
+  mkdir -p "$fx/bin" "$fx/state"
+  printf '%s\n' gpro1 gpro2 > "$fx/pool.conf"
+  printf '%s\n' '*neon* gpro1,gpro2' > "$fx/models.conf"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac
+done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF
+  printf '#!/usr/bin/env bash\n[[ "$*" == *"-u gpro2"* ]] && exit 0\nexit 1\n' > "$fx/bin/fake-pgrep"
+  printf '#!/usr/bin/env bash\necho "${SUDO_TARGET_USER}" >> "%s/calls.log"\nexit 0\n' "$fx" > "$fx/bin/agy"
+  chmod +x "$fx/bin/"*
+  local rc=0 out
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "neon call must succeed, got $rc: $out"
+  [ "$(cat "$fx/calls.log")" = gpro1 ] || fail "idle first configured account must win over active gpro2, got: $(cat "$fx/calls.log")"
+
+  : > "$fx/calls.log"
+  rc=0
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_MAX_ACTIVE=1 "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "at the cap an active fitting account must be reused, got $rc: $out"
+  [ "$(cat "$fx/calls.log")" = gpro2 ] || fail "at the cap the active account must be reused, got: $(cat "$fx/calls.log")"
+  pass "configured account order wins over an active account until the active cap is reached"
+}
+
+test_no_pool_config_has_no_placeholder_accounts() {
+  local rc=0 out
+  out=$(env -u GPRO_POOL_USERS POOL_CONF="$TMP_ROOT/missing-pool.conf" MODELS_CONF="$TMP_ROOT/missing-models.conf" \
+    AGY_BIN="$STUB" FM_AGY_STATE_DIR="$TMP_ROOT/state-np" FM_AGY_USAGE_LOG="$TMP_ROOT/np.jsonl" \
+    "$POOL" --model gemini-4-neon-high -p hi 2>&1 </dev/null) || rc=$?
+  [ "$rc" -eq 75 ] || fail "no pool config must exit 75, got $rc: $out"
+  case "$out" in *gpro1*|*gpro2*) fail "placeholder accounts must not appear: $out" ;; esac
+  pass "a missing pool config yields no eligible account instead of placeholder accounts"
+}
+
 fm_test_run \
   test_symlink_refuses_claude_model \
   test_pool_model_env_refuses_claude \
@@ -1190,4 +1235,6 @@ fm_test_run \
   test_large_used_sec_without_exhausted_never_skips \
   test_individual_quota_exhaustion_and_model_allowlist_failover \
   test_conversation_affinity_pins_owner_account \
-  test_stdin_prompt_survives_quota_rotation
+  test_stdin_prompt_survives_quota_rotation \
+  test_configured_order_wins_over_active_account_until_cap \
+  test_no_pool_config_has_no_placeholder_accounts
