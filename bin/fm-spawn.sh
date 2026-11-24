@@ -761,7 +761,8 @@ shopt -u patsub_replacement 2>/dev/null || true
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 agy_pool_configured() {
-  [ -x "$SCRIPT_DIR/agy-pool/agy" ] && [ -s "${POOL_CONF:-/etc/firstmate/gpro-pool.conf}" ]
+  [ -x "$SCRIPT_DIR/agy-pool/agy" ] && [ -f "${POOL_CONF:-/etc/firstmate/gpro-pool.conf}" ] &&
+    grep -Eqv '^[[:space:]]*(#|$)' "${POOL_CONF:-/etc/firstmate/gpro-pool.conf}"
 }
 
 usage() {

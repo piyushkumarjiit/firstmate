@@ -873,6 +873,16 @@ test_agy_pool_route_requires_real_pool_config() {
     --model gemini-3.8-flash-low --effort low) || rc=$?
   [ "$rc" -ne 0 ] || fail "with pool config a non-local-only agy ship needs a pool-builder brief"
   assert_contains "$out" "requires a pool-builder brief" "pool config must select the pool route"
+  id="agy-poolroute-a3-$$"
+  rec=$(make_agy_spawn_case poolroute3 "$id")
+  read_agy_spawn_record "$rec"
+  pc="$CASE_DIR/gpro-pool.conf"
+  printf '# no accounts yet\n\n' > "$pc"
+  rc=0
+  out=$(POOL_CONF="$pc" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low --effort low) || rc=$?
+  expect_code 0 "$rc" "a comment-only pool config must keep the plain agy path: $out"
+  assert_not_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "a comment-only pool config is not a configured pool"
   pass "fm-spawn: agy routes through the pool only when real pool config exists"
 }
 

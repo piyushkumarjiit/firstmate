@@ -1220,6 +1220,33 @@ test_no_pool_config_has_no_placeholder_accounts() {
   pass "a missing pool config yields no eligible account instead of placeholder accounts"
 }
 
+test_cap_reuse_follows_model_order() {
+  local fx="$TMP_ROOT/cap_order"
+  mkdir -p "$fx/bin" "$fx/state"
+  printf '%s\n' gpro1 gpro2 > "$fx/pool.conf"
+  printf '%s\n' '*neon* gpro2,gpro1' > "$fx/models.conf"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac
+done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/fake-pgrep"
+  printf '#!/usr/bin/env bash\necho "${SUDO_TARGET_USER}" >> "%s/calls.log"\nexit 0\n' "$fx" > "$fx/bin/agy"
+  chmod +x "$fx/bin/"*
+  local rc=0 out
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "capped neon call must succeed, got $rc: $out"
+  [ "$(cat "$fx/calls.log")" = gpro2 ] || fail "at the cap the first configured active account must win, got: $(cat "$fx/calls.log")"
+  pass "at the active cap reuse follows the model's configured account order"
+}
+
 fm_test_run \
   test_symlink_refuses_claude_model \
   test_pool_model_env_refuses_claude \
@@ -1237,4 +1264,5 @@ fm_test_run \
   test_conversation_affinity_pins_owner_account \
   test_stdin_prompt_survives_quota_rotation \
   test_configured_order_wins_over_active_account_until_cap \
-  test_no_pool_config_has_no_placeholder_accounts
+  test_no_pool_config_has_no_placeholder_accounts \
+  test_cap_reuse_follows_model_order

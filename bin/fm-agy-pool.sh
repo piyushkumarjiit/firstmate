@@ -653,8 +653,15 @@ MAX_ACTIVE="${FM_AGY_MAX_ACTIVE:-2}"
 
 select_pool_user() {
   local active_users=() active_user picked=""
+  local -a ordered=() allowed=()
   mapfile -t active_users < <(find_active_pool_users)
-  for active_user in "${active_users[@]}"; do
+  read -r -a allowed <<<"$(allowed_users_for_model "$ROUTE_MODEL")"
+  for active_user in ${allowed[@]+"${allowed[@]}"} ${active_users[@]+"${active_users[@]}"}; do
+    case " ${active_users[*]-} " in *" $active_user "*) ;; *) continue ;; esac
+    case " ${ordered[*]-} " in *" $active_user "*) continue ;; esac
+    ordered+=("$active_user")
+  done
+  for active_user in ${ordered[@]+"${ordered[@]}"}; do
     if [[ -n "$EXPLICIT_USER" ]]; then
       [[ "$EXPLICIT_USER" == "$active_user" ]] || continue
     elif (( ${#active_users[@]} < MAX_ACTIVE )); then
