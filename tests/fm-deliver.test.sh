@@ -1447,6 +1447,39 @@ EOF
   pass "no failover after the pool recovered by rotating accounts"
 }
 
+test_failover_keeps_role_line_across_rotation() {
+  setup_fixture task_rolekeep >/dev/null
+  local tdir="$TMP_ROOT/task_rolekeep" nmhome="$TMP_ROOT/task_rolekeep/nmhome"
+  mkdir -p "$tdir/bin" "$tdir/config" "$tdir/agy-state" "$nmhome/logs/RUNF"
+  cat > "$tdir/config/crew-dispatch.json" <<'JSON'
+{"roles":{"review":[{"harness":"agy","model":"gemini-4-neon-high"},{"harness":"agy","model":"gemini-3.8-flash-high"}],"fix":[{"harness":"agy","model":"gemini-4-hydrogen-high"},{"harness":"agy","model":"gemini-3.8-flash-medium"}]}}
+JSON
+  printf "[nm-agy] 2026-01-01T00:00:00Z cwd=/x role=fix model=gemini-4-hydrogen-high\n[fm-agy-pool] Account 'acct1' hit quota exhaustion; marked exhausted until 1.\n[fm-agy-pool] Rotating away from exhausted account 'acct1' to next eligible account...\n[fm-agy-pool] ERROR: All eligible accounts for model 'gemini-4-hydrogen-high' are exhausted.\n" > "$nmhome/logs/RUNF/review.log"
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+cmd="\${1:-} \${2:-}"
+if [[ "\$cmd" == "axi run" ]]; then
+  printf 'review=%s fix=%s\n' "\${FM_NM_REVIEW_MODEL:-}" "\${FM_NM_FIX_MODEL:-}" >> "$tdir/run-models.log"
+  [[ "\${FM_NM_FIX_MODEL:-}" == "gemini-4-hydrogen-high" ]] && : > "$tdir/failed_once"
+elif [[ "\$cmd" == "axi status" ]]; then
+  if [[ -f "$tdir/failed_once" && ! -f "$tdir/aborted" ]]; then
+    printf 'run:\n  id: "RUNF"\n  status: failed\noutcome: failed\n'
+  else
+    printf 'run:\n  id: "RUNP"\n  status: completed\noutcome: passed\nbranch_sync:\n  next_action:\n    command: "no-mistakes axi sync"\n'
+  fi
+elif [[ "\$cmd" == "axi abort" ]]; then
+  : > "$tdir/aborted"
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  NM_HOME="$nmhome" deliver_env "$tdir" "$DELIVER" task_rolekeep run >/dev/null 2>&1
+  assert_contains "$(tail -n 1 "$tdir/run-models.log")" "fix=gemini-3.8-flash-medium" \
+    "the fix role named by the nm-agy line must advance even after a rotation line"
+  assert_contains "$(tail -n 1 "$tdir/run-models.log")" "review=gemini-4-neon-high" "the review role must stay put"
+  pass "failover keeps the nm-agy role line across a pool rotation"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -1478,4 +1511,5 @@ fm_test_run \
   test_respond_on_running_run_writes_no_blocked_status \
   test_blocker_ignores_test_step_output \
   test_failover_triggers_on_pool_quota_notice_in_review_log \
-  test_no_failover_after_pool_rotation_recovered
+  test_no_failover_after_pool_rotation_recovered \
+  test_failover_keeps_role_line_across_rotation

@@ -397,7 +397,7 @@ QUOTA_EXHAUSTION_RE='^[[:space:]]*(\[fm-agy-pool\][[:space:]]*(ERROR:.*)?|antigr
 
 pool_log_lines() {
   { grep -E '^[[:space:]]*(\[fm-agy-pool\]|\[nm-agy\]|antigravity )' || true; } |
-    awk '/Rotating away from exhausted account/ {n = 0; next} {buf[n++] = $0} END {for (i = 0; i < n; i++) print buf[i]}'
+    awk '/Rotating away from exhausted account/ {m = 0; for (i = 0; i < n; i++) if (buf[i] ~ /^[[:space:]]*\[nm-agy\]/) keep[m++] = buf[i]; n = 0; for (i = 0; i < m; i++) buf[n++] = keep[i]; next} {buf[n++] = $0} END {for (i = 0; i < n; i++) print buf[i]}'
 }
 
 is_quota_exhaustion_failure() {
