@@ -182,6 +182,7 @@ fi
 
 DRIVE_LOG="$FM_DATA/${TASK}/drive.log"
 mkdir -p "$(dirname "$DRIVE_LOG")"
+: >> "$DRIVE_LOG"
 
 # Visible progress: delivery runs as a background job, so on a herdr-backed task
 # open one "deliver: <task>" tab in the task's workspace that follows the drive

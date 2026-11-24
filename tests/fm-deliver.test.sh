@@ -1365,6 +1365,27 @@ EOF
   pass "respond on a still-running run writes no blocked status"
 }
 
+test_respond_creates_missing_drive_log_quietly() {
+  setup_fixture task_nodrive >/dev/null
+  local tdir="$TMP_ROOT/task_nodrive" out
+  mkdir -p "$tdir/bin"
+  cat > "$tdir/bin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+cmd="${1:-} ${2:-}"
+if [[ "$cmd" == "axi status" ]]; then
+  printf 'run:\n  id: "1"\n  status: completed\noutcome: passed\n'
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  [ ! -e "$tdir/data/task_nodrive/drive.log" ] || fail "fixture must start without a drive log"
+  out=$(deliver_env "$tdir" "$DELIVER" task_nodrive respond approve 2>&1)
+  assert_not_contains "$out" "No such file or directory" \
+    "a fresh task must not emit a bash redirection error for a missing drive log"
+  [ -f "$tdir/data/task_nodrive/drive.log" ] || fail "respond must create the drive log"
+  pass "respond creates a missing drive log without a bash error"
+}
+
 test_blocker_ignores_test_step_output() {
   setup_fixture task_testlog >/dev/null
   local tdir="$TMP_ROOT/task_testlog" nmhome="$TMP_ROOT/task_testlog/nmhome"
@@ -1509,6 +1530,7 @@ fm_test_run \
   test_nm_agy_detects_review_role_from_stdin_prompt \
   test_background_failover_restart_keeps_base_branch \
   test_respond_on_running_run_writes_no_blocked_status \
+  test_respond_creates_missing_drive_log_quietly \
   test_blocker_ignores_test_step_output \
   test_failover_triggers_on_pool_quota_notice_in_review_log \
   test_no_failover_after_pool_rotation_recovered \
