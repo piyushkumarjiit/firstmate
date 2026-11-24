@@ -1,0 +1,48 @@
+# Scenario: firstmate's review/fix roles pick the Gemini model and account, and a
+# 187 KB review prompt travels on stdin instead of argv (no argument-list-too-long)
+# Product: ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/agy-pool/nm-agy -> bin/fm-agy-pool.sh -> lab Antigravity CLI stand-in
+# Task role record (written in the shape bin/fm-deliver.sh writes):
+review_model=gemini-4-hydrogen-high
+review_account=piyushjiit
+review_from_config=1
+review_fallback=gemini-3.8-flash-high
+fix_model=gemini-4-neon-medium
+fix_account=piyushk
+fix_from_config=1
+fix_fallback=gemini-3.8-flash-medium
+
+## review call: caller passes --account deepak --model gemini-3.8-flash-high (must be replaced)
+[nm-agy] 2026-11-24T19:59:55Z cwd=/tmp/fm-sub-check/nmrepo role=review model=gemini-4-hydrogen-high account=piyushjiit
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'piyushjiit' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-rev-1","result":"ok from piyushjiit"}
+EXIT=0
+
+## fix call: plain fix prompt with no caller model/account
+[nm-agy] 2026-11-24T19:59:56Z cwd=/tmp/fm-sub-check/nmrepo role=fix model=gemini-4-neon-medium account=piyushk
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushk' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-fix-1","result":"ok from piyushk"}
+EXIT=0
+
+--- what the Antigravity CLI stand-in received (argv + stdin bytes):
+invocation user=piyushjiit
+  arg=[--print=]
+  arg=[--input-format]
+  arg=[stream-json]
+  arg=[--output-format]
+  arg=[stream-json]
+  arg=[--model]
+  arg=[gemini-4-hydrogen-high]
+stdin_bytes=187360
+invocation user=piyushk
+  arg=[--print=]
+  arg=[--input-format]
+  arg=[stream-json]
+  arg=[--output-format]
+  arg=[stream-json]
+  arg=[--model]
+  arg=[gemini-4-neon-medium]
+stdin_bytes=104
+--- stdin payload digests:
+stdin.piyushjiit.1841374 sha256=1f5e9e4ed7956349b57a995f30b78f4d52348e8faf417e0dec69e40c3126139f bytes=187360
+stdin.piyushk.1841514 sha256=4551cb0e09c2b0a9e6083401ed9b24f2162a3b71db5cc7c8fcb4e85fe4197b45 bytes=104
+--- local big prompt digest: sha256=1f5e9e4ed7956349b57a995f30b78f4d52348e8faf417e0dec69e40c3126139f bytes=187360

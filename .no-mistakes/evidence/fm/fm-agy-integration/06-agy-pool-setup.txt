@@ -1,0 +1,140 @@
+# Scenario: one setup command grants every operator-side agy-pool capability
+# Product: ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-agy-pool-setup.sh over a disposable lab home.
+# ACLs are applied for real on lab directories and re-verified with real sudo as a
+# pool account; the per-account git credential helper step is sandboxed to lab
+# homes by a per-account HOME shim so no operator or pool-account config is edited.
+
+######## 1. check before any grant
+fm-agy-pool-setup: mode=check operator=agentic pool=piyushjiit piyushk
+MISSING ACL (access + default) for piyushjiit on /tmp/fm-lab-pool.iTESZf/setup2/worktrees
+MISSING ACL (access + default) for piyushk on /tmp/fm-lab-pool.iTESZf/setup2/worktrees
+MISSING traverse ACL for piyushjiit on /tmp/fm-lab-pool.iTESZf/setup2
+ok      worktrees directory /tmp/fm-lab-pool.iTESZf/setup2/worktrees reachable by piyushjiit
+MISSING traverse ACL for piyushk on /tmp/fm-lab-pool.iTESZf/setup2
+ok      worktrees directory /tmp/fm-lab-pool.iTESZf/setup2/worktrees reachable by piyushk
+MISSING gh config readable by piyushjiit
+ok      gh credentials /tmp/fm-lab-pool.iTESZf/setup2/ghconf/hosts.yml reachable by piyushjiit
+MISSING git HTTPS credential helper for piyushjiit
+MISSING gh config readable by piyushk
+ok      gh credentials /tmp/fm-lab-pool.iTESZf/setup2/ghconf/hosts.yml reachable by piyushk
+MISSING git HTTPS credential helper for piyushk
+ROOT    models allowlist /tmp/fm-lab-pool.iTESZf/setup2/models.conf is missing
+        run: sudo install -D -m 0644 /dev/stdin '/tmp/fm-lab-pool.iTESZf/setup2/models.conf' <<'EOF'
+*hydrogen* piyushjiit piyushk
+*neon* piyushjiit piyushk
+EOF
+ok      usage log not created yet (pool writes it on first run)
+ok      pool state dir not created yet (pool creates it on first run)
+ok      pool run logs readable
+MISSING no-mistakes config /tmp/fm-lab-pool.iTESZf/setup2/config.yaml not found
+result: 10 item(s) need attention
+CHECK_BEFORE_RC=1
+
+######## 2. apply
+fm-agy-pool-setup: mode=apply operator=agentic pool=piyushjiit piyushk
+fixed   ACL (access + default) for piyushjiit on /tmp/fm-lab-pool.iTESZf/setup2/worktrees
+fixed   ACL (access + default) for piyushk on /tmp/fm-lab-pool.iTESZf/setup2/worktrees
+fixed   traverse ACL for piyushjiit on /tmp/fm-lab-pool.iTESZf/setup2
+ok      worktrees directory /tmp/fm-lab-pool.iTESZf/setup2/worktrees reachable by piyushjiit
+fixed   traverse ACL for piyushk on /tmp/fm-lab-pool.iTESZf/setup2
+ok      worktrees directory /tmp/fm-lab-pool.iTESZf/setup2/worktrees reachable by piyushk
+fixed   gh config readable by piyushjiit
+ok      gh credentials /tmp/fm-lab-pool.iTESZf/setup2/ghconf/hosts.yml reachable by piyushjiit
+fixed   git HTTPS credential helper for piyushjiit
+fixed   gh config readable by piyushk
+ok      gh credentials /tmp/fm-lab-pool.iTESZf/setup2/ghconf/hosts.yml reachable by piyushk
+fixed   git HTTPS credential helper for piyushk
+ROOT    models allowlist /tmp/fm-lab-pool.iTESZf/setup2/models.conf is missing
+        run: sudo install -D -m 0644 /dev/stdin '/tmp/fm-lab-pool.iTESZf/setup2/models.conf' <<'EOF'
+*hydrogen* piyushjiit piyushk
+*neon* piyushjiit piyushk
+EOF
+ok      usage log not created yet (pool writes it on first run)
+fixed   created /tmp/fm-lab-pool.iTESZf/setup2/state/pool
+ok      pool run logs readable
+MISSING no-mistakes config /tmp/fm-lab-pool.iTESZf/setup2/config.yaml not found
+result: 2 item(s) need attention
+APPLY_RC=1
+
+######## 3. credential helper written for each pool account
+-- /tmp/fm-lab-pool.iTESZf/setup2/homes/piyushjiit/.gitconfig
+[credential "https://github.com"]
+	helper = !GH_CONFIG_DIR=/tmp/fm-lab-pool.iTESZf/setup2/ghconf /usr/bin/gh auth git-credential
+-- /tmp/fm-lab-pool.iTESZf/setup2/homes/piyushk/.gitconfig
+[credential "https://github.com"]
+	helper = !GH_CONFIG_DIR=/tmp/fm-lab-pool.iTESZf/setup2/ghconf /usr/bin/gh auth git-credential
+
+######## 4. worktree ACLs
+# file: /tmp/fm-lab-pool.iTESZf/setup2/worktrees
+# owner: agentic
+# group: agentic
+user::rwx
+user:piyushjiit:rwx
+user:piyushk:rwx
+group::r-x
+group:agents:rwx
+mask::rwx
+other::r-x
+default:user::rwx
+default:user:piyushjiit:rwx
+default:user:piyushk:rwx
+default:group::r-x
+default:group:agents:rwx
+default:mask::rwx
+
+######## 5. independent verification with real sudo as the pool account
+piyushk: worktrees dir reachable
+piyushk: gh credentials readable
+
+######## 6. check after the printed root steps (models allowlist + no-mistakes config)
+fm-agy-pool-setup: mode=check operator=agentic pool=piyushjiit piyushk
+ok      ACL (access + default) for piyushjiit on /tmp/fm-lab-pool.iTESZf/setup2/worktrees
+ok      ACL (access + default) for piyushk on /tmp/fm-lab-pool.iTESZf/setup2/worktrees
+ok      traverse ACL for piyushjiit on /tmp/fm-lab-pool.iTESZf/setup2
+ok      worktrees directory /tmp/fm-lab-pool.iTESZf/setup2/worktrees reachable by piyushjiit
+ok      traverse ACL for piyushk on /tmp/fm-lab-pool.iTESZf/setup2
+ok      worktrees directory /tmp/fm-lab-pool.iTESZf/setup2/worktrees reachable by piyushk
+ok      gh config readable by piyushjiit
+ok      gh credentials /tmp/fm-lab-pool.iTESZf/setup2/ghconf/hosts.yml reachable by piyushjiit
+ok      git HTTPS credential helper for piyushjiit
+ok      gh config readable by piyushk
+ok      gh credentials /tmp/fm-lab-pool.iTESZf/setup2/ghconf/hosts.yml reachable by piyushk
+ok      git HTTPS credential helper for piyushk
+ok      '*neon*' -> piyushjiit piyushk (order is the quota failover order)
+ok      '*hydrogen*' -> piyushjiit piyushk (order is the quota failover order)
+ok      usage log not created yet (pool writes it on first run)
+ok      pool state readable: /tmp/fm-lab-pool.iTESZf/setup2/state/pool
+ok      pool run logs readable
+ok      antigravity launcher points at nm-agy
+ok      review_agents use antigravity
+        note: nm-agy picks review/fix models from the per-task role record, not from this file
+info    firstmate's own repo sets disable_project_settings, which no-mistakes refuses for antigravity gate agents: keep Gemini gates off the firstmate repo
+result: all checks passed
+CHECK_AFTER_RC=0
+
+######## 7. apply again (idempotency)
+fm-agy-pool-setup: mode=apply operator=agentic pool=piyushjiit piyushk
+ok      ACL (access + default) for piyushjiit on /tmp/fm-lab-pool.iTESZf/setup2/worktrees
+ok      ACL (access + default) for piyushk on /tmp/fm-lab-pool.iTESZf/setup2/worktrees
+ok      traverse ACL for piyushjiit on /tmp/fm-lab-pool.iTESZf/setup2
+ok      worktrees directory /tmp/fm-lab-pool.iTESZf/setup2/worktrees reachable by piyushjiit
+ok      traverse ACL for piyushk on /tmp/fm-lab-pool.iTESZf/setup2
+ok      worktrees directory /tmp/fm-lab-pool.iTESZf/setup2/worktrees reachable by piyushk
+ok      gh config readable by piyushjiit
+ok      gh credentials /tmp/fm-lab-pool.iTESZf/setup2/ghconf/hosts.yml reachable by piyushjiit
+ok      git HTTPS credential helper for piyushjiit
+ok      gh config readable by piyushk
+ok      gh credentials /tmp/fm-lab-pool.iTESZf/setup2/ghconf/hosts.yml reachable by piyushk
+ok      git HTTPS credential helper for piyushk
+ok      '*neon*' -> piyushjiit piyushk (order is the quota failover order)
+ok      '*hydrogen*' -> piyushjiit piyushk (order is the quota failover order)
+ok      usage log not created yet (pool writes it on first run)
+ok      pool state readable: /tmp/fm-lab-pool.iTESZf/setup2/state/pool
+ok      pool run logs readable
+ok      antigravity launcher points at nm-agy
+ok      review_agents use antigravity
+        note: nm-agy picks review/fix models from the per-task role record, not from this file
+info    firstmate's own repo sets disable_project_settings, which no-mistakes refuses for antigravity gate agents: keep Gemini gates off the firstmate repo
+result: all checks passed
+APPLY_AGAIN_RC=0
+FIXED_LINES_ON_SECOND_APPLY=0

@@ -1,0 +1,73 @@
+# Scenario: fm-deliver never restarts a run blind and follows the fix role across
+# a pool rotation (the newest commits in this change)
+# Product: ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-deliver.sh (real). The external no-mistakes CLI is a lab stub
+# that records the FM_NM_* role env it receives and returns recorded run status;
+# no-mistakes step logs (review.log/push.log/test.log) are lab files.
+
+########## Case 4a: stale quota notice + real push-auth failure
+~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-deliver.sh: line 1166: /tmp/fm-lab-pool.iTESZf/deliver/live_pushauth/data/live_pushauth/drive.log: No such file or directory
+[fm-deliver] Running axi run in foreground...
+-- axi run calls: 1
+-- status tail: blocked [at=1795547454]: push authentication failed; fix the git credentials for the no-mistakes push (bin/fm-agy-pool-setup.sh check), then retry with FM_DELIVER_RETRY=1; run not restarted
+-- blocker: head=109f94a68451ada2a4995066c5a3b91434fd255a kind=push-auth 
+-- re-run on the same head:
+   rc=1
+error: the last run on this head stopped on a non-code failure (push-auth); fix the cause and rerun with FM_DELIVER_RETRY=1 rather than restarting from scratch
+-- axi run calls after refusal: 1
+-- FM_DELIVER_RETRY=1 explicit rerun:
+   rc=0
+-- axi run calls after retry: 2
+
+########## Case 4b: fix role advances across a pool rotation (nm-agy role line kept)
+~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-deliver.sh: line 1166: /tmp/fm-lab-pool.iTESZf/deliver/live_rolekeep/data/live_rolekeep/drive.log: No such file or directory
+[fm-deliver] Running axi run in foreground...
+-- run envs (one line per axi run):
+review=gemini-4-neon-high fix=gemini-4-hydrogen-high
+review=gemini-4-neon-high fix=gemini-3.8-flash-medium
+-- role record after failover:
+review_model=gemini-4-neon-high
+review_account=
+review_from_config=1
+review_fallback=gemini-4-neon-high,gemini-3.8-flash-high
+fix_model=gemini-3.8-flash-medium
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-high,gemini-3.8-flash-medium
+-- status tail: done [at=1795547456]: pushed ba1aaef646b6bc3017a18ec368e561fd007c7615
+-- drive log:
+[fm-deliver] Quota exhausted for fix model 'gemini-4-hydrogen-high'; restarting on same head with fallback 'gemini-3.8-flash-medium'
+[fm-deliver] Restarting axi run in /tmp/fm-lab-pool.iTESZf/deliver/live_rolekeep/wt with fix=gemini-3.8-flash-medium
+[fm-deliver] Outcome 'passed'; running sync command: no-mistakes axi sync
+
+########## Case 4c: project test output that looks like a push-auth failure
+~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-deliver.sh: line 1166: /tmp/fm-lab-pool.iTESZf/deliver/live_testlog/data/live_testlog/drive.log: No such file or directory
+[fm-deliver] Running axi run in foreground...
+-- status tail: blocked [at=1795547457]: outcome failed
+-- blocker file exists: no
+-- axi run calls: 1
+
+########## Case 4d: a claude task keeps the old no-mistakes path
+~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-deliver.sh: line 1166: /tmp/fm-lab-pool.iTESZf/deliver/live_claude/data/live_claude/drive.log: No such file or directory
+[fm-deliver] Running axi run in foreground...
+-- FM_NM_* exported to the run: 0
+-- role record written: no
+-- status tail: done [at=1795547457]: pushed 98b993d7734cd18e5ef0fc1456a6cb92f0453fb1
+
+########## Case 4e: oversized review prompt reported by the run
+~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-deliver.sh: line 1166: /tmp/fm-lab-pool.iTESZf/deliver/live_arglist/data/live_arglist/drive.log: No such file or directory
+[fm-deliver] Running axi run in foreground...
+-- status tail: blocked [at=1795547457]: review prompt exceeds the agent command-line limit (argument list too long); use the stdin-patched no-mistakes (contrib/no-mistakes-antigravity-stdin), then retry with FM_DELIVER_RETRY=1; run not restarted
+-- blocker: head=98b993d7734cd18e5ef0fc1456a6cb92f0453fb1 kind=prompt-too-large 
+-- axi run calls: 1
+
+--- case 4e blocker record ---
+head=98b993d7734cd18e5ef0fc1456a6cb92f0453fb1
+kind=prompt-too-large
+
+--- case 4a blocker record ---
+head=109f94a68451ada2a4995066c5a3b91434fd255a
+kind=push-auth
+
+--- case 4e drive log (the run-reported failure the classifier reads) ---
+step review failed: agent review: antigravity start: fork/exec ~/.local/bin/nm-agy: argument list too long
+[fm-deliver] Non-code failure (prompt-too-large); not restarting the run

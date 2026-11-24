@@ -1,0 +1,57 @@
+# Scenario: a resumed agy conversation stays on the account that owns it
+# Product: ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-agy-pool.sh (real) + lab stub agy. Fresh state per step.
+
+## 2a: caller asks for piyushjiit but the conversation belongs to piyushk
+$ bin/fm-agy-pool.sh --conversation conv-live-1 --account piyushjiit \
+    -p "resume the review" --model gemini-4-neon-medium
+
+[fm-agy-pool] Conversation 'conv-live-1' belongs to 'piyushk'; overriding requested account 'piyushjiit'.
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushk' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-live-1","result":"ok from piyushk"}
+
+EXIT=0
+
+## 2b: exhaust the owning account with a real quota hit
+$ FM_LAB_FAIL_USER=piyushk bin/fm-agy-pool.sh --account piyushk \
+    -p "burn owner quota" --model gemini-4-neon-medium
+
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushk' (100% remaining, floor=15%)...
+error: Individual quota reached. Resets in 3h12m0s.
+[fm-agy-pool] Account 'piyushk' hit quota exhaustion; marked exhausted until 1795559402.
+
+EXIT=1
+
+## 2c: resume the same conversation while its owner is exhausted
+$ bin/fm-agy-pool.sh --conversation conv-live-1 --account piyushjiit \
+    -p "resume again" --model gemini-4-neon-medium
+
+[fm-agy-pool] Conversation 'conv-live-1' belongs to 'piyushk'; overriding requested account 'piyushjiit'.
+[fm-agy-pool] ERROR: Requested user 'piyushk' is marked exhausted for model 'gemini-4-neon-medium'.
+[fm-agy-pool] ERROR: account 'piyushk' owns conversation 'conv-live-1' but cannot take the call now; not running it on another account, which would drop the conversation and its cache.
+
+EXIT=75
+
+agy invocations before the refused resume: 2; after: 2
+So no other account replays the conversation when its owner cannot take the call.
+
+--- every agy invocation in this scenario, in order ---
+invocation user=piyushk
+  arg=[-p]
+  arg=[resume the review]
+  arg=[--model]
+  arg=[gemini-4-neon-medium]
+  arg=[--conversation]
+  arg=[conv-live-1]
+stdin_bytes=0
+invocation user=piyushk
+  arg=[-p]
+  arg=[burn owner quota]
+  arg=[--model]
+  arg=[gemini-4-neon-medium]
+stdin_bytes=0
+
+--- quota window state ---
+piyushk.state.json: {"user":"piyushk","window_start":1795547882,"reset_at":1795559402,"used_sec":2,"budget_sec":5400,"exhausted":true}
+
+--- conversation owner record ---
+conv-live-1	piyushk

@@ -1,0 +1,34 @@
+# Scenario: a captain's gate answer for a builder=pool Gemini task reaches no-mistakes,
+# never the worker pane/inbox; mixing a gate and a non-gate key is refused
+# Product: real bin/fm-send.sh -> bin/fm-deliver.sh respond -> lab no-mistakes CLI
+
+## mixing a gate key and a non-gate key in one send is refused
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-sub-check/lab-G3/send
+error: cannot mix gate-* and non-gate --resolve-key values in one send for builder=pool task tpool
+RC=1
+-- no-mistakes calls after refusal: 0
+
+-- status unchanged after refusal:
+done [at=100]: committed 5c328c1c8a6e650033b1bbdeb22a550c645bd3d3
+needs-decision [at=101] [key=gate-review]: approve or fix
+needs-decision [at=102] [key=api-shape]: pick REST or RPC
+
+## captain answers an open gate key on a builder=pool task
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-sub-check/lab-G3/send
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+RC=0
+-- no-mistakes calls:
+axi respond --action approve
+axi status
+axi status
+axi sync
+-- status:
+done [at=100]: committed 5c328c1c8a6e650033b1bbdeb22a550c645bd3d3
+needs-decision [at=101] [key=gate-review]: approve or fix
+needs-decision [at=102] [key=api-shape]: pick REST or RPC
+resolved [at=1795550429] [key=gate-review]: firstmate responded approve
+done [at=1795550429]: pushed 5c328c1c8a6e650033b1bbdeb22a550c645bd3d3
+-- worker inbox created:
+no
+-- tmux stub touched:
+(none)

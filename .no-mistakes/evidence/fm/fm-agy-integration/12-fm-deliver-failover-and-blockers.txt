@@ -1,0 +1,126 @@
+# Scenario: no-mistakes delivery through firstmate for Gemini pool tasks
+# Product: real bin/fm-deliver.sh from the run worktree. The no-mistakes CLI and its
+# step logs (review.log/push.log/test.log) are lab fixtures that return recorded run
+# status, so no real no-mistakes run or real Gemini quota is spent.
+
+########## A: respond on a fresh task (no drive.log) must not print a bash redirection error
+### A-before: the same code without the up-front drive.log creation
+/tmp/fm-sub-check/before/fm-deliver-before.sh: line 1116: /tmp/fm-sub-check/lab-Abefore/live_nodrive/data/live_nodrive/drive.log: No such file or directory
+RC=0
+BASH_REDIRECTION_ERROR=yes
+drive.log created: yes
+### A-after: the change under validation
+## real fm-deliver respond on a fresh task with no drive.log
+
+RC=0
+BASH_REDIRECTION_ERROR=no
+drive.log created: yes
+-- no-mistakes calls:
+axi respond | review= acct_r= fix= acct_f=
+axi status | review= acct_r= fix= acct_f=
+axi sync | review= acct_r= fix= acct_f=
+-- respond drive log:
+[fm-deliver] Running respond in /tmp/fm-sub-check/lab-Aafter/live_nodrive/wt: no-mistakes axi respond --action approve
+[fm-deliver] Outcome 'passed'; running sync command: no-mistakes axi sync
+
+########## B: pool's own quota notice (explicit account, no pool rotation) -> role fallback restart
+## explicit-account quota notice with no rotation -> fail over to the fallback review model
+[fm-deliver] Running axi run in foreground...
+RC=0
+-- no-mistakes calls:
+axi run | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi status | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi abort | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi status | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi sync | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi run | review=gemini-3.8-flash-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi status | review=gemini-3.8-flash-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi sync | review=gemini-3.8-flash-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+-- status:
+done [at=1000]: committed 49e82932bdc60fc76a4ffdc5f024bbbd3be3a4eb
+working [at=1795550411]: review model gemini-4-neon-high exhausted; failing over to gemini-3.8-flash-high
+done [at=1795550411]: pushed 49e82932bdc60fc76a4ffdc5f024bbbd3be3a4eb
+-- role record:
+review_model=gemini-3.8-flash-high
+review_account=
+review_from_config=1
+review_fallback=gemini-4-neon-high,gemini-3.8-flash-high
+fix_model=gemini-4-hydrogen-high
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-high
+-- drive log tail:
+[fm-deliver] Quota exhausted for review model 'gemini-4-neon-high'; restarting on same head with fallback 'gemini-3.8-flash-high'
+[fm-deliver] Restarting axi run in /tmp/fm-sub-check/lab-B2/live_notice/wt with review=gemini-3.8-flash-high
+[fm-deliver] Outcome 'passed'; running sync command: no-mistakes axi sync
+
+########## C: stale quota notice after a successful rotation + a real push-auth failure
+## stale quota notice + recovered rotation + real push-auth failure
+[fm-deliver] Running axi run in foreground...
+RC=0
+-- no-mistakes calls:
+axi run | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi status | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+-- status:
+done [at=1000]: committed 239c5acda5eb76e97b8770d23b6b93485fbc75f7
+blocked [at=1795550412]: push authentication failed; fix the git credentials for the no-mistakes push (bin/fm-agy-pool-setup.sh check), then retry with FM_DELIVER_RETRY=1; run not restarted
+-- blocker record:
+head=239c5acda5eb76e97b8770d23b6b93485fbc75f7
+kind=push-auth
+-- rerun on same head:
+error: the last run on this head stopped on a non-code failure (push-auth); fix the cause and rerun with FM_DELIVER_RETRY=1 rather than restarting from scratch
+-- FM_DELIVER_RETRY=1 rerun:
+[fm-deliver] Running axi run in foreground...
+retry_rc=0
+-- calls after retry:
+2
+
+########## D: the fix role's nm-agy line survives the rotation trim -> fix advances
+## the fix role's own nm-agy line survives a rotation (fix advances, review does not)
+[fm-deliver] Running axi run in foreground...
+RC=0
+-- no-mistakes calls:
+axi run | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi status | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi abort | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi status | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi sync | review=gemini-4-neon-high acct_r= fix=gemini-4-hydrogen-high acct_f=
+axi run | review=gemini-4-neon-high acct_r= fix=gemini-3.8-flash-medium acct_f=
+axi status | review=gemini-4-neon-high acct_r= fix=gemini-3.8-flash-medium acct_f=
+axi sync | review=gemini-4-neon-high acct_r= fix=gemini-3.8-flash-medium acct_f=
+-- role record:
+review_model=gemini-4-neon-high
+review_account=
+review_from_config=1
+review_fallback=gemini-4-neon-high,gemini-3.8-flash-high
+fix_model=gemini-3.8-flash-medium
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-high,gemini-3.8-flash-medium
+-- drive log tail:
+[fm-deliver] Quota exhausted for fix model 'gemini-4-hydrogen-high'; restarting on same head with fallback 'gemini-3.8-flash-medium'
+[fm-deliver] Restarting axi run in /tmp/fm-sub-check/lab-D2/live_rolekeep/wt with fix=gemini-3.8-flash-medium
+[fm-deliver] Outcome 'passed'; running sync command: no-mistakes axi sync
+
+########## E: project test output that looks like a push-auth failure is not a blocker
+## project test output that looks like a push-auth failure
+[fm-deliver] Running axi run in foreground...
+RC=0
+-- status:
+done [at=1000]: committed 9858ac0d61cfac2aa01eb74e219099bf49133873
+blocked [at=1795550415]: outcome failed
+-- blocker record:
+(none)
+
+########## F: a non-Gemini (claude) task keeps the old no-mistakes path
+## a claude task keeps the old no-mistakes path
+[fm-deliver] Running axi run in foreground...
+RC=0
+-- no-mistakes calls:
+axi run | review= acct_r= fix= acct_f=
+axi status | review= acct_r= fix= acct_f=
+axi sync | review= acct_r= fix= acct_f=
+-- role record:
+(no role record)
+-- status:
+done [at=1795550415]: pushed 59c3cfae48ab9ffed2ada49422830c0cea73f8fd

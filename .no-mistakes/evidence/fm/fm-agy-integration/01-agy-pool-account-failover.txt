@@ -1,0 +1,45 @@
+# Scenario: Gemini account fallback (first account -> second account on quota)
+# Product: ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-agy-pool.sh (real), run as the operator against the real
+# sudo/pool accounts from a disposable lab pool config. AGY_BIN is a lab stub that
+# stands in for the Gemini CLI, records every invocation, and fails with a real
+# agy quota line for the first account.
+#
+# pool.conf: piyushjiit, piyushk
+# models.conf: *neon* piyushjiit,piyushk (order = failover order)
+
+$ POOL_CONF=<lab> MODELS_CONF=<lab> FM_AGY_STATE_DIR=<fresh> AGY_BIN=<lab stub> \
+    bin/fm-agy-pool.sh -p "hello from lab" --model gemini-4-neon-medium
+
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushjiit' (100% remaining, floor=15%)...
+error: Individual quota reached. Resets in 3h12m0s.
+[fm-agy-pool] Account 'piyushjiit' hit quota exhaustion; marked exhausted until 1795559400.
+[fm-agy-pool] Rotating away from exhausted account 'piyushjiit' to next eligible account...
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushk' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-live-1","result":"ok from piyushk"}
+
+EXIT=0
+
+--- what agy actually received, in order ---
+invocation user=piyushjiit
+  arg=[-p]
+  arg=[hello from lab]
+  arg=[--model]
+  arg=[gemini-4-neon-medium]
+stdin_bytes=0
+invocation user=piyushk
+  arg=[-p]
+  arg=[hello from lab]
+  arg=[--model]
+  arg=[gemini-4-neon-medium]
+stdin_bytes=0
+
+--- quota window state written by the pool ---
+piyushjiit.state.json: {"user":"piyushjiit","window_start":1795547880,"reset_at":1795559400,"used_sec":1,"budget_sec":5400,"exhausted":true}
+piyushk.state.json: {"user":"piyushk","window_start":1795547881,"reset_at":1795565881,"used_sec":1,"budget_sec":5400,"exhausted":false}
+
+--- pool usage log (per-call account, model, exit, quota flag) ---
+{"ts":"2026-11-24T13:18:00-06:00","provider":"google-ai-pro-direct","user":"piyushjiit","model":"gemini-4-neon-medium","task":"repo","duration_sec":1,"exit_code":1,"est_remaining_pct":0,"quota_hit":true}
+{"ts":"2026-11-24T13:18:01-06:00","provider":"google-ai-pro-direct","user":"piyushk","model":"gemini-4-neon-medium","task":"repo","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+
+--- conversation owner record ---
+conv-live-1	piyushk

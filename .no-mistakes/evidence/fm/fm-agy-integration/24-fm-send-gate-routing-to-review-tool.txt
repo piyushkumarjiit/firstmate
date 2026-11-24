@@ -1,0 +1,28 @@
+# Scenario: an operator answers a no-mistakes gate on a pool-built Gemini task,
+# and the answer reaches the review tool instead of the worker's chat inbox.
+# Product: the real bin/fm-send.sh --resolve-key against a marked lab home and a
+# no-mistakes CLI stand-in; bin/fm-deliver.sh respond is the real path it takes.
+
+$ bin/fm-send.sh tpool --resolve-key gate-review "fix findings=f1 ignore=f2"
+-- exit: 0
+-- no-mistakes calls made:
+axi respond --action fix --findings f1 --ignore f2
+axi status
+axi status
+axi sync
+-- status after the answer:
+done [at=100]: committed 9159af720c462176cda2e12f98e5c3a65d937a8f
+needs-decision [at=101] [key=gate-review]: f1, f2
+resolved [at=1795557085] [key=gate-review]: firstmate responded fix findings=f1 ignore=f2
+done [at=1795557086]: pushed 9159af720c462176cda2e12f98e5c3a65d937a8f
+-- worker chat inbox created: no
+-- pane doorbell keys typed: none
+-- role record used for the run:
+review_model=gemini-4-neon-high
+review_account=
+review_from_config=1
+review_fallback=gemini-4-neon-high
+fix_model=gemini-4-hydrogen-high
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-high

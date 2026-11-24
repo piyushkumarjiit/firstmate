@@ -1,0 +1,68 @@
+== session: fm-lab-agytab-1201568-16347
+client:
+  version: 0.9.4
+  channel: stable
+  protocol: 22
+  endpoint_protocol_generation: 1
+
+server:
+  status: running
+  version: 0.9.4
+  endpoint_compatible: yes
+  private_protocol: 22
+  private_protocol_compatible: yes
+  socket: ~/.config/herdr/sessions/fm-lab-agytab-1201568-16347/herdr.sock
+
+update:
+  restart_needed: no
+  server_binary_stale: no
+== workspace: w1
+{"workspace_id":"w1","label":"fm-agy-monitor"}
+== mid-run tab list
+{"id":"cli:tab:list","result":{"tabs":[{"agent_status":"unknown","focused":true,"label":"1","number":1,"pane_count":1,"tab_id":"w1:t1","workspace_id":"w1"},{"agent_status":"working","focused":false,"label":"review: live-herdr (gemini-4-hydrogen-high)","number":2,"pane_count":1,"tab_id":"w1:t2","workspace_id":"w1"}],"type":"tab_list"}}
+== nm-review-tab record: w1:p2 w1:t2
+== nm-active-tab record: w1:p2 review:gemini-4-hydrogen-high
+== mid-run pane text (read-only view of the pooled agy run):
+review (gemini-4-hydrogen-high) for live-herdr (read-only view; closes at cleanup)
+[1] 1227732
+[nm-agy] 2026-11-24T19:14:11Z cwd=/tmp/fm-lab-pool.iTESZf/repo role=review model=gemini-4-hydrogen-high account=piyushj
+iit
+antigravity: review started on piyushjiit
+antigravity: reviewing packet 1/3 on piyushjiit
+== nm-agy exit: 0
+[nm-agy] 2026-11-24T19:14:11Z cwd=/tmp/fm-lab-pool.iTESZf/repo role=review model=gemini-4-hydrogen-high account=piyushjiit
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'piyushjiit' (100% remaining, floor=15%)...
+antigravity: review started on piyushjiit
+antigravity: reviewing packet 1/3 on piyushjiit
+antigravity: reviewing packet 2/3 on piyushjiit
+antigravity: reviewing packet 3/3 on piyushjiit
+antigravity: review finished on piyushjiit
+== after-run tab list
+{"id":"cli:tab:list","result":{"tabs":[{"agent_status":"unknown","focused":true,"label":"1","number":1,"pane_count":1,"tab_id":"w1:t1","workspace_id":"w1"},{"agent_status":"done","focused":false,"label":"review: live-herdr (gemini-4-hydrogen-high)","number":2,"pane_count":1,"tab_id":"w1:t2","workspace_id":"w1"}],"type":"tab_list"}}
+== after-run pane text
+review (gemini-4-hydrogen-high) for live-herdr (read-only view; closes at cleanup)
+[1] 1227732
+[nm-agy] 2026-11-24T19:14:11Z cwd=/tmp/fm-lab-pool.iTESZf/repo role=review model=gemini-4-hydrogen-high account=piyushj
+iit
+antigravity: review started on piyushjiit
+antigravity: reviewing packet 1/3 on piyushjiit
+antigravity: reviewing packet 2/3 on piyushjiit
+antigravity: reviewing packet 3/3 on piyushjiit
+antigravity: review finished on piyushjiit
+== after-run pane ANSI capture saved to ~/.no-mistakes/evidence/01M874CEC6G9CP98DNKVPDEGPD/07-herdr-monitor-pane.ansi.txt
+bytes=455
+== pane agent record
+{"id":"cli:pane:get","result":{"pane":{"agent":"review:gemini-4-hydrogen-high","agent_status":"done","cwd":"/tmp/fm-lab-pool.iTESZf/hhome/data/live-herdr","focused":false,"foreground_cwd":"/tmp/fm-lab-pool.iTESZf/hhome/data/live-herdr","pane_id":"w1:p2","revision":0,"scroll":{"max_offset_from_bottom":0,"offset_from_bottom":0,"viewport_rows":40},"tab_id":"w1:t2","terminal_id":"term_6610a83f145c12","workspace_id":"w1"},"type":"pane_info"}}
+== task run log
+[nm-agy] 2026-11-24T19:14:11Z cwd=/tmp/fm-lab-pool.iTESZf/repo role=review model=gemini-4-hydrogen-high account=piyushjiit
+antigravity: review started on piyushjiit
+antigravity: reviewing packet 1/3 on piyushjiit
+antigravity: reviewing packet 2/3 on piyushjiit
+antigravity: reviewing packet 3/3 on piyushjiit
+antigravity: review finished on piyushjiit
+TEARDOWN_DONE rc=0
+
+
+# Note: the pane above is a real Herdr lab pane (session fm-lab-agytab-1201568-16347) whose tab was
+# created by bin/agy-pool/nm-agy; 07-herdr-monitor-pane.ansi.txt is the same
+# pane read with --format ansi (the rendered surface Herdr shows the operator).

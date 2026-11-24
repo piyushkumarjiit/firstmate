@@ -1,0 +1,4 @@
+review (gemini-4-hydrogen-high) for live-task (read-only view; closes at cleanup)
+[1] 1861836
+[nm-agy] 2026-11-24T20:01:31Z cwd=/tmp/fm-sub-check/nmrepo role=review model=gemini-4-hydrogen-high account=piyushjiit
+{"event":"result","conversation_id":"conv-herdr-ev","result":"ok from piyushjiit"}

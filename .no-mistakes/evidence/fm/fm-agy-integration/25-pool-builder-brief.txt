@@ -1,0 +1,24 @@
+# Scenario: scaffolding the pooled-builder brief changes the worker's delivered
+# definition of done: build + commit on the branch, never run no-mistakes, never
+# push, never open a PR; firstmate owns delivery.
+# Product: the real bin/fm-brief.sh --pool-build against a marked lab home.
+
+$ FM_HOME=<lab home> bin/fm-brief.sh poolb <repo> --mode no-mistakes --pool-build   (exit 0)
+-- Delivery contract line:
+30:Delivery contract: mode=no-mistakes builder=pool
+-- Definition of done:
+# Definition of done
+Delivery contract: mode=no-mistakes builder=pool
+Ship branch: fm/poolb
+This task is built through the account pool.
+The task is complete only when committed on your branch `fm/poolb`.
+Before committing, run the project's own linters and tests that can run locally (such as `make check`, `just check`, lint, or unit tests) and fix every issue they report, then commit.
+If a check cannot run locally, state which in the done line.
+Leave the worktree clean and commit all changes.
+When it is implemented and committed, append `done [at=<epoch>]: committed <sha>` to the status file and stop, where <sha> is your latest commit SHA.
+Do NOT run /no-mistakes, do NOT push, and do NOT open a PR.
+After the done line, stop; firstmate exits your session to free the account slot.
+
+-- guard: --pool-build with another mode refuses:
+$ bin/fm-brief.sh x proj --mode local-only --pool-build
+error: --pool-build requires --mode no-mistakes

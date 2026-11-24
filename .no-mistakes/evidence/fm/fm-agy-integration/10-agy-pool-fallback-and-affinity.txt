@@ -1,0 +1,102 @@
+# Scenario: Gemini account fallback in firstmate's pool (lab pool config, real sudo to
+# pool accounts, lab stand-in for the Antigravity CLI that emits a real quota error)
+# Product: ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/agy-pool/agy (symlink to bin/fm-agy-pool.sh)
+# pool.conf order: piyushjiit, piyushk   models.conf: *neon*/*hydrogen* -> both, in that order
+
+## 1: first account hits quota -> the run continues on the second account
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushjiit' (100% remaining, floor=15%)...
+error: Individual quota reached. Resets in 3h12m0s.
+[fm-agy-pool] Account 'piyushjiit' hit quota exhaustion; marked exhausted until 1795561906.
+[fm-agy-pool] Rotating away from exhausted account 'piyushjiit' to next eligible account...
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushk' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-lab-1","result":"ok from piyushk"}
+EXIT=0
+--- agy invocations:
+invocation user=piyushjiit
+  arg=[-p]
+  arg=[build the task]
+  arg=[--model]
+  arg=[gemini-4-neon-high]
+stdin_bytes=0
+invocation user=piyushk
+  arg=[-p]
+  arg=[build the task]
+  arg=[--model]
+  arg=[gemini-4-neon-high]
+stdin_bytes=0
+--- conversation owner record:
+conv-lab-1	piyushk
+
+## 2: both accounts exhausted -> a clear all-exhausted refusal (exit 75), no third account, no fabrication
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushjiit' (100% remaining, floor=15%)...
+error: Individual quota reached. Resets in 3h12m0s.
+[fm-agy-pool] Account 'piyushjiit' hit quota exhaustion; marked exhausted until 1795561906.
+[fm-agy-pool] Rotating away from exhausted account 'piyushjiit' to next eligible account...
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushk' (100% remaining, floor=15%)...
+error: RESOURCE_EXHAUSTED
+[fm-agy-pool] Account 'piyushk' hit quota exhaustion; marked exhausted until 0.
+[fm-agy-pool] Rotating away from exhausted account 'piyushk' to next eligible account...
+[fm-agy-pool] ERROR: All eligible accounts for model 'gemini-4-neon-high' are exhausted.
+EXIT=75
+--- agy invocations:
+invocation user=piyushjiit
+  arg=[-p]
+  arg=[build the task]
+  arg=[--model]
+  arg=[gemini-4-neon-high]
+stdin_bytes=0
+invocation user=piyushk
+  arg=[-p]
+  arg=[build the task]
+  arg=[--model]
+  arg=[gemini-4-neon-high]
+stdin_bytes=0
+--- conversation owner record:
+
+## 3: a flash model with no models.conf rule is never routed to the reserved Hydrogen/Neon accounts
+[fm-agy-pool] Routing model 'gemini-3.8-flash-high' to 'deepak' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-lab-1","result":"ok from deepak"}
+EXIT=0
+--- agy invocations:
+invocation user=deepak
+
+## 4: a resumed conversation stays on the account that owns it (cache preservation)
+### 4a: create the conversation on the first eligible account
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushjiit' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-lab-9","result":"ok from piyushjiit"}
+EXIT=0
+### 4b: burn that account's quota (the pool rotates for the un-pinned call)
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushjiit' (100% remaining, floor=15%)...
+error: Individual quota reached. Resets in 3h12m0s.
+[fm-agy-pool] Account 'piyushjiit' hit quota exhaustion; marked exhausted until 1795561908.
+[fm-agy-pool] Rotating away from exhausted account 'piyushjiit' to next eligible account...
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushk' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-lab-1","result":"ok from piyushk"}
+EXIT=0
+### 4c: resume the conversation asking for the other account
+[fm-agy-pool] Conversation 'conv-lab-9' belongs to 'piyushjiit'; overriding requested account 'piyushk'.
+[fm-agy-pool] ERROR: Requested user 'piyushjiit' is marked exhausted for model 'gemini-4-neon-high'.
+[fm-agy-pool] ERROR: account 'piyushjiit' owns conversation 'conv-lab-9' but cannot take the call now; not running it on another account, which would drop the conversation and its cache.
+EXIT=75
+--- agy invocations:
+invocation user=piyushjiit
+  arg=[-p]
+  arg=[review pass one]
+  arg=[--model]
+  arg=[gemini-4-neon-high]
+stdin_bytes=0
+invocation user=piyushjiit
+  arg=[-p]
+  arg=[burn]
+  arg=[--model]
+  arg=[gemini-4-neon-high]
+stdin_bytes=0
+invocation user=piyushk
+  arg=[-p]
+  arg=[burn]
+  arg=[--model]
+  arg=[gemini-4-neon-high]
+stdin_bytes=0
+--- conversation owner record:
+conv-lab-9	piyushjiit
+conv-lab-1	piyushk

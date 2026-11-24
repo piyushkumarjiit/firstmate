@@ -1,0 +1,46 @@
+# Scenario: a pooled Gemini review run is visible and monitorable in a real
+# Herdr session, with its role/model on the tab and the run log streaming there.
+# Product: bin/agy-pool/nm-agy's Herdr visibility path against a disposable
+# fm-lab-* Herdr session created only through bin/fm-herdr-lab.sh (never the
+# fleet `default` session). The agy CLI is a lab stand-in; the Herdr server,
+# session, tab, pane, and agent-status reporting are the real product.
+
+session=fm-lab-agymon-3567795-13036   (bin/fm-herdr-lab.sh name agymon)
+$ bin/fm-herdr-lab.sh provision "$session"
+{"server":{"status":"running","running":true,"version":"0.9.4","protocol":22,...}}
+
+## workspace for the task
+$ bin/fm-herdr-lab.sh run "$session" workspace create --label fm-agy-monitor
+{"workspace_id":"w1","label":"fm-agy-monitor","tab_count":1,...}
+
+## the pooled review call (real nm-agy, lab agy stand-in)
+$ FM_HOME=<lab home> FM_TASK_ID=live-task <nm-agy> --print= --input-format stream-json \
+    --output-format stream-json < review.ndjson
+[nm-agy] 2026-11-24T21:55:28Z cwd=/tmp/fm-lab-round3/s8/wt role=review model=gemini-4-hydrogen-high account=piyushjiit
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'piyushjiit' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-herdr-lab","result":"ok from piyushjiit"}
+nm_agy_exit=0
+
+## tabs in the lab session after the run
+w1:t1 1 unknown
+w1:t2 review: live-task (gemini-4-hydrogen-high) done
+
+## pane list (real Herdr state)
+{"agent":"review:gemini-4-hydrogen-high","agent_status":"done",
+ "cwd":"/tmp/fm-lab-round3/s8home/data/live-task",
+ "pane_id":"w1:p2","tab_id":"w1:t2","workspace_id":"w1"}
+
+## task's active-tab record written by nm-agy
+w1:p2	review:gemini-4-hydrogen-high
+
+## what the operator sees in that pane (read-only view of the run log)
+$ bin/fm-herdr-lab.sh run "$session" pane read w1:p2 --lines 20
+review (gemini-4-hydrogen-high) for live-task (read-only view; closes at cleanup)
+[nm-agy] 2026-11-24T21:55:28Z cwd=/tmp/fm-lab-round3/s8/wt role=review model=gemini-4-hydrogen-high account=piyushjiit
+{"event":"result","conversation_id":"conv-herdr-lab","result":"ok from piyushjiit"}
+
+## teardown in the same turn
+$ bin/fm-herdr-lab.sh stop "$session"; bin/fm-herdr-lab.sh teardown "$session"   (rc=0)
+$ herdr session list
+name                 status   directory
+default              running  ~/.config/herdr      <- the fleet session, untouched

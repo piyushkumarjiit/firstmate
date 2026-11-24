@@ -1,0 +1,53 @@
+# Scenario: review/fix roles from firstmate drive the agy model and account, with a
+# 176 KB review prompt delivered on stdin instead of argv
+# Product: ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/agy-pool/nm-agy -> bin/fm-agy-pool.sh -> lab stub agy
+# Lab task: /tmp/fm-lab-pool.iTESZf/home/state/live-task.nm-roles (written in the shape fm-deliver writes)
+
+review_model=gemini-4-hydrogen-high
+review_account=piyushjiit
+review_from_config=1
+review_fallback=gemini-3.8-flash-high
+fix_model=gemini-4-neon-medium
+fix_account=piyushk
+fix_from_config=1
+fix_fallback=gemini-3.8-flash-medium
+
+## 3a: review call. Caller passes --account deepak --model gemini-3.8-flash-high;
+## firstmate role record must win, and the prompt must go on stdin.
+$ bin/agy-pool/nm-agy --print="" --input-format stream-json --output-format stream-json \
+    --account deepak --model gemini-3.8-flash-high < big-prompt.ndjson   # 176142 bytes
+
+[nm-agy] 2026-11-24T19:09:12Z cwd=/tmp/fm-lab-pool.iTESZf/repo role=review model=gemini-4-hydrogen-high account=piyushjiit
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'piyushjiit' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-live-1","result":"ok from piyushjiit"}
+
+## 3b: fix call (no review marker in the prompt)
+$ echo ... | bin/agy-pool/nm-agy --print="" --input-format stream-json --output-format stream-json
+
+[nm-agy] 2026-11-24T19:09:13Z cwd=/tmp/fm-lab-pool.iTESZf/repo role=fix model=gemini-4-neon-medium account=piyushk
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushk' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"conv-live-1","result":"ok from piyushk"}
+
+--- what agy actually received (argv + stdin digest/bytes) ---
+invocation user=piyushjiit
+  arg=[--print=]
+  arg=[--input-format]
+  arg=[stream-json]
+  arg=[--output-format]
+  arg=[stream-json]
+  arg=[--model]
+  arg=[gemini-4-hydrogen-high]
+stdin_bytes=176141 sha_prefix=f11f670ded6d
+invocation user=piyushk
+  arg=[--print=]
+  arg=[--input-format]
+  arg=[stream-json]
+  arg=[--output-format]
+  arg=[stream-json]
+  arg=[--model]
+  arg=[gemini-4-neon-medium]
+stdin_bytes=106 sha_prefix=960a4f351c1b
+
+--- nm-agy role log ---
+[nm-agy] 2026-11-24T19:09:12Z cwd=/tmp/fm-lab-pool.iTESZf/repo role=review model=gemini-4-hydrogen-high account=piyushjiit
+[nm-agy] 2026-11-24T19:09:13Z cwd=/tmp/fm-lab-pool.iTESZf/repo role=fix model=gemini-4-neon-medium account=piyushk

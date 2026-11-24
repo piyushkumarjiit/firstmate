@@ -1,0 +1,30 @@
+# Scenario: bin/fm-control.sh interrupt on an agy task reports the cancellation
+# claim from agy's rendered row, confirms nothing when that row never appears,
+# and never counts a row that was already on screen before the interrupt.
+# Product: the real bin/fm-control.sh over a real tmux server on a private lab
+# socket, with the real tmux backend classifier. The pane runs a lab stand-in for
+# the Antigravity TUI (a copy of bash named `agy`, so the backend's process
+# classification sees agy) that renders agy's verified cancellation row on
+# Escape during a turn; the real agy TUI was not driven, to avoid writing trust
+# settings into the operator's agy configuration.
+
+## A: turn in progress, Escape renders the Interrupted row -> cancel=confirmed
+$ bin/fm-control.sh labagy interrupt      (TMUX_TMPDIR=<private lab socket>, FM_HOME=<marked lab home>)
+-- stdout
+interrupt-delivered labagy harness=agy backend=tmux verified=agent-alive cancel=confirmed
+-- stderr
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab-round3/s7home
+-- command:
+   env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS TMUX_TMPDIR=<lab> FM_HOME=<lab home> bin/fm-control.sh labagy interrupt
+
+## B: Escape renders no row -> unconfirmed (no false claim)
+interrupt-delivered labagy harness=agy backend=tmux verified=agent-alive cancel=unconfirmed
+
+## C: one Interrupted row already on screen before the interrupt, Escape adds none
+baseline rows=1 -> interrupt-delivered labagy harness=agy backend=tmux verified=agent-alive cancel=unconfirmed (rows after=1)
+
+## the agy ack row the stand-in renders (agy 1.5.14 wording)
+  ⎿ Interrupted · What should Antigravity CLI do instead?
+
+## adapter contract the control plane reads
+fm_control_interrupt_key agy = Escape; repeat = 1; clear key = none; ack source = agy-rendered-row

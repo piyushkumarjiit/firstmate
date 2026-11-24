@@ -1,0 +1,81 @@
+# Scenario: one setup command finds, reports and fixes the Gemini pool's operator-side grants
+# Product: real bin/fm-agy-pool-setup.sh over a disposable lab home. ACLs are granted for
+# real on the lab directories; the per-account git-credential step prints its command so no
+# real pool-account git config is read or written. models.conf order is the failover order.
+
+# Scenario: one setup command finds and fixes the Gemini pool's operator-side grants
+# Product: ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-agy-pool-setup.sh over a disposable lab home.
+# ACLs are granted for real on the lab directories (as their owner); the per-account
+# git-credential step is left to its printed command so no real pool account config is
+# touched. models.conf order is the account failover order.
+
+########## check (before)
+fm-agy-pool-setup: mode=check operator=agentic pool=piyushjiit piyushk
+MISSING ACL (access + default) for piyushjiit on /tmp/fm-sub-check/setuplab-ev/nmb/worktrees
+MISSING ACL (access + default) for piyushk on /tmp/fm-sub-check/setuplab-ev/nmb/worktrees
+MISSING traverse ACL for piyushjiit on /tmp/fm-sub-check/setuplab-ev/nmb
+MISSING traverse ACL for piyushk on /tmp/fm-sub-check/setuplab-ev/nmb
+MISSING gh config readable by piyushjiit
+MISSING git HTTPS credential helper for piyushjiit (cannot inspect without sudo; apply prints the command)
+MISSING gh config readable by piyushk
+MISSING git HTTPS credential helper for piyushk (cannot inspect without sudo; apply prints the command)
+ok      '*neon*' -> piyushjiit piyushk (order is the quota failover order)
+ok      '*hydrogen*' -> piyushjiit piyushk (order is the quota failover order)
+ok      usage log not created yet (pool writes it on first run)
+ok      pool state readable: /tmp/fm-sub-check/setuplab-ev/state
+ok      pool run logs readable
+ok      antigravity launcher points at nm-agy
+ok      review_agents use antigravity
+        note: nm-agy picks review/fix models from the per-task role record, not from this file
+info    firstmate's own repo sets disable_project_settings, which no-mistakes refuses for antigravity gate agents: keep Gemini gates off the firstmate repo
+result: 8 item(s) need attention
+
+########## apply
+fm-agy-pool-setup: mode=apply operator=agentic pool=piyushjiit piyushk
+fixed   ACL (access + default) for piyushjiit on /tmp/fm-sub-check/setuplab-ev/nmb/worktrees
+fixed   ACL (access + default) for piyushk on /tmp/fm-sub-check/setuplab-ev/nmb/worktrees
+fixed   traverse ACL for piyushjiit on /tmp/fm-sub-check/setuplab-ev/nmb
+fixed   traverse ACL for piyushk on /tmp/fm-sub-check/setuplab-ev/nmb
+fixed   gh config readable by piyushjiit
+ROOT    cannot configure git credentials for piyushjiit
+        run: sudo -u piyushjiit git config --global --replace-all 'credential.https://github.com.helper' '!GH_CONFIG_DIR=/tmp/fm-sub-check/setuplab-ev/ghconf /usr/bin/gh auth git-credential'
+fixed   gh config readable by piyushk
+ROOT    cannot configure git credentials for piyushk
+        run: sudo -u piyushk git config --global --replace-all 'credential.https://github.com.helper' '!GH_CONFIG_DIR=/tmp/fm-sub-check/setuplab-ev/ghconf /usr/bin/gh auth git-credential'
+ok      '*neon*' -> piyushjiit piyushk (order is the quota failover order)
+ok      '*hydrogen*' -> piyushjiit piyushk (order is the quota failover order)
+ok      usage log not created yet (pool writes it on first run)
+ok      pool state readable: /tmp/fm-sub-check/setuplab-ev/state
+ok      pool run logs readable
+ok      antigravity launcher points at nm-agy
+ok      review_agents use antigravity
+        note: nm-agy picks review/fix models from the per-task role record, not from this file
+info    firstmate's own repo sets disable_project_settings, which no-mistakes refuses for antigravity gate agents: keep Gemini gates off the firstmate repo
+result: 2 item(s) need attention
+
+########## check (after apply)
+fm-agy-pool-setup: mode=check operator=agentic pool=piyushjiit piyushk
+ok      ACL (access + default) for piyushjiit on /tmp/fm-sub-check/setuplab-ev/nmb/worktrees
+ok      ACL (access + default) for piyushk on /tmp/fm-sub-check/setuplab-ev/nmb/worktrees
+ok      traverse ACL for piyushjiit on /tmp/fm-sub-check/setuplab-ev/nmb
+ok      traverse ACL for piyushk on /tmp/fm-sub-check/setuplab-ev/nmb
+ok      gh config readable by piyushjiit
+MISSING git HTTPS credential helper for piyushjiit (cannot inspect without sudo; apply prints the command)
+ok      gh config readable by piyushk
+MISSING git HTTPS credential helper for piyushk (cannot inspect without sudo; apply prints the command)
+ok      '*neon*' -> piyushjiit piyushk (order is the quota failover order)
+ok      '*hydrogen*' -> piyushjiit piyushk (order is the quota failover order)
+ok      usage log not created yet (pool writes it on first run)
+ok      pool state readable: /tmp/fm-sub-check/setuplab-ev/state
+ok      pool run logs readable
+ok      antigravity launcher points at nm-agy
+ok      review_agents use antigravity
+        note: nm-agy picks review/fix models from the per-task role record, not from this file
+info    firstmate's own repo sets disable_project_settings, which no-mistakes refuses for antigravity gate agents: keep Gemini gates off the firstmate repo
+result: 2 item(s) need attention
+
+########## resulting ACL entries for the pool accounts (lab worktrees dir)
+user:piyushjiit:rwx
+user:piyushk:rwx
+default:user:piyushjiit:rwx
+default:user:piyushk:rwx

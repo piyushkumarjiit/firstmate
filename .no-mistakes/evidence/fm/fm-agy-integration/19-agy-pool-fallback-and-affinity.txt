@@ -1,0 +1,68 @@
+# Scenario: Gemini account fallback (Neon first account -> second account) and
+# conversation affinity (a resumed conversation stays on the account that owns
+# it, and is refused rather than silently moved when that account cannot run).
+# Product: the real bin/fm-agy-pool.sh, executed by the operator against the
+# real sudo pool accounts from /etc/firstmate/gpro-pool.conf-equivalent lab
+# config (piyushjiit, piyushk). AGY_BIN is a lab stand-in for the Antigravity
+# CLI that records the invocation it received and exits with agy's real quota
+# line for the named account; no Gemini quota is spent.
+#
+# pool.conf: piyushjiit, piyushk
+# models.conf: *neon* piyushjiit,piyushk (order = failover order)
+
+## 1. quota on the first account hands the same call to the second
+$ POOL_CONF=<lab> MODELS_CONF=<lab> AGY_BIN=<lab agy stand-in> FM_AGY_STATE_DIR=<fresh> \
+  FM_AGY_USAGE_LOG=<lab> bin/fm-agy-pool.sh -p "lab prompt" --model gemini-4-neon-medium
+-- stderr (routing, quota detection, rotation)
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushjiit' (100% remaining, floor=15%)...
+[fm-agy-pool] Account 'piyushjiit' hit quota exhaustion; marked exhausted until 1795564302.
+[fm-agy-pool] Rotating away from exhausted account 'piyushjiit' to next eligible account...
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushk' (100% remaining, floor=15%)...
+-- stdout (the rotated call's result)
+error: Individual quota reached. Resets in 2h3m0s.
+{"event":"result","conversation_id":"conv-lab-round3-1","result":"ok from piyushk"}
+-- what the agy stand-in received, in order
+-- pool quota-window state written
+piyushjiit.state.json: {"user":"piyushjiit","window_start":1795556922,"reset_at":1795564302,"used_sec":1,"budget_sec":5400,"exhausted":true}
+piyushk.state.json: {"user":"piyushk","window_start":1795556923,"reset_at":9999999999,"used_sec":2,"budget_sec":5400,"exhausted":true}
+-- per-call usage telemetry
+{"ts":"2026-11-24T15:48:43-06:00","provider":"google-ai-pro-direct","user":"piyushjiit","model":"gemini-4-neon-medium","task":"01M874CEC6G9CP98DNKVPDEGPD","duration_sec":1,"exit_code":1,"est_remaining_pct":0,"quota_hit":true}
+{"ts":"2026-11-24T15:48:43-06:00","provider":"google-ai-pro-direct","user":"piyushk","model":"gemini-4-neon-medium","task":"01M874CEC6G9CP98DNKVPDEGPD","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-24T15:48:48-06:00","provider":"google-ai-pro-direct","user":"piyushk","model":"gemini-4-neon-medium","task":"01M874CEC6G9CP98DNKVPDEGPD","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+-- conversation owner record
+conv-lab-round3-1	piyushk
+
+## 2. a resumed conversation with an explicitly requested wrong account is pinned to its owner
+$ bin/fm-agy-pool.sh -p "resume it" --model gemini-4-neon-medium --conversation conv-lab-round3-1 --account piyushjiit
+-- stderr
+[fm-agy-pool] Conversation 'conv-lab-round3-1' belongs to 'piyushk'; overriding requested account 'piyushjiit'.
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushk' (100% remaining, floor=15%)...
+-- stdout
+{"event":"result","conversation_id":"conv-lab-round3-1","result":"ok from piyushk"}
+-- invocations
+
+## 3. when the owning account cannot take the call, the pool refuses instead of dropping the cache
+(piyushk marked exhausted, then the same resume with no explicit account)
+[fm-agy-pool] ERROR: Requested user 'piyushk' is marked exhausted for model 'gemini-4-neon-medium'.
+[fm-agy-pool] ERROR: account 'piyushk' owns conversation 'conv-lab-round3-1' but cannot take the call now; not running it on another account, which would drop the conversation and its cache.
+EXIT=75; invocations: 0
+
+## 4. real Antigravity CLI end-to-end through the real pool (no stand-in)
+# The same real bin/fm-agy-pool.sh with the machine's installed agy 1.5.14 and
+# the real /etc/firstmate config: a real Gemini call ran as the pool account and
+# returned agy's answer. (One tiny prompt per model; state/usage kept in the lab.)
+
+$ FM_AGY_STATE_DIR=<lab> FM_AGY_USAGE_LOG=<lab> bin/fm-agy-pool.sh \
+    -p "Reply with the single word ok." --model gemini-4-neon-medium
+-- stderr
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'piyushjiit' (100% remaining, floor=15%)...
+-- stdout
+ok
+
+$ ... --model gemini-3.8-flash   (routed to the general pool account)
+[fm-agy-pool] Routing model 'gemini-3.8-flash' to 'deepak' (100% remaining, floor=15%)...
+jetski: no output produced — a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied. Add an allow-rule under permissions.allow in settings.json (e.g. command(<target>)). Alternatively, re-run with --dangerously-skip-permissions to auto-approve all tools.
+-- real usage telemetry written by the wrapper
+{"ts":"2026-11-24T15:57:30-06:00","provider":"google-ai-pro-direct","user":"deepak","model":"gemini-3.8-flash","task":"","event":"usage_check","gemini_min_pct":61,"reset":"2026-11-24T21:58:44Z","decision":"start"}
+{"ts":"2026-11-24T15:57:39-06:00","provider":"google-ai-pro-direct","user":"deepak","model":"gemini-3.8-flash","task":"01M874CEC6G9CP98DNKVPDEGPD","duration_sec":9,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-24T15:57:56-06:00","provider":"google-ai-pro-direct","user":"piyushjiit","model":"gemini-4-neon-medium","task":"01M874CEC6G9CP98DNKVPDEGPD","duration_sec":9,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}

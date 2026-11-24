@@ -1,0 +1,73 @@
+# Scenario: a captain gate answer for a builder=pool task reaches no-mistakes
+# (fm-deliver respond) instead of the worker pane/inbox, and a mixed gate/non-gate
+# answer is refused
+# Product: ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-send.sh (real) -> bin/fm-deliver.sh respond -> lab no-mistakes stub
+
+########## A: gate answer for a builder=pool task
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /tmp/fm-lab-pool.iTESZf/send/home/.pi/extensions/fm-primary-turnend-guard.ts -e /tmp/fm-lab-pool.iTESZf/send/home/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-deliver.sh: line 1116: /tmp/fm-lab-pool.iTESZf/send/home/data/tpool/drive.log: No such file or directory
+RC=0
+-- no-mistakes calls:
+axi respond --action fix --findings f1 --ignore f2
+axi status
+axi status
+axi sync
+-- status:
+done [at=100]: committed b722710949e360886ab8d6dbc6d1f20a553b86eb
+needs-decision [at=101] [key=gate-review]: f1, f2
+resolved [at=1795547611] [key=gate-review]: firstmate responded fix findings=f1 ignore=f2
+done [at=1795547611]: pushed b722710949e360886ab8d6dbc6d1f20a553b86eb
+-- worker inbox created: no
+-- transport touched: TMUX_TOUCHED display-message -p -t sess:fm-tpool #{pane_tty}
+
+########## B: a non-gate decision still reaches the worker inbox
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+fm-send: doorbell not typed because the agent in sess:fm-tpool has exited; the steer is durably recorded at /tmp/fm-lab-pool.iTESZf/send/home/state/tpool.inbox/001.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane
+RC=0
+-- inbox:
+schema=fm-task-inbox.v1
+at=2026-11-24T19:13:35Z
+body-terminator=1
+--
+use REST
+
+########## C: mixing gate-* and non-gate keys in one send is refused
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --resolve-key 'api-shape': no open decision or blocker with that key in /tmp/fm-lab-pool.iTESZf/send/home/state/tpool.status, and no captain-held task 'api-shape' or 'tpool-decision-api-shape' still open (already closed or mistyped); nothing was sent.
+  open on tpool: gate-fix_review
+  resend, your message preserved:
+    FM_HOME=/tmp/fm-lab-pool.iTESZf/send/home FM_STATE_OVERRIDE=/tmp/fm-lab-pool.iTESZf/send/home/state ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-send.sh tpool --resolve-key gate-fix_review --resolve-key '<key>' approve
+    FM_HOME=/tmp/fm-lab-pool.iTESZf/send/home FM_STATE_OVERRIDE=/tmp/fm-lab-pool.iTESZf/send/home/state ~/.no-mistakes/worktrees/406d2d249c60/01M874CEC6G9CP98DNKVPDEGPD/bin/fm-send.sh tpool approve   # deliver without closing anything
+RC=1
+-- no-mistakes calls after refusal: 0
+
+########## D: a builder=pool task with no recorded pane still answers gate keys
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+RC=0
+-- no-mistakes calls:
+axi respond --action approve
+axi status
+axi status
+axi sync
+-- status tail:
+resolved [at=1795547620] [key=gate-fix_review]: firstmate responded approve
+done [at=1795547621]: pushed b722710949e360886ab8d6dbc6d1f20a553b86eb
+-- transport touched: TMUX_TOUCHED display-message -p -t sess:fm-tpool #{pane_tty}
+TMUX_TOUCHED display-message -p -t sess:fm-tpool #{pane_tty}
+TMUX_TOUCHED list-windows -t sess -F #{window_name}
+TMUX_TOUCHED display-message -p -t sess:fm-tpool #{pane_tty}
+
+## C2: one send naming an open gate key and an open non-gate key
+$ bin/fm-send.sh tpool --resolve-key gate-fix_review --resolve-key api-shape "approve"
+error: cannot mix gate-* and non-gate --resolve-key values in one send for builder=pool task tpool
+MIX_RC=1
+-- no-mistakes calls after refusal: 0
+-- status unchanged:
+needs-decision [at=101] [key=gate-fix_review]: approve or fix
+needs-decision [at=102] [key=api-shape]: pick REST or RPC

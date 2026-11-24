@@ -1,0 +1,82 @@
+# Scenario: a no-mistakes review/fix prompt reaches agy without argv overflow,
+# on the configured role model and account fallback.
+# Product: the real bin/agy-pool/nm-agy + bin/fm-agy-pool.sh, driven the way the
+# stdin-patched no-mistakes calls them (--print= --input-format stream-json
+# --output-format stream-json, prompt on stdin). AGY_BIN is the lab stand-in for
+# the Antigravity CLI; the roles come from state/<task>.nm-roles exactly as
+# bin/fm-deliver.sh writes them.
+
+## input prompts (real size of a no-mistakes review/fix call body)
+179686 s3/review-prompt.ndjson
+179667 s3/fix-prompt.ndjson
+359353 total
+
+## review role: 180 KB review prompt on stdin, no prompt in argv
+$ nm-agy --print= --input-format stream-json --output-format stream-json --model gemini-4-neon-medium < review-prompt.ndjson
+-- stderr (role line + pool routing)
+[nm-agy] 2026-11-24T21:49:03Z cwd=/tmp/fm-lab-round3/s3/wt role=review model=gemini-4-neon-high
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushjiit' (100% remaining, floor=15%)...
+-- stdout
+{"event":"result","conversation_id":"conv-lab-round3-review","result":"ok from piyushjiit"}
+-- what the agy stand-in received (argv lengths + stdin)
+(see invocation block below)
+
+## fix role with the first account out of quota: role line survives the pool rotation
+$ nm-agy --print= --input-format stream-json --output-format stream-json --model gemini-4-neon-medium < fix-prompt.ndjson
+-- stderr
+[nm-agy] 2026-11-24T21:49:10Z cwd=/tmp/fm-lab-round3/s3/wt role=fix model=gemini-4-hydrogen-high
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'piyushjiit' (100% remaining, floor=15%)...
+[fm-agy-pool] Account 'piyushjiit' hit quota exhaustion; marked exhausted until 1795564330.
+[fm-agy-pool] Rotating away from exhausted account 'piyushjiit' to next eligible account...
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'piyushk' (100% remaining, floor=15%)...
+-- stdout
+error: Individual quota reached. Resets in 2h3m0s.
+/tmp/fm-lab-round3/agy-stub: line 14: /tmp/fm-lab-round3/shared/s3-stdin: Permission denied
+{"event":"result","conversation_id":"conv-lab-round3-fix","result":"ok from piyushk"}
+-- invocations (each account receives the full prompt on stdin, argv stays short)
+invocation user=piyushjiit
+  arg_bytes=8 arg=[--print=]
+  arg_bytes=14 arg=[--input-format]
+  arg_bytes=11 arg=[stream-json]
+  arg_bytes=15 arg=[--output-format]
+  arg_bytes=11 arg=[stream-json]
+  arg_bytes=7 arg=[--model]
+  arg_bytes=22 arg=[gemini-4-hydrogen-high]
+stdin_bytes=179667 stdin_file=/tmp/fm-lab-round3/shared/s3-stdin
+invocation user=piyushk
+  arg_bytes=8 arg=[--print=]
+  arg_bytes=14 arg=[--input-format]
+  arg_bytes=11 arg=[stream-json]
+  arg_bytes=15 arg=[--output-format]
+  arg_bytes=11 arg=[stream-json]
+  arg_bytes=7 arg=[--model]
+  arg_bytes=22 arg=[gemini-4-hydrogen-high]
+stdin_bytes=179667 stdin_file=/tmp/fm-lab-round3/shared/s3-stdin
+-- delivered stdin bytes: 179667
+-- role file the roles came from
+review_model=gemini-4-neon-high
+review_account=
+review_from_config=1
+review_fallback=gemini-4-neon-high,gemini-3.8-flash-high
+fix_model=gemini-4-hydrogen-high
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-high
+
+-- review invocation (re-run, same role route, fresh pool window):
+-- review stderr:
+[nm-agy] 2026-11-24T21:56:27Z cwd=/tmp/fm-lab-round3/s3/wt role=review model=gemini-4-neon-high
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushjiit' (100% remaining, floor=15%)...
+
+-- review invocation (re-run, same role route, fresh pool window):
+invocation user=piyushjiit
+  arg_bytes=8 arg=[--print=]
+  arg_bytes=14 arg=[--input-format]
+  arg_bytes=11 arg=[stream-json]
+  arg_bytes=15 arg=[--output-format]
+  arg_bytes=11 arg=[stream-json]
+  arg_bytes=7 arg=[--model]
+  arg_bytes=18 arg=[gemini-4-neon-high]
+stdin_bytes=179686 stdin_file=/tmp/fm-lab-round3/shared/s3r-stdin
+-- delivered stdin bytes: 179686
+-- review marker present in delivered stdin: 1

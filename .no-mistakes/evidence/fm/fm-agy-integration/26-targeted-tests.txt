@@ -1,0 +1,16 @@
+# Targeted test files for this change, run from the run worktree
+# (the round-2 commits corrected three of these files; each now passes).
+
+run: bash tests/<file>
+fm-agy-harness.test.sh       rc=0 ok=32  not_ok=0
+fm-agy-primary.test.sh       rc=0 ok=14  not_ok=0
+fm-dispatch-resolve.test.sh  rc=0 ok=69  not_ok=0
+fm-deliver.test.sh           rc=0 ok=33  not_ok=0
+fm-agy-pool.test.sh          rc=0 ok=20  not_ok=0
+fm-agy-pool-setup.test.sh    rc=0 ok=5   not_ok=0
+fm-control.test.sh           rc=0 ok=52  not_ok=0
+fm-brief.test.sh             rc=0 ok=46  not_ok=0
+fm-send-resolve-key.test.sh  rc=0 ok=30  not_ok=0  (378s; the earlier 300s cap was a test-timeout artifact, not a hang)
+fm-pool-exit.test.sh         rc=0 ok=2   not_ok=0
+fm-composer-lib.test.sh      rc=0 ok=57  not_ok=0
+fm-backend-herdr.test.sh     rc=0 ok=253 not_ok=0

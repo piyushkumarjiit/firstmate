@@ -1,0 +1,115 @@
+# Scenario: no-mistakes delivery for a pooled Gemini task restarts only on a
+# real quota failure, and non-code blocker classification stays scoped.
+# Product: the real bin/fm-deliver.sh (foreground run) against disposable lab
+# homes and a no-mistakes CLI stand-in that replays recorded statuses and writes
+# the run's own step logs. Roles come from config/crew-dispatch.json; models
+# from the lab models.conf; pool account state from FM_AGY_STATE_DIR.
+
+## A: the pool's own exhaustion notice for an explicit account (no rotation) -> review fallback and restart
+-- status
+done [at=100]: committed 850f3bb49d62fe8a180e4e3f52eec7a58b9b0a77
+working [at=1795557010]: review model gemini-4-neon-high exhausted; failing over to gemini-3.8-flash-high
+done [at=1795557010]: pushed 850f3bb49d62fe8a180e4e3f52eec7a58b9b0a77
+-- calls
+axi run --intent 
+Ship the lab change through no-mistakes.
+axi status
+axi abort
+axi status
+axi run --intent 
+Ship the lab change through no-mistakes.
+axi status
+axi sync
+-- role record after failover
+review_model=gemini-3.8-flash-high
+review_account=
+review_from_config=1
+review_fallback=gemini-4-neon-high,gemini-3.8-flash-high
+fix_model=gemini-4-hydrogen-high
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-high,gemini-3.8-flash-medium
+-- drive log
+lab run started
+[fm-deliver] Quota exhausted for review model 'gemini-4-neon-high'; restarting on same head with fallback 'gemini-3.8-flash-high'
+[fm-deliver] Restarting axi run in /tmp/fm-lab-round3/s4/quota-review/wt with review=gemini-3.8-flash-high
+lab run started
+[fm-deliver] Outcome 'passed'; running sync command: no-mistakes axi sync
+
+## B: a stale notice the pool already recovered from by rotating + a real push-auth failure
+-- review.log tail the classifier reads
+[nm-agy] 2026-11-24T21:01:00Z cwd=/tmp/wt role=review model=gemini-4-neon-high
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushjiit' (100% remaining, floor=15%)...
+[fm-agy-pool] Account 'piyushjiit' hit quota exhaustion; marked exhausted until 1795564302.
+[fm-agy-pool] Rotating away from exhausted account 'piyushjiit' to next eligible account...
+[fm-agy-pool] Routing model 'gemini-4-neon-high' to 'piyushk' (100% remaining, floor=15%)...
+{"event":"result","conversation_id":"convA","result":"review complete"}
+-- push.log
+fatal: Authentication failed for https://github.com/example/repo.git
+-- status
+done [at=100]: committed f8935ff02621e8a0c108a76df2fb162a7c1c61c4
+blocked [at=1795557011]: push authentication failed; fix the git credentials for the no-mistakes push (bin/fm-agy-pool-setup.sh check), then retry with FM_DELIVER_RETRY=1; run not restarted
+-- blocker record
+head=f8935ff02621e8a0c108a76df2fb162a7c1c61c4
+kind=push-auth
+-- role record (unchanged: no failover)
+review_model=gemini-4-neon-high
+review_account=
+review_from_config=1
+review_fallback=gemini-4-neon-high,gemini-3.8-flash-high
+fix_model=gemini-4-hydrogen-high
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-high,gemini-3.8-flash-medium
+
+## C: a failing project test that prints an auth failure is a code failure, not a push-auth blocker
+-- test.log
+FAIL: test_rejects_bad_token
+  Authentication failed for user admin
+-- status
+done [at=100]: committed 657a85f062385db31706ad7e05b31a3f3a111a3e
+blocked [at=1795557011]: outcome failed
+-- blocker record
+(none)
+
+## D: the fixer's nm-agy role line survives the rotation trim -> the fix role advances, not review
+-- review.log tail
+[nm-agy] 2026-11-24T21:02:00Z cwd=/tmp/wt role=fix model=gemini-4-hydrogen-high
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'piyushjiit' (100% remaining, floor=15%)...
+[fm-agy-pool] Account 'piyushjiit' hit quota exhaustion; marked exhausted until 1795564302.
+[fm-agy-pool] Rotating away from exhausted account 'piyushjiit' to next eligible account...
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'piyushk' (100% remaining, floor=15%)...
+[fm-agy-pool] Account 'piyushk' hit quota exhaustion; marked exhausted until 1795564302.
+[fm-agy-pool] ERROR: All eligible accounts for model 'gemini-4-hydrogen-high' are exhausted.
+-- status
+done [at=100]: committed 657a85f062385db31706ad7e05b31a3f3a111a3e
+working [at=1795557012]: fix model gemini-4-hydrogen-high exhausted; failing over to gemini-3.8-flash-medium
+done [at=1795557012]: pushed 657a85f062385db31706ad7e05b31a3f3a111a3e
+-- role record
+review_model=gemini-4-neon-high
+review_account=
+review_from_config=1
+review_fallback=gemini-4-neon-high,gemini-3.8-flash-high
+fix_model=gemini-3.8-flash-medium
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-high,gemini-3.8-flash-medium
+
+## E: a non-Gemini (claude) task keeps the old no-mistakes path
+-- meta
+endpoint_task_id=claude-old-path
+worktree=/tmp/fm-lab-round3/s4/claude-old-path/wt
+branch=fm/claude-old-path
+mode=no-mistakes
+kind=ship
+builder=operator
+harness=claude
+-- status
+done [at=100]: committed 38f87605bd8e2c66a0b6cb7ef01654abe6a210c2
+blocked [at=1795557031]: outcome failed
+-- role record
+(none: no Gemini role routing)
+-- calls
+axi run --intent 
+Ship the lab change through no-mistakes.
+axi status
