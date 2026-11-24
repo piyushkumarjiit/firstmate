@@ -1420,6 +1420,33 @@ EOF
   pass "failover triggers on the pool quota notice in review.log"
 }
 
+test_no_failover_after_pool_rotation_recovered() {
+  setup_fixture task_rotated >/dev/null
+  local tdir="$TMP_ROOT/task_rotated" nmhome="$TMP_ROOT/task_rotated/nmhome"
+  mkdir -p "$tdir/bin" "$tdir/config" "$tdir/agy-state" "$nmhome/logs/RUNR"
+  cat > "$tdir/config/crew-dispatch.json" <<'JSON'
+{"roles":{"review":[{"harness":"agy","model":"gemini-4-neon-high"},{"harness":"agy","model":"gemini-3.8-flash-high"}]}}
+JSON
+  printf "[fm-agy-pool] Account 'acct1' hit quota exhaustion; marked exhausted until 1.\n[fm-agy-pool] Rotating away from exhausted account 'acct1' to next eligible account...\n" > "$nmhome/logs/RUNR/review.log"
+  printf 'fatal: could not read Username for https://github.com\n' > "$nmhome/logs/RUNR/push.log"
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+cmd="\${1:-} \${2:-}"
+if [[ "\$cmd" == "axi run" ]]; then
+  printf '%s\n' "\${FM_NM_REVIEW_MODEL:-}" >> "$tdir/run-models.log"
+elif [[ "\$cmd" == "axi status" ]]; then
+  printf 'run:\n  id: "RUNR"\n  status: failed\noutcome: failed\n'
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  NM_HOME="$nmhome" deliver_env "$tdir" "$DELIVER" task_rotated run >/dev/null 2>&1
+  [ "$(grep -c . "$tdir/run-models.log")" -eq 1 ] || fail "a quota hit the pool already rotated past must not restart the run: $(cat "$tdir/run-models.log")"
+  assert_contains "$(tail -n 1 "$tdir/state/task_rotated.status")" "push authentication" \
+    "the real push failure must be reported as the blocker"
+  pass "no failover after the pool recovered by rotating accounts"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -1450,4 +1477,5 @@ fm_test_run \
   test_background_failover_restart_keeps_base_branch \
   test_respond_on_running_run_writes_no_blocked_status \
   test_blocker_ignores_test_step_output \
-  test_failover_triggers_on_pool_quota_notice_in_review_log
+  test_failover_triggers_on_pool_quota_notice_in_review_log \
+  test_no_failover_after_pool_rotation_recovered
