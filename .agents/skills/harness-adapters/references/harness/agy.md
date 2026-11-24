@@ -21,7 +21,7 @@ Verified as a full Firstmate harness (Primary, Secondmate, and Crewmate/Scout).
 | Resume | `--continue` and `--conversation` exist but carry no verified pane-resume contract; use deterministic relaunch. |
 | Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-3.8-flash-high`); `bin/fm-spawn.sh` refuses a requested id a reachable listing omits. The listing is a remote fetch, so the probe runs stdin-detached under the shared hard bound and an unreachable or hung listing launches unvalidated with a notice. |
 | Effort | `--effort low\|medium\|high`; `xhigh` and `max` stay in task metadata under the record-and-omit contract. |
-| Composer | An agy-scoped empty-composer recognition reads the idle screen (horizontal rule, bare `>` row, horizontal rule, footer with `? for shortcuts` or model name and NOT `esc to cancel`) as `empty`; typed text and queued doorbells read `pending`. Without agy scope, the dead-shell rule preserves `unknown`. Exit and relaunch are supported once firstmate re-verifies live. |
+| Composer | An agy-scoped empty-composer recognition reads the idle screen (horizontal rule, bare `>` row, horizontal rule, footer with `? for shortcuts` or model name and NOT `esc to cancel`) as `empty`; typed text and queued doorbells read `pending`. Without agy scope, the dead-shell rule preserves `unknown`. |
 
 ## Trust, and where the decision persists
 

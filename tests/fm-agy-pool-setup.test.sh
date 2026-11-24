@@ -91,4 +91,20 @@ test_nm_config_never_edited() {
   pass "no-mistakes config is reported, never edited"
 }
 
-fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited
+test_unreachable_ancestor_is_not_reported_ok() {
+  local out rc
+  cat > "$TMP_ROOT/bin/blocksudo" <<EOF
+#!/usr/bin/env bash
+shift 2
+if [[ "\$1" == test && "\$2" == -x ]]; then exit 1; fi
+HOME="$TMP_ROOT/poolhome" exec "\$@"
+EOF
+  chmod +x "$TMP_ROOT/bin/blocksudo"
+  out=$(SUDOCMD="$TMP_ROOT/bin/blocksudo" run_setup check); rc=$?
+  [[ $rc -eq 1 ]] || { fail "check must fail when the pool account cannot traverse to the worktrees (rc=$rc): $out"; }
+  grep -q "ROOT    $ME cannot traverse to worktrees directory" <<<"$out" || { fail "unreachable worktrees not reported: $out"; }
+  grep -q "sudo setfacl -m u:${ME}:--x" <<<"$out" || { fail "no ancestor traverse command printed: $out"; }
+  pass "check reports a pool account that cannot traverse to the worktrees"
+}
+
+fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited test_unreachable_ancestor_is_not_reported_ok

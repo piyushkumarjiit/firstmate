@@ -455,8 +455,8 @@ append_brief_include() {
   [ -n "$BRIEF_INCLUDE_BODY" ] || return 0
   local include_body="$BRIEF_INCLUDE_BODY"
   if [ "$POOL_BUILD" -eq 1 ]; then
-    include_body=$(printf '%s\n' "$include_body" | grep -v -E '^[[:space:]]*#[[:space:]]*Home brief additions[[:space:]]*$')
-    include_body=$(printf '%s\n' "$include_body" | grep -v -E -i -- '-\s+\*\*.*(scout|review tasks|handoff).*|data/<task-id>/report\.md')
+    include_body=$(printf '%s\n' "$include_body" | grep -v -E '^[[:space:]]*#[[:space:]]*Home brief additions[[:space:]]*$' || true)
+    include_body=$(printf '%s\n' "$include_body" | grep -v -E -i -- '-\s+\*\*.*(scout|review tasks|handoff).*|data/<task-id>/report\.md' || true)
     [ -n "$(printf '%s' "$include_body" | tr -d '[:space:]')" ] || return 0
   fi
   printf '\n%s\n%s\n%s\n' \

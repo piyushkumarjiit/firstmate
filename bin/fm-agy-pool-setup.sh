@@ -69,6 +69,26 @@ has_acl() { # <path> <acl-line-regex> : does getfacl list it
   getfacl -p "$1" 2>/dev/null | grep -Eq "$2"
 }
 
+check_reach() { # <user> <path> <test-flag> <label>: effective access as the pool account
+  local u=$1 target=$2 flag=$3 label=$4 d blocked="" rc
+  run_as "$u" test "$flag" "$target"; rc=$?
+  [[ $rc -eq 127 ]] && return 0
+  if [[ $rc -eq 0 ]]; then
+    ok "$label reachable by $u"
+    return 0
+  fi
+  d=$(dirname "$target")
+  while [[ "$d" != "/" && "$d" != "." ]]; do
+    run_as "$u" test -x "$d" || blocked="$blocked '$d'"
+    d=$(dirname "$d")
+  done
+  if [[ -n "$blocked" ]]; then
+    need_root "$u cannot traverse to $label" "sudo setfacl -m u:${u}:--x$blocked"
+  else
+    miss "$label not reachable by $u"
+  fi
+}
+
 # --- 1. worktree ACLs -------------------------------------------------------
 step_acl() {
   local u
@@ -110,6 +130,7 @@ step_acl() {
     else
       miss "traverse ACL for $u on $base"
     fi
+    check_reach "$u" "$NM_WORKTREES" -x "worktrees directory $NM_WORKTREES"
   done
 }
 
@@ -137,6 +158,7 @@ step_git_auth() {
     else
       miss "gh config readable by $u"
     fi
+    [[ ! -f "$GH_CONFIG_DIR/hosts.yml" ]] || check_reach "$u" "$GH_CONFIG_DIR/hosts.yml" -r "gh credentials $GH_CONFIG_DIR/hosts.yml"
     local have rc
     have=$(run_as "$u" git config --global --get-all "$CRED_KEY" 2>/dev/null); rc=$?
     if [[ $rc -eq 0 ]] && grep -Fxq "$want" <<<"$have"; then

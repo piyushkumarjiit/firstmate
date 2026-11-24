@@ -261,10 +261,7 @@ fm_composer_kiro_scope() {
 # through FM_COMPOSER_HARNESS or through identity.
 fm_composer_agy_scope() {  # [has_identity] [identity]
   [ "${FM_COMPOSER_HARNESS:-}" = agy ] && return 0
-  local has_id="${1:-0}" id="${2:-}"
-  if [ "$has_id" = 1 ] && [ -n "$id" ] && [ "${id%%$'\t'*}" = agy ]; then
-    return 0
-  fi
+  local id="${2:-}"
   [ -n "$id" ] && [ "${id%%$'\t'*}" = agy ] && return 0
   return 1
 }

@@ -1838,3 +1838,16 @@ test_pool_build_brief_is_lean_and_keeps_safety_rules() {
   pass "fm-brief.sh: --pool-build brief stays lean and keeps its safety rules"
 }
 test_pool_build_brief_is_lean_and_keeps_safety_rules
+
+test_pool_build_brief_survives_include_that_filters_to_nothing() {
+  local home out rc=0
+  home="$TMP_ROOT/pool-empty-include-home"
+  mkdir -p "$home/data" "$home/config"
+  printf '# Home brief additions\n- **Scout and Review Tasks**: Write findings to data/<task-id>/report.md.\n' > "$home/config/brief-include.md"
+  out=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" "$ROOT/bin/fm-brief.sh" empty-inc-1 proj --mode no-mistakes --pool-build 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "a pool scaffold whose include filters to nothing must still succeed, got $rc: $out"
+  assert_contains "$out" "scaffolded:" "scaffold must report success"
+  assert_no_grep "Home brief additions" "$home/data/empty-inc-1/brief.md" "an empty filtered include must add no section"
+  pass "fm-brief.sh: --pool-build survives an include that filters to nothing"
+}
+test_pool_build_brief_survives_include_that_filters_to_nothing
