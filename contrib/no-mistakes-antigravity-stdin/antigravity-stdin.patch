@@ -5,9 +5,7 @@ Passes the prompt to `agy` as a single NDJSON `user` event on stdin using
 `--print="" --input-format stream-json`, removing `opts.Prompt` from argv so
 large diffs never hit OS `E2BIG` (`argument list too long`).
 
-Applies cleanly to `kunchenguid/no-mistakes` v1.96.0 (and to v1.106.1; only the
-`startNativeAgentCommand(..., opts.RequireCompletedChildren)` line in `runOnce`
-differs between v1.96.0 and v1.106.1).
+Applies cleanly to `kunchenguid/no-mistakes` v1.96.0 (verified with `git apply --check`).
 
 --- a/internal/agent/antigravity.go
 +++ b/internal/agent/antigravity.go
@@ -136,7 +134,7 @@ differs between v1.96.0 and v1.106.1).
  
  	joined := strings.Join(args, " ")
  	if !strings.Contains(joined, "--conversation conv-123") {
- 		t.Errorf("args = %q, want --conversation conv-123 for a resumable session", args)
+ 		t.Errorf("args = %v, want --conversation conv-123 for a resumable session", args)
  	}
 +}
 +
