@@ -156,6 +156,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2034
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 usage() {
@@ -462,6 +463,14 @@ rendered_matches() {  # <ere>
   printf '%s\n' "$screen" | grep -Eq -- "$1"
 }
 
+# rendered_count <ere>: how many rows of the visible viewport match.
+rendered_count() {  # <ere>
+  local screen n
+  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || { printf '0'; return 0; }
+  n=$(printf '%s\n' "$screen" | grep -Ec -- "$1" || true)
+  printf '%s' "${n:-0}"
+}
+
 # wait_rendered <ere> <timeout>: poll the viewport until a row matches.
 wait_rendered() {  # <ere> <timeout>
   local elapsed=0 step
@@ -534,35 +543,54 @@ send_interrupt_keys() {
     || die "interrupt key $key reached task $ID, but $clear did not, so its composer still holds the cancelled prompt; clear it before the next lifecycle action"
 }
 
+AGY_INTERRUPTED_ERE='(⎿[[:blank:]]*)?Interrupted · What should Antigravity CLI do instead'
+
 prepare_interrupt_ack() {
   INTERRUPT_ACK_SOURCE=$(fm_control_interrupt_ack_source "$HARNESS")
   INTERRUPT_ACK_LOG=
   INTERRUPT_ACK_RUN=
+  INTERRUPT_ACK_BASE=0
   case "$INTERRUPT_ACK_SOURCE" in
     muse-session-terminal)
       INTERRUPT_ACK_LOG=$(fm_busy_muse_session_log "$STATE" "$ID" 2>/dev/null || true)
       [ -n "$INTERRUPT_ACK_LOG" ] || return 0
       INTERRUPT_ACK_RUN=$(fm_busy_muse_active_run_id "$INTERRUPT_ACK_LOG" 2>/dev/null || true)
       ;;
+    agy-rendered-row) INTERRUPT_ACK_BASE=$(rendered_count "$AGY_INTERRUPTED_ERE") ;;
   esac
 }
 
 interrupt_cancel_claim() {
   local elapsed=0 terminal=
-  case "$INTERRUPT_ACK_SOURCE:$INTERRUPT_ACK_RUN" in
-    muse-session-terminal:?*) ;;
-    *) printf 'unconfirmed'; return 0 ;;
+  case "$INTERRUPT_ACK_SOURCE" in
+    muse-session-terminal)
+      case "$INTERRUPT_ACK_RUN" in
+        ?*)
+          while :; do
+            terminal=$(fm_busy_muse_run_terminal "$INTERRUPT_ACK_LOG" "$INTERRUPT_ACK_RUN" 2>/dev/null || true)
+            case "$terminal" in
+              cancelled) printf 'confirmed'; return 0 ;;
+              ?*) printf 'unconfirmed'; return 0 ;;
+            esac
+            awk -v e="$elapsed" -v t="$SETTLE_WAIT" 'BEGIN{exit !(e < t)}' || break
+            sleep "$POLL"
+            elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
+          done
+          ;;
+      esac
+      ;;
+    agy-rendered-row)
+      while :; do
+        if [ "$(rendered_count "$AGY_INTERRUPTED_ERE")" -gt "${INTERRUPT_ACK_BASE:-0}" ]; then
+          printf 'confirmed'
+          return 0
+        fi
+        awk -v e="$elapsed" -v t="$SETTLE_WAIT" 'BEGIN{exit !(e < t)}' || break
+        sleep "$POLL"
+        elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
+      done
+      ;;
   esac
-  while :; do
-    terminal=$(fm_busy_muse_run_terminal "$INTERRUPT_ACK_LOG" "$INTERRUPT_ACK_RUN" 2>/dev/null || true)
-    case "$terminal" in
-      cancelled) printf 'confirmed'; return 0 ;;
-      ?*) printf 'unconfirmed'; return 0 ;;
-    esac
-    awk -v e="$elapsed" -v t="$SETTLE_WAIT" 'BEGIN{exit !(e < t)}' || break
-    sleep "$POLL"
-    elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
-  done
   printf 'unconfirmed'
 }
 

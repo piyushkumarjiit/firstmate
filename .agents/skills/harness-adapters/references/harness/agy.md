@@ -13,15 +13,15 @@ Verified as a full Firstmate harness (Primary, Secondmate, and Crewmate/Scout).
 | Busy state | No hook or plugin writer, so nothing is armed and no record is seeded; on Herdr the native `working` status classifies busy, and everywhere else the `agy-regex` rendered-tail fallback in `../../../../../bin/fm-busy-lib.sh` does. |
 | Rendered tail | Busy status row carries `esc to cancel` on the left; the idle row shows `? for shortcuts` instead. The `Generating...` word beside the braille spinner is free-floating output and is not a signal. |
 | Turn end | No turn-end hook or notification touch exists; completion arrives through the worker status protocol and, on Herdr, the native return to `idle`. |
-| Exit | `/quit`, one Enter; the process exits. |
+| Exit | `/quit`, one Enter; the process exits. Exit and relaunch are supported once firstmate re-verifies live. |
 | Interrupt | Single `Escape`, which prints the Interrupted row and leaves an idle composer with no repollution, so no clear key follows. |
 | Skill | No verified slash-skill form; use natural language. |
 | Autonomy | `--dangerously-skip-permissions` auto-approves tool calls for the run. |
 | Marker | None; a live TUI carries no `AGY_*` or `ANTIGRAVITY_*` variable. |
 | Resume | `--continue` and `--conversation` exist but carry no verified pane-resume contract; use deterministic relaunch. |
-| Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-3.8-flash-high`); `bin/fm-spawn.sh` refuses a requested id a reachable listing omits. The listing is a remote fetch, so the probe runs stdin-detached under the shared hard bound and an unreachable or hung listing launches unvalidated with a notice. |
+| Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-3.8-flash-high`); `bin/fm-spawn.sh` refuses a requested id a reachable listing omits, except an id naming Hydrogen or Neon on the pool launcher, which skips the probe so the spawn never signs in as a reserved pool account. The listing is a remote fetch, so the probe runs stdin-detached under the shared hard bound and an unreachable or hung listing launches unvalidated with a notice. |
 | Effort | `--effort low\|medium\|high`; `xhigh` and `max` stay in task metadata under the record-and-omit contract. |
-| Composer | Borderless bare `>` row, which the shared classifier reads as `unknown` under the dead-shell rule, never `empty`; steering confirms delivery through native agent-state and the delivery footer instead, the cursor precedent. |
+| Composer | An agy-scoped empty-composer recognition reads the idle screen (horizontal rule, bare `>` row, horizontal rule, footer with `? for shortcuts` or model name and NOT `esc to cancel`) as `empty`; typed text and queued doorbells read `pending`. Without agy scope, the dead-shell rule preserves `unknown`. |
 
 ## Trust, and where the decision persists
 
@@ -58,3 +58,10 @@ PreToolUse invokes `bin/fm-arm-pretool-check.sh --agy`, `bin/fm-cd-pretool-check
 Stop executes `bin/fm-turnend-guard-agy.sh`, which parks on a home-scoped watcher cycle through `bin/fm-watch-arm.sh` (or `bin/fm-supervision-host.sh park` on a home that runs the host) under the registered 28800s hook timeout and delivers actionable wake output; only an optional `FM_AGY_PARK_TIMEOUT` bound re-arms via `{"decision":"continue","reason":"..."}` with `[supervision-park]`, and `FM_AGY_TURNEND_LOOP_CEILING` (default 180) bounds hook-driven turns.
 A bounded 3-block repair nag is enforced via `bin/fm-turnend-guard.sh --agy` before failing open with `{}`.
 See `../../../../../docs/supervision-protocols/agy.md` for the complete supervision protocol.
+
+## Account pool quota
+
+Live pool quota is read only via `bin/agy-pool/agy --usage <account>`; never call Google endpoints or other workarounds.
+Pool launches pass `queuedMessages=send-immediately` so steering doorbells land after the current step.
+On a home whose pool config (`POOL_CONF`, default `/etc/firstmate/gpro-pool.conf`) lists at least one account, an `agy` `no-mistakes` ship launches through `bin/agy-pool/agy` and its brief must be scaffolded with `fm-brief.sh --pool-build`; `bin/fm-spawn.sh` refuses either mismatch.
+Every other agy launch - `direct-PR` and `local-only` ships, scouts, and secondmates - keeps the plain binary.

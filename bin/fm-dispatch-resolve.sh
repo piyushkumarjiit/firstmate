@@ -402,6 +402,28 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
     or ($p | has("effort") and ((.effort | type) != "string" or (.effort | length) == 0))
     or ($p | has("provider") and (provider_id(.provider) | not))
     or ($p | has("floor") and floor_bad(.floor; false));
+  def role_profile_bad($p):
+    ($p | type) != "object"
+    or (($p.harness | type) != "string") or (($p.harness | length) == 0)
+    or (($p.model | type) != "string") or (($p.model | length) == 0)
+    or ($p | has("account") and ((.account | type) != "string" or (.account | length) == 0))
+    or ($p | has("effort") and ((.effort | type) != "string" or (.effort | length) == 0))
+    or ($p | has("provider") and (provider_id(.provider) | not));
+  def roles_err:
+    if (has("roles") | not) then null
+    elif (.roles | type) != "object" then "roles must be an object"
+    elif ((.roles | keys) - ["review", "fix"] | length) > 0 then
+      "unknown roles: " + (((.roles | keys) - ["review", "fix"]) | join(", "))
+    elif any(.roles[]; (type != "array") or (length == 0)) then
+      "each role entry in roles must be a non-empty array"
+    elif any(.roles[] | .[]; role_profile_bad(.)) then
+      "each role profile needs harness and non-empty model; account, effort, and provider must be well formed when present"
+    elif any(.roles[] | .[]; (verified(.harness) | not)) then
+      "each role profile must name a verified harness"
+    elif any(.roles[] | .[]; (effort_ok(.harness; .model; .effort) | not)) then
+      "each role profile effort must be supported by its harness and model"
+    else null
+    end;
   def duplicate_profiles($items):
     ($items | map([.harness, (.model // null), (.effort // null)] | @json)) as $keys
     | ($keys | length) != ($keys | unique | length);
@@ -417,6 +439,7 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
   elif any((.rules // [])[]; has("select") and .select != "quota-balanced") then
     "unknown select: " + ([.rules[] | select(has("select") and .select != "quota-balanced") | .select] | unique | join(", "))
   elif has("shared_quota") and (.shared_quota | type) != "boolean" then "shared_quota must be true or false when present"
+  elif roles_err != null then roles_err
   elif any((.rules // [])[]; has("floor") and floor_bad(.floor; true)) then "rule floor needs scope, min_percent 0..100, and provider matching ^[a-z0-9]+(-[a-z0-9]+)*\\z"
   elif any((.rules // [])[] | profiles(.use)[]; type == "object" and has("quota_scope") and ((.quota_scope | type) != "string" or (.quota_scope | length) == 0)) then "each use profile quota_scope must be a non-empty string when present"
   elif any((.rules // [])[] | profiles(.use)[]; profile_bad(.)) then "each use profile needs harness; model, effort, and floor must be well formed, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\\z when present"

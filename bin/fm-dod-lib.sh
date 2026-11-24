@@ -32,6 +32,11 @@
 # captain-approved <host>/<owner>/<repo> publication scope for this one task,
 # rendered as an `upstream-consent=<scope>` suffix token on the Delivery
 # contract line so brief, spawn record, and worker instructions agree.
+# The optional eighth argument is the worker's builder; `pool` renders the
+# account-pool block instead of the ordinary no-mistakes one: build and commit on
+# the task branch, leave the worktree clean, report `done: committed <sha>`, and
+# never run no-mistakes, push, or open a PR, because bin/fm-deliver.sh drives the
+# pipeline afterwards as the operator account.
 # Callers of the gate are bin/fm-crew-state.sh (current-state done),
 # bin/fm-pr-check.sh (PR registration), and bin/fm-inactive-reconcile.sh
 # (secondmate ledger-first publish of a child done). A ship `done:` is not
@@ -539,8 +544,8 @@ If you deliberately keep the PR a draft, append \`paused [at=<epoch>]: {why the 
 EOF
 }
 
-fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<pr>]
-  local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} pr=${7:-auto}
+fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<pr>] [<builder>]
+  local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} pr=${7:-auto} builder=${8:-}
   local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check adapter
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
@@ -551,6 +556,22 @@ fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<p
       return 1
     fi
     contract_consent=" upstream-consent=$consent"
+  fi
+  if [ "$builder" = pool ]; then
+    cat <<EOF
+# Definition of done
+Delivery contract: mode=no-mistakes builder=pool$contract_forge$contract_consent
+Ship branch: $branch
+This task is built through the account pool.
+The task is complete only when committed on your branch \`$branch\`.
+Before committing, run the project's own linters and tests that can run locally (such as \`make check\`, \`just check\`, lint, or unit tests) and fix every issue they report, then commit.
+If a check cannot run locally, state which in the done line.
+Leave the worktree clean and commit all changes.
+When it is implemented and committed, append \`done [at=<epoch>]: committed <sha>\` to the status file and stop, where <sha> is your latest commit SHA.
+Do NOT run /no-mistakes, do NOT push, and do NOT open a PR.
+After the done line, stop; firstmate exits your session to free the account slot.
+EOF
+    return 0
   fi
   draft_check="(\`gh-axi pr view <number>\` must print \`draft: no\`, where <number> is the PR number from your PR URL); if it is a draft, mark it ready with \`gh-axi pr ready <number>\`."
   if [ "$forge" = forgejo ]; then

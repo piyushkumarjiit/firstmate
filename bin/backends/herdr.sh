@@ -3374,6 +3374,35 @@ fm_backend_herdr_composer_state() {  # <target> -> empty|pending|pending-unprove
     verdict=$(fm_composer_classify_screen "$caps" "$cap" '' "$identity")
     [ "$verdict" != need-identity ] || verdict=unknown
   fi
+
+  # When the pane is scrolled back, the visible viewport shows scrollback without
+  # the composer (verdict=unknown). If scrolled (offset_from_bottom > 0), re-read
+  # the bottom of the screen via the last viewport_rows lines.
+  if [ "$verdict" = unknown ]; then
+    local pane_info offset_from_bottom viewport_rows scrolled_cap scrolled_caps
+    if pane_info=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane get "$FM_BACKEND_HERDR_PANE" 2>/dev/null); then
+      offset_from_bottom=$(printf '%s' "$pane_info" | jq -r '.result.pane.scroll.offset_from_bottom // 0' 2>/dev/null)
+      viewport_rows=$(printf '%s' "$pane_info" | jq -r '.result.pane.scroll.viewport_rows // empty' 2>/dev/null)
+      if [[ "$offset_from_bottom" =~ ^[0-9]+$ ]] && [ "$offset_from_bottom" -gt 0 ] && \
+         [[ "$viewport_rows" =~ ^[0-9]+$ ]] && [ "$viewport_rows" -gt 0 ]; then
+        if scrolled_cap=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane read "$FM_BACKEND_HERDR_PANE" --format ansi --lines "$viewport_rows" 2>/dev/null) && [ -n "$scrolled_cap" ]; then
+          scrolled_caps=$(printf 'styled=1\ncursor=0\nidentity=1\ncortex=ask')
+        elif scrolled_cap=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane read "$FM_BACKEND_HERDR_PANE" --lines "$viewport_rows" 2>/dev/null) && [ -n "$scrolled_cap" ]; then
+          scrolled_caps=$(printf 'styled=0\ncursor=0\nidentity=1\ncortex=ask')
+        fi
+        if [ -n "${scrolled_cap:-}" ]; then
+          verdict=$(fm_composer_classify_screen "$scrolled_caps" "$scrolled_cap")
+          if [ "$verdict" = need-identity ]; then
+            if ! identity=$(fm_backend_herdr_composer_identity "$target" 2>/dev/null) || [ -z "$identity" ]; then
+              identity='probe-absent'
+            fi
+            verdict=$(fm_composer_classify_screen "$scrolled_caps" "$scrolled_cap" '' "$identity")
+            [ "$verdict" != need-identity ] || verdict=unknown
+          fi
+        fi
+      fi
+    fi
+  fi
   printf '%s' "$verdict"
 }
 

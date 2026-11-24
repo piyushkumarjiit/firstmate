@@ -1732,4 +1732,122 @@ test_ship_branch_prefix_empty_override_yields_bare_task_id
 test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
+test_pool_build_brief_variant() {
+  local home id brief
+  home="$TMP_ROOT/pool-build-home"
+  mkdir -p "$home/data"
+  id="brief-pool-build-1"
+
+  # Must refuse --mode other than no-mistakes
+  local err rc=0
+  err=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" proj --mode local-only --pool-build 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "--pool-build on mode local-only must fail"
+  assert_contains "$err" "--pool-build requires --mode no-mistakes" "must report mode requirement"
+
+  # Valid generation
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" proj --mode no-mistakes --pool-build >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "pool build brief was not scaffolded"
+  assert_grep "Delivery contract: mode=no-mistakes builder=pool" "$brief" \
+    "pool brief must have builder=pool contract line"
+  assert_grep "Before committing, run the project's own linters and tests that can run locally" "$brief" \
+    "pool brief must include captain rule for local test and lint checks"
+  assert_grep "If a check cannot run locally, state which in the done line" "$brief" \
+    "pool brief must instruct reporting unrunnable checks"
+  assert_grep "append \`done [at=<epoch>]: committed <sha>\` to the status file" "$brief" \
+    "pool brief must have committed sha definition of done"
+  assert_grep "Do NOT run /no-mistakes, do NOT push, and do NOT open a PR." "$brief" \
+    "pool brief must forbid no-mistakes/push/PR"
+  assert_no_grep "doctor" "$brief" "pool brief must not mention no-mistakes doctor"
+  assert_no_grep "# Current no-mistakes intent contract" "$brief" \
+    "pool brief must not carry Current no-mistakes intent contract"
+  assert_no_grep "Captain intent authorized for --intent" "$brief" \
+    "pool brief must not carry Captain intent authorized for --intent"
+
+  # Dropped sections must be absent from pool brief variant
+  assert_no_grep "daemon" "$brief" "pool brief must not mention no-mistakes daemon"
+  assert_no_grep "ask-user" "$brief" "pool brief must not mention ask-user escalation"
+  assert_no_grep "https:// URL" "$brief" "pool brief must not contain PR URL rule"
+  assert_no_grep "chrome-devtools" "$brief" "pool brief must not mention chrome-devtools"
+  assert_no_grep "paused:" "$brief" "pool brief must not mention paused wait details"
+  assert_no_grep "Herdr lifecycle declaration" "$brief" "pool brief must not contain Herdr lifecycle declaration"
+  assert_no_grep "# Project memory" "$brief" "pool brief must not contain Project memory section"
+
+  # Kept sections must be present
+  assert_grep "Verify isolation before anything else." "$brief" "pool brief must include isolation check"
+  assert_grep "git checkout -b" "$brief" "pool brief must include branch creation"
+  assert_grep "Never push to any remote and never open a PR." "$brief" "pool brief must forbid push and PR"
+  assert_grep "Keep project edits inside this worktree" "$brief" "pool brief must restrict edits to worktree"
+  assert_grep "Never start a shell command with \`cd\`" "$brief" "pool brief must include no-cd rule"
+  assert_grep "States: working, needs-decision with [key=], blocked, done." "$brief" "pool brief must list pool states"
+  assert_grep "# Firstmate instruction inbox" "$brief" "pool brief must include instruction inbox"
+
+  # Size bound: everything except Task section must be under 4,000 bytes
+  local non_task_bytes
+  non_task_bytes=$(awk '/^# Task$/{skip=1} /^# Setup$/{skip=0} !skip' "$brief" | wc -c)
+  [ "$non_task_bytes" -lt 4000 ] || fail "pool brief non-task size must be under 4000 bytes (got $non_task_bytes)"
+
+  # Home additions filtering: scout/report guidance dropped, ship guidance preserved
+  mkdir -p "$home/config"
+  cat > "$home/config/brief-include.md" <<'EOF'
+# Home brief additions
+## Output Discipline
+- **Scout and Review Tasks**: Write findings to data/<task-id>/report.md.
+- **Ship and Implementation Tasks**: Do not output conversational commentary.
+- **Self-Contained Handoff Artifacts**: Report at data/<task-id>/report.md.
+- **Tool Reads and Command Output**: Use targeted line ranges.
+EOF
+  local id2="brief-pool-build-2"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id2" proj --mode no-mistakes --pool-build >/dev/null 2>&1
+  local brief2="$home/data/$id2/brief.md"
+  assert_present "$brief2" "second pool brief with include was not scaffolded"
+  assert_no_grep "Scout and Review Tasks" "$brief2" "scout guidance must be dropped from pool brief additions"
+  assert_no_grep "Self-Contained Handoff Artifacts" "$brief2" "handoff report guidance must be dropped from pool brief additions"
+  assert_no_grep "report.md" "$brief2" "report.md guidance must be dropped from pool brief additions"
+  assert_grep "Ship and Implementation Tasks" "$brief2" "ship guidance must be preserved in pool brief additions"
+  assert_grep "Tool Reads and Command Output" "$brief2" "tool reads guidance must be preserved in pool brief additions"
+  local header_count
+  header_count=$(grep -c '^# Home brief additions' "$brief2" || true)
+  [ "$header_count" -eq 1 ] || fail "brief must contain '# Home brief additions' exactly once (got $header_count)"
+
+  pass "fm-brief.sh: --pool-build renders pool builder definition of done with local check rules"
+}
+
 test_crewmate_scaffolds_forbid_pool_administration
+test_pool_build_brief_variant
+
+test_pool_build_brief_is_lean_and_keeps_safety_rules() {
+  local home brief bytes
+  home="$TMP_ROOT/pool-lean-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lean-1 proj --mode no-mistakes --pool-build >/dev/null 2>&1
+  brief="$home/data/lean-1/brief.md"
+  bytes=$(wc -c < "$brief")
+  [ "$bytes" -lt 3500 ] || fail "pool brief scaffold must stay under 3500 bytes (got $bytes)"
+  assert_grep 'git rev-parse --show-toplevel' "$brief" "lean pool brief lost the isolation assertion"
+  assert_grep 'launched in primary checkout' "$brief" "lean pool brief lost the isolation stop"
+  assert_grep 'Never push to any remote and never open a PR' "$brief" "lean pool brief lost the no-push rule"
+  assert_grep "blocked [at=<epoch>]: {why}" "$brief" "lean pool brief lost the blocked status"
+  assert_grep "needs-decision [key=<slug>]" "$brief" "lean pool brief lost the needs-decision status"
+  # shellcheck disable=SC2016  # literal backticks in the brief text
+  assert_grep 'Never start a shell command with `cd`' "$brief" "lean pool brief lost the no-cd rule"
+  assert_grep 'handled/' "$brief" "lean pool brief lost the inbox acknowledgement move"
+  assert_grep 'The move IS the acknowledgement' "$brief" "lean pool brief lost the inbox ack statement"
+  assert_grep 'complete only when committed on your branch' "$brief" "lean pool brief lost commit-before-done"
+  assert_grep 'Do NOT run /no-mistakes, do NOT push' "$brief" "lean pool brief lost the delivery prohibition"
+  pass "fm-brief.sh: --pool-build brief stays lean and keeps its safety rules"
+}
+test_pool_build_brief_is_lean_and_keeps_safety_rules
+
+test_pool_build_brief_survives_include_that_filters_to_nothing() {
+  local home out rc=0
+  home="$TMP_ROOT/pool-empty-include-home"
+  mkdir -p "$home/data" "$home/config"
+  printf '# Home brief additions\n- **Scout and Review Tasks**: Write findings to data/<task-id>/report.md.\n' > "$home/config/brief-include.md"
+  out=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$home/config" "$ROOT/bin/fm-brief.sh" empty-inc-1 proj --mode no-mistakes --pool-build 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "a pool scaffold whose include filters to nothing must still succeed, got $rc: $out"
+  assert_contains "$out" "scaffolded:" "scaffold must report success"
+  assert_no_grep "Home brief additions" "$home/data/empty-inc-1/brief.md" "an empty filtered include must add no section"
+  pass "fm-brief.sh: --pool-build survives an include that filters to nothing"
+}
+test_pool_build_brief_survives_include_that_filters_to_nothing

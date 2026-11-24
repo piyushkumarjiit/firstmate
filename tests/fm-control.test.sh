@@ -183,6 +183,10 @@ case "${1:-}" in
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
+    if [ -f "$D/after-escape" ] && [ -f "$D/keys" ] && grep -qx Escape "$D/keys"; then
+      cat "$D/after-escape"
+      exit 0
+    fi
     if [ -f "$D/after-enter" ] && [ -f "$D/keys" ] && grep -qx Enter "$D/keys"; then
       # after-enter-late holds how many captures after Enter still show the
       # ordinary pane, for a screen that renders after the submit has read it.
@@ -1145,6 +1149,50 @@ test_muse_interrupt_confirms_adapter_acknowledgement() {
   pass "fm-control interrupt: muse confirms cancellation from its session log"
 }
 
+test_agy_interrupt_confirms_rendered_row() {
+  local dir out rc
+  dir=$(new_case agy-ack)
+  add_task "$dir" t1 agy
+  alive_as "$dir" agy
+  printf 'Thinking for 5s, 100 tokens...\n' > "$dir/fake/pane"
+  printf '⎿  Interrupted · What should Antigravity CLI do instead?\n' > "$dir/fake/after-escape"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "agy interrupt should observe rendered acknowledgement"$'\n'"$out"
+  assert_contains "$out" "verified=agent-alive cancel=confirmed" \
+    "the result should report agy's cancelled terminal acknowledgement"
+  pass "fm-control interrupt: agy confirms cancellation from rendered interrupted row"
+}
+
+test_agy_interrupt_ignores_a_stale_interrupted_row() {
+  local dir out rc
+  dir=$(new_case agy-stale-ack)
+  add_task "$dir" t1 agy
+  alive_as "$dir" agy
+  printf '⎿  Interrupted · What should Antigravity CLI do instead?\n' > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "agy interrupt delivery should succeed"$'\n'"$out"
+  assert_contains "$out" "cancel=unconfirmed" \
+    "an Interrupted row already on screen before the press must not confirm the new cancel"
+  printf '⎿  Interrupted · What should Antigravity CLI do instead?\n⎿  Interrupted · What should Antigravity CLI do instead?\n' > "$dir/fake/after-escape"
+  rm -f "$dir/fake/keys"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  assert_contains "$out" "cancel=confirmed" "a second Interrupted row appearing after the press confirms"
+  pass "fm-control interrupt: agy ignores an Interrupted row that was already visible"
+}
+
+test_agy_interrupt_without_row_reports_unconfirmed() {
+  local dir out rc
+  dir=$(new_case agy-no-ack)
+  add_task "$dir" t1 agy
+  alive_as "$dir" agy
+  printf 'Thinking for 5s, 100 tokens...\n' > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "agy interrupt delivery should succeed"$'\n'"$out"
+  assert_contains "$out" "verified=agent-alive cancel=unconfirmed" \
+    "missing interrupted row should leave cancellation unconfirmed"
+  pass "fm-control interrupt: agy reports unconfirmed when interrupted row is absent"
+}
+
 test_interrupt_revalidates_agent_after_acknowledgement_wait() {
   local dir root log out rc
   dir=$(new_case ack-race)
@@ -1365,6 +1413,9 @@ test_exit_refuses_the_confirming_enter
 test_exit_names_a_picker_that_renders_after_the_submit
 test_interrupt_without_acknowledgement_preserves_busy_state
 test_muse_interrupt_confirms_adapter_acknowledgement
+test_agy_interrupt_confirms_rendered_row
+test_agy_interrupt_without_row_reports_unconfirmed
+test_agy_interrupt_ignores_a_stale_interrupted_row
 test_interrupt_revalidates_agent_after_acknowledgement_wait
 test_exit_accepts_agent_stopped_by_busy_interrupt
 test_agent_that_does_not_stop_fails_closed

@@ -1207,7 +1207,32 @@ crew_dispatch_validate() {
       end;
     def configured_profiles:
       ([(.rules // [])[]? | profiles(.use?)[]?]
-        + (if has("default") then [profiles(.default)[]?] else [] end));
+        + (if has("default") then [profiles(.default)[]?] else [] end)
+        + (if (.roles? | type) == "object" then
+            (if (.roles.review? | type) == "array" then [.roles.review[]? | select(type == "object")] else [] end)
+            + (if (.roles.fix? | type) == "array" then [.roles.fix[]? | select(type == "object")] else [] end)
+           else [] end));
+    def roles_err:
+      if (has("roles") | not) then null
+      elif (.roles | type) != "object" then "roles must be an object"
+      elif ((.roles | keys) - ["review", "fix"] | length) > 0 then
+        "unknown roles: " + (((.roles | keys) - ["review", "fix"]) | join(", "))
+      elif ([.roles[] | select((type != "array") or (length == 0))] | length) > 0 then
+        "each role entry in roles must be a non-empty array"
+      elif ([.roles[] | .[] | select(type != "object")] | length) > 0 then
+        "each role profile must be an object"
+      elif ([.roles[] | .[] | select((.harness? | type) != "string" or (.harness | length) == 0)] | length) > 0 then
+        "each role profile needs harness"
+      elif ([.roles[] | .[] | select((.model? | type) != "string" or (.model | length) == 0)] | length) > 0 then
+        "each role profile needs non-empty model"
+      elif ([.roles[] | .[] | select(has("account") and ((.account | type) != "string" or (.account | length) == 0))] | length) > 0 then
+        "role profile account must be a non-empty string when present"
+      elif ([.roles[] | .[] | select(has("effort") and ((.effort | type) != "string" or (.effort | length) == 0))] | length) > 0 then
+        "role profile effort must be a non-empty string when present"
+      elif $typed and ([.roles[] | .[] | select(has("provider") and (provider_id(.provider) | not))] | length) > 0 then
+        "role profile provider must match ^[a-z0-9]+(-[a-z0-9]+)*\\z when present"
+      else null
+      end;
     def malformed_optional_fields($items):
       ($items | any(has("model") and (((.model | type) != "string") or (.model | length) == 0)))
       or ($items | any(has("effort") and (((.effort | type) != "string") or (.effort | length) == 0)))
@@ -1257,6 +1282,7 @@ crew_dispatch_validate() {
     elif [(.rules // [])[]? | .select? // empty | select(. != "quota-balanced")] | length > 0 then
       "unknown select: " + ([ (.rules // [])[]? | .select? // empty | select(. != "quota-balanced") ] | unique | join(", "))
     elif has("shared_quota") and (.shared_quota | type) != "boolean" then "shared_quota must be true or false when present"
+    elif roles_err != null then roles_err
     elif has("default") and ((.default | type) != "object" and (.default | type) != "array") then "default must be a profile object or non-empty profile array"
     elif has("default") and ((.default | type) == "array" and (.default | length) == 0) then "default needs at least one profile"
     elif has("default") and ([profiles(.default)[]? | select(type != "object")] | length) > 0 then "each default profile must be an object"

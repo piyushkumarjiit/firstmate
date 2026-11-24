@@ -1,0 +1,157 @@
+From: Firstmate agy-integration-scout <local-draft>
+Subject: [PATCH] agent/antigravity: pass prompt via --input-format stream-json stdin
+
+Passes the prompt to `agy` as a single NDJSON `user` event on stdin using
+`--print="" --input-format stream-json`, removing `opts.Prompt` from argv so
+large diffs never hit OS `E2BIG` (`argument list too long`).
+
+Applies cleanly to `kunchenguid/no-mistakes` v1.96.0 (verified with `git apply --check`).
+
+--- a/internal/agent/antigravity.go
++++ b/internal/agent/antigravity.go
+@@ -47,7 +47,7 @@ func (a *antigravityAgent) Run(ctx context.Context, opts RunOpts) (*Result, erro
+ 
+ func (a *antigravityAgent) Close() error { return nil }
+ 
+-func (a *antigravityAgent) buildArgs(prompt, schemaPath, sessionID string) []string {
++func (a *antigravityAgent) buildArgs(schemaPath, sessionID string) []string {
+ 	// Antigravity has strict flag parsing: only --print, --json-schema, --output-format
+ 	// We append user extraArgs before the strict ones.
+ 	args := make([]string, 0, len(a.extraArgs)+11)
+@@ -59,12 +59,42 @@ func (a *antigravityAgent) buildArgs(prompt, schemaPath, sessionID string) []str
+ 	if !antigravityUserSetPrintTimeout(a.extraArgs) {
+ 		args = append(args, "--print-timeout", "24h")
+ 	}
+-	args = append(args, "--print", prompt)
++	args = append(args, "--print=", "--input-format", "stream-json")
+ 	if schemaPath != "" {
+ 		args = append(args, "--json-schema", schemaPath)
+ 	}
+ 	args = append(args, "--output-format", "stream-json")
+ 	return args
++}
++
++type agyStreamInputEvent struct {
++	Event   string                 `json:"event"`
++	Message agyStreamInputMessage  `json:"message"`
++}
++
++type agyStreamInputMessage struct {
++	Role    string                  `json:"role"`
++	Content []agyStreamInputContent `json:"content"`
++}
++
++type agyStreamInputContent struct {
++	Type string `json:"type"`
++	Text string `json:"text"`
++}
++
++func encodeAntigravityStreamInput(prompt string) ([]byte, error) {
++	payload := agyStreamInputEvent{
++		Event: "user",
++		Message: agyStreamInputMessage{
++			Role:    "user",
++			Content: []agyStreamInputContent{{Type: "text", Text: prompt}},
++		},
++	}
++	b, err := json.Marshal(payload)
++	if err != nil {
++		return nil, err
++	}
++	return append(b, '\n'), nil
+ }
+ 
+ // antigravityUserSetPrintTimeout reports whether extraArgs already specifies
+@@ -109,9 +139,14 @@ func (a *antigravityAgent) runOnce(ctx context.Context, opts RunOpts) (*Result,
+ 	if opts.Session != nil {
+ 		requestedSession = opts.Session.ID
+ 	}
+-	args := a.buildArgs(opts.Prompt, schemaPath, requestedSession)
++	stdinPayload, err := encodeAntigravityStreamInput(opts.Prompt)
++	if err != nil {
++		return nil, fmt.Errorf("antigravity encode prompt: %w", err)
++	}
++	args := a.buildArgs(schemaPath, requestedSession)
+ 	cmd := exec.CommandContext(ctx, bin, args...)
+ 	cmd.Dir = opts.CWD
++	cmd.Stdin = bytes.NewReader(stdinPayload)
+ 	cmd.Env = a.gitSafeEnv(opts.CWD)
+ 	shellenv.ConfigureShellCommand(cmd)
+ 
+--- a/internal/agent/antigravity_test.go
++++ b/internal/agent/antigravity_test.go
+@@ -13,9 +13,9 @@ import (
+ 
+ func TestAntigravityAgent_BuildArgs(t *testing.T) {
+ 	a := &antigravityAgent{bin: "agy"}
+-	args := a.buildArgs("test prompt", "", "")
++	args := a.buildArgs("", "")
+ 
+-	expected := []string{"--dangerously-skip-permissions", "--print-timeout", "24h", "--print", "test prompt", "--output-format", "stream-json"}
++	expected := []string{"--dangerously-skip-permissions", "--print-timeout", "24h", "--print=", "--input-format", "stream-json", "--output-format", "stream-json"}
+ 	if len(args) != len(expected) {
+ 		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+ 	}
+@@ -28,9 +28,9 @@ func TestAntigravityAgent_BuildArgs(t *testing.T) {
+ 
+ func TestAntigravityAgent_BuildArgs_WithSchema(t *testing.T) {
+ 	a := &antigravityAgent{bin: "agy"}
+-	args := a.buildArgs("test prompt", "/tmp/schema.json", "")
++	args := a.buildArgs("/tmp/schema.json", "")
+ 
+-	expected := []string{"--dangerously-skip-permissions", "--print-timeout", "24h", "--print", "test prompt", "--json-schema", "/tmp/schema.json", "--output-format", "stream-json"}
++	expected := []string{"--dangerously-skip-permissions", "--print-timeout", "24h", "--print=", "--input-format", "stream-json", "--json-schema", "/tmp/schema.json", "--output-format", "stream-json"}
+ 	if len(args) != len(expected) {
+ 		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+ 	}
+@@ -43,9 +43,9 @@ func TestAntigravityAgent_BuildArgs_WithSchema(t *testing.T) {
+ 
+ func TestAntigravityAgent_BuildArgs_WithExtraArgs(t *testing.T) {
+ 	a := &antigravityAgent{bin: "agy", extraArgs: []string{"--debug"}}
+-	args := a.buildArgs("test prompt", "", "")
++	args := a.buildArgs("", "")
+ 
+-	expected := []string{"--debug", "--dangerously-skip-permissions", "--print-timeout", "24h", "--print", "test prompt", "--output-format", "stream-json"}
++	expected := []string{"--debug", "--dangerously-skip-permissions", "--print-timeout", "24h", "--print=", "--input-format", "stream-json", "--output-format", "stream-json"}
+ 	if len(args) != len(expected) {
+ 		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
+ 	}
+@@ -64,7 +64,7 @@ func TestAntigravityAgent_BuildArgs_WithUserPrintTimeoutOverride(t *testing.T) {
+ 		{"-t=15m"},
+ 	} {
+ 		a := &antigravityAgent{bin: "agy", extraArgs: extra}
+-		args := a.buildArgs("test prompt", "", "")
++		args := a.buildArgs("", "")
+ 		joined := strings.Join(args, " ")
+ 		if strings.Contains(joined, "--print-timeout 24h") {
+ 			t.Errorf("args = %v, should not contain default --print-timeout 24h when extraArgs has %v", args, extra)
+@@ -74,10 +74,28 @@ func TestAntigravityAgent_BuildArgs_WithUserPrintTimeoutOverride(t *testing.T) {
+ 
+ func TestAntigravityAgent_BuildArgs_ResumesConversation(t *testing.T) {
+ 	a := &antigravityAgent{bin: "agy"}
+-	args := a.buildArgs("test prompt", "", "conv-123")
++	args := a.buildArgs("", "conv-123")
+ 
+ 	joined := strings.Join(args, " ")
+ 	if !strings.Contains(joined, "--conversation conv-123") {
+ 		t.Errorf("args = %v, want --conversation conv-123 for a resumable session", args)
+ 	}
++}
++
++func TestEncodeAntigravityStreamInput_LargePrompt(t *testing.T) {
++	big := strings.Repeat("x", 256*1024)
++	b, err := encodeAntigravityStreamInput(big)
++	if err != nil {
++		t.Fatalf("encodeAntigravityStreamInput() error = %v", err)
++	}
++	if !bytes.HasSuffix(b, []byte("\n")) {
++		t.Fatalf("encoded stream input must end with newline")
++	}
++	var parsed agyStreamInputEvent
++	if err := json.Unmarshal(bytes.TrimSpace(b), &parsed); err != nil {
++		t.Fatalf("unmarshal encoded stream input: %v", err)
++	}
++	if parsed.Event != "user" || parsed.Message.Role != "user" || len(parsed.Message.Content) != 1 || parsed.Message.Content[0].Text != big {
++		t.Fatalf("unexpected decoded payload: %+v", parsed)
++	}
+ }

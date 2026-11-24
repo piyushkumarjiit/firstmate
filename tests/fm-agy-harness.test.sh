@@ -154,7 +154,11 @@ test_agy_control_mechanics_are_the_verified_ones() {
   [ "$(fm_control_interrupt_key agy)" = Escape ] || fail "agy must interrupt on Escape"
   [ "$(fm_control_interrupt_repeat agy)" = 1 ] || fail "agy must interrupt on a single press"
   [ -z "$(fm_control_interrupt_clear_key agy)" ] || fail "agy must need no clear key"
-  [ "$(fm_control_interrupt_ack_source agy)" = none ] || fail "agy must have no ack source"
+  # agy's cancellation claim is the rendered `Interrupted · What should
+  # Antigravity CLI do instead?` row (bin/fm-control.sh owns the baseline
+  # count), so its ack source is the rendered row rather than none.
+  [ "$(fm_control_interrupt_ack_source agy)" = agy-rendered-row ] \
+    || fail "agy's interrupt ack source must be its rendered Interrupted row"
   [ "$(fm_control_exit_command agy)" = /quit ] || fail "agy must exit on /quit"
   pass "fm-control-lib: agy mechanics are Escape once, no clear key, and /quit"
 }
@@ -547,7 +551,7 @@ SH
 set -u
 if [ "${1:-}" = models ]; then
   if [ "${FM_FAKE_AGY_MODELS_FAIL:-0}" = 1 ]; then exit 3; fi
-  if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then cat > /dev/null; sleep 30; exit 0; fi
+  if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then cat > /dev/null; date +%s > "$FM_FAKE_AGY_STATE.probe-start"; sleep "${FM_FAKE_AGY_MODELS_HANG_SECS:-30}" & hang=$!; trap 'date +%s > "$FM_FAKE_AGY_STATE.probe-end"; kill "$hang" 2>/dev/null; exit 143' TERM INT; wait "$hang"; exit 0; fi
   printf 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n'
   printf 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)\n'
   printf 'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n'
@@ -616,10 +620,12 @@ run_agy_spawn() {
     FM_FAKE_AGY_SETTINGS="$home/.gemini/antigravity-cli/settings.json" \
     FM_FAKE_AGY_MODELS_FAIL="${FM_FAKE_AGY_MODELS_FAIL:-0}" \
     FM_FAKE_AGY_MODELS_HANG="${FM_FAKE_AGY_MODELS_HANG:-0}" \
+    FM_FAKE_AGY_MODELS_HANG_SECS="${FM_FAKE_AGY_MODELS_HANG_SECS:-30}" \
     FM_FAKE_AGY_IGNORE_TRUST="${FM_FAKE_AGY_IGNORE_TRUST:-0}" \
     FM_FAKE_AGY_ASSUME_TRUSTED="${FM_FAKE_AGY_ASSUME_TRUSTED:-0}" \
     FM_FAKE_AGY_RACE="${FM_FAKE_AGY_RACE:-0}" \
     FM_FAKE_AGY_ANSWER="${FM_FAKE_AGY_ANSWER:-works}" \
+    POOL_CONF="${POOL_CONF:-$case_dir/no-pool.conf}" \
     FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=${FM_AGY_MODELS_TIMEOUT:-1} \
     PATH="$fakebin:$BASE_PATH" \
     "$SPAWN" "$id" "$proj" --harness agy --mode no-mistakes --yolo off "$@" 2>&1
@@ -715,18 +721,27 @@ test_agy_hung_listing_is_cut_off_and_launches() {
 }
 
 test_agy_zero_model_timeout_is_clamped_to_the_default_bound() {
-  local id rec out rc started elapsed
+  local id rec out rc started elapsed probe
   id="agy-zerobound-z14-$$"
   rec=$(make_agy_spawn_case zerobound "$id")
   read_agy_spawn_record "$rec"
   rc=0
   started=$(date +%s)
-  out=$(FM_FAKE_AGY_MODELS_HANG=1 FM_AGY_MODELS_TIMEOUT=0 \
+  out=$(FM_FAKE_AGY_MODELS_HANG=1 FM_FAKE_AGY_MODELS_HANG_SECS=22 FM_AGY_MODELS_TIMEOUT=0 \
     run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
     "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
   elapsed=$(( $(date +%s) - started ))
   expect_code 0 "$rc" "a hung listing with a zero bound must not block the spawn"
-  [ "$elapsed" -lt 25 ] || fail "a zero model bound disabled the deadline (took ${elapsed}s)"
+  # The ceiling is on the probe's own lifetime, recorded by the stand-in: the
+  # spawn's fixed setup (thousands of process launches) is load-dependent and
+  # is not what the clamp governs.
+  [ -s "$CASE_DIR/agy.state.probe-start" ] && [ -s "$CASE_DIR/agy.state.probe-end" ] \
+    || fail "the hung listing stand-in recorded no probe lifetime"
+  probe=$(( $(cat "$CASE_DIR/agy.state.probe-end") - $(cat "$CASE_DIR/agy.state.probe-start") ))
+  [ "$probe" -lt 25 ] || fail "a zero model bound disabled the deadline (probe ran ${probe}s)"
+  # The fake listing hangs for 22s, so an un-clamped zero bound never reaches
+  # its deadline and prints no notice, while the documented 15s clamp does.
+  # The notice below pins the clamp value itself.
   assert_contains "$out" "did not answer within 15s" \
     "a zero model bound was not clamped to the documented default"
   [ -s "$CASE_DIR/launch.log" ] || fail "a zero model bound produced no launch command"
@@ -848,6 +863,59 @@ test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn() {
   pass "fm-spawn: an agy dialog that never turns busy fails the spawn and closes the endpoint"
 }
 
+test_agy_pool_route_requires_real_pool_config() {
+  local id rec out rc launch pc
+  id="agy-poolroute-a1-$$"
+  rec=$(make_agy_spawn_case poolroute "$id")
+  read_agy_spawn_record "$rec"
+  pc="$CASE_DIR/gpro-pool.conf"
+  rc=0
+  out=$(POOL_CONF="$CASE_DIR/absent-pool.conf" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low --effort low) || rc=$?
+  expect_code 0 "$rc" "without pool config agy must launch the plain binary without a pool-builder brief: $out"
+  launch=$(cat "$CASE_DIR/launch.log")
+  assert_contains "$launch" "$FAKEBIN_DIR/agy" "no pool config must keep the plain agy path"
+  assert_not_contains "$launch" "agy-pool/agy" "no pool config must not route through the pool launcher"
+
+  id="agy-poolroute-a2-$$"
+  rec=$(make_agy_spawn_case poolroute2 "$id")
+  read_agy_spawn_record "$rec"
+  pc="$CASE_DIR/gpro-pool.conf"
+  printf '%s\n' gpro1 > "$pc"
+  rc=0
+  out=$(POOL_CONF="$pc" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low --effort low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "with pool config a non-local-only agy ship needs a pool-builder brief"
+  assert_contains "$out" "requires a pool-builder brief" "pool config must select the pool route"
+  id="agy-poolroute-a3-$$"
+  rec=$(make_agy_spawn_case poolroute3 "$id")
+  read_agy_spawn_record "$rec"
+  pc="$CASE_DIR/gpro-pool.conf"
+  printf '# no accounts yet\n\n' > "$pc"
+  rc=0
+  out=$(POOL_CONF="$pc" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low --effort low) || rc=$?
+  expect_code 0 "$rc" "a comment-only pool config must keep the plain agy path: $out"
+  assert_not_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "a comment-only pool config is not a configured pool"
+  pass "fm-spawn: agy routes through the pool only when real pool config exists"
+}
+
+test_agy_direct_pr_keeps_plain_launcher_with_pool_config() {
+  local id rec out rc pc
+  id="agy-poolroute-d1-$$"
+  rec=$(make_agy_spawn_case poolroute-dpr "$id")
+  read_agy_spawn_record "$rec"
+  pc="$CASE_DIR/gpro-pool.conf"
+  printf '%s\n' gpro1 > "$pc"
+  rc=0
+  out=$(POOL_CONF="$pc" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --mode direct-PR --model gemini-3.8-flash-low --effort low) || rc=$?
+  expect_code 0 "$rc" "a direct-PR agy ship must spawn with a plain brief even when a pool config exists: $out"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "$FAKEBIN_DIR/agy" "direct-PR must launch the plain agy binary"
+  assert_not_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "direct-PR must not route through the pool launcher"
+  pass "fm-spawn: a direct-PR agy ship keeps the plain launcher when a pool config exists"
+}
+
 test_agy_missing_binary_refuses_before_pane_creation() {
   local id rec out rc
   id="agy-missing-z5-$$"
@@ -942,5 +1010,7 @@ test_agy_unregistered_path_ignores_busy_until_the_dialog_is_answered
 test_agy_unregistered_path_without_a_dialog_fails_the_spawn
 test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
 test_agy_missing_binary_refuses_before_pane_creation
+test_agy_pool_route_requires_real_pool_config
+test_agy_direct_pr_keeps_plain_launcher_with_pool_config
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
 test_agy_spawn_arms_no_busy_wiring

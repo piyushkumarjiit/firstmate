@@ -127,7 +127,10 @@ SH
       cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$$" >> "$FM_HOME/state/arm-ran"
-sleep 1.5
+# Outlast the park timeout below. A shorter fixture only fails when the poll
+# sleep lands before the child exits, so a loaded host starts a second attempt
+# and the case stops proving that one timeout bounds the whole park.
+sleep 5
 printf 'watcher: FAILED - cycle ended without an actionable reason\n'
 exit 1
 SH

@@ -1169,6 +1169,106 @@ test_refusal_keyed_resend_keeps_the_accepted_keys() {
   pass "fm-send --resolve-key: a refused key's keyed resend keeps every accepted key in order"
 }
 
+test_pool_builder_gate_routes_to_deliver_respond() {
+  local dir fb log home rc out
+  dir="$TMP_ROOT/pool-gate"; mkdir -p "$dir/wt" "$dir/bin"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home pool-gate)
+  mkdir -p "$home/data/tpool"
+
+  git -C "$dir/wt" init -q -b "fm/tpool"
+  git -C "$dir/wt" config user.email "test@example.com"
+  git -C "$dir/wt" config user.name "Test"
+  echo "content" > "$dir/wt/file.txt"
+  git -C "$dir/wt" add file.txt
+  git -C "$dir/wt" commit -q -m "initial commit"
+  local sha
+  sha=$(git -C "$dir/wt" rev-parse HEAD)
+
+  fm_write_meta "$home/state/tpool.meta" \
+    "endpoint_task_id=tpool" \
+    "worktree=$dir/wt" \
+    "branch=fm/tpool" \
+    "mode=no-mistakes" \
+    "kind=ship" \
+    "builder=pool" \
+    "window=sess:fm-tpool"
+
+  cat > "$home/state/tpool.status" <<EOF
+done [at=100]: committed $sha
+needs-decision [at=101] [key=gate-review]: f1, f2
+EOF
+
+  cat > "$dir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dir/nm.log"
+if [[ "\${1:-}" == "axi" && "\${2:-}" == "status" ]]; then
+  cat <<'TOON'
+run:
+  id: "01TEST"
+  status: completed
+outcome: passed
+branch_sync:
+  next_action:
+    command: "no-mistakes axi sync"
+TOON
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "$dir/bin/no-mistakes"
+
+  # 1. Pool gate answer routes to fm-deliver respond, normalizes form, closes gate, and skips inbox/pane
+  env PATH="$dir/bin:$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_MAIN_USER="$(id -un)" \
+    FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" tpool --resolve-key gate-review "fix findings=f1 ignore=f2" >/dev/null 2>&1; rc=$?
+  expect_code 0 "$rc" "pool gate answer via fm-send --resolve-key gate-review should succeed"
+  [ ! -d "$home/state/tpool.inbox" ] || fail "pool gate answer must not write to worker inbox"
+  [ ! -s "$log" ] || fail "pool gate answer must not ring worker pane, got: $(cat "$log")"
+  assert_contains "$(cat "$dir/nm.log")" "axi respond --action fix --findings f1 --ignore f2" \
+    "fm-send must normalize supervisor answer and route to no-mistakes axi respond via fm-deliver"
+  grep -q 'resolved.*\[key=gate-review\].*firstmate responded fix findings=f1 ignore=f2' "$home/state/tpool.status" \
+    || fail "status file must record resolved line for gate-review: $(cat "$home/state/tpool.status")"
+  out=$(drain_out "$home")
+  if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
+    fail "resolved pool gate must not remain in OPEN DECISIONS: $out"
+  fi
+
+  # 2. Non-gate decision on a builder=pool task still routes to the worker inbox
+  printf 'needs-decision [at=102] [key=api-shape]: pick REST or RPC\n' >> "$home/state/tpool.status"
+  env PATH="$dir/bin:$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_MAIN_USER="$(id -un)" \
+    FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" tpool --resolve-key api-shape "use REST" >/dev/null 2>&1; rc=$?
+  expect_code 0 "$rc" "non-gate decision on pool builder must still succeed via inbox"
+  grep -qF "use REST" "$home/state/tpool.inbox/001.msg" \
+    || fail "non-gate decision on pool builder must still reach worker inbox"
+
+  # 3. Missing backend endpoint on builder=pool still works for gate-* answers
+  fm_write_meta "$home/state/tpool.meta" \
+    "endpoint_task_id=tpool" \
+    "worktree=$dir/wt" \
+    "branch=fm/tpool" \
+    "mode=no-mistakes" \
+    "kind=ship" \
+    "builder=pool"
+  : > "$dir/nm.log"
+  printf 'needs-decision [at=103] [key=gate-fix_review]: approve or fix\n' >> "$home/state/tpool.status"
+  env PATH="$dir/bin:$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" FM_MAIN_USER="$(id -un)" \
+    FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" tpool --resolve-key gate-fix_review "approve" >/dev/null 2>&1; rc=$?
+  expect_code 0 "$rc" "pool gate answer without window metadata must still route to fm-deliver respond"
+  assert_contains "$(cat "$dir/nm.log")" "axi respond --action approve" \
+    "approve shorthand must normalize to --action approve"
+
+  pass "fm-send --resolve-key: builder=pool gate-* routes to fm-deliver respond, normalizes forms, and avoids worker inbox"
+}
+
 test_answer_send_closes_open_decision
 test_answer_close_is_self_announced
 test_separate_resolve_key_answers_do_not_rewake
@@ -1198,3 +1298,4 @@ test_stamped_close_line_stays_within_the_status_line_cap
 test_failed_close_recovery_command_is_shell_safe
 test_remote_reserved_pending_reply_key_closes_locally
 test_decision_answer_partition_relocates_under_the_record
+test_pool_builder_gate_routes_to_deliver_respond

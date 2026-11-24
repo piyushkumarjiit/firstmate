@@ -9,7 +9,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | --- | --- |
 | Firstmate's code, private files, or project location | [FM_HOME](#fm_home) and [operational home layout](#operational-home-layout-and-state) |
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
-| Worker permissions, accounts, or environment | [Codex approval review](#codex-automatic-approval-review), [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [Codex permission mode](#codex-permission-mode-configcodex-permission-mode), [persistent managed-policy failover](#persistent-managed-policy-failover), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [several Claude accounts](#several-claude-accounts-configclaude-accounts), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
+| Worker permissions, accounts, or environment | [Codex approval review](#codex-automatic-approval-review), [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [Claude worker launcher](#claude-worker-launcher-configclaude-bin), [Codex permission mode](#codex-permission-mode-configcodex-permission-mode), [persistent managed-policy failover](#persistent-managed-policy-failover), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [several Claude accounts](#several-claude-accounts-configclaude-accounts), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), [startup memory budget](#startup-memory-budget-configstartup-memory-budget), and [stow guard](#stow-guard-configstow-guard) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [Codex native Stop park](#codex-native-stop-park-configcodex-stop-park), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
@@ -1396,7 +1396,7 @@ A local standalone-clone home cannot receive a primary-local commit through that
 
 ## Harness support
 
-claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, and omp are empirically verified for crewmate and secondmate launches; gemini is verified for crewmate and scout launches only, and [README requirements](../README.md#requirements) own the set supported for the primary session.
+claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, omp, and agy are empirically verified for crewmate and secondmate launches; gemini is verified for crewmate and scout launches only, and [README requirements](../README.md#requirements) own the set supported for the primary session.
 
 ### Harness restrictions and credentials
 
@@ -1587,6 +1587,12 @@ Both approval-mode files follow the primary-authoritative [`secondmate-provision
 T3 Code owns its provider command and always uses `full-access`, so `backend=t3code` accepts the default `bypass` posture and refuses `auto` before mutation; [`t3code-backend.md`](t3code-backend.md#active-limits) owns that backend limit.
 
 The [Claude adapter reference](../.agents/skills/harness-adapters/references/harness/claude.md) records the permission-mode observations and the distinct startup dialogs.
+
+## Claude worker launcher (config/claude-bin)
+
+An optional local, gitignored `config/claude-bin` names the executable a Firstmate-built Claude command line starts with, such as a gateway wrapper, so a home can route every Claude worker through it without replacing the installed binary.
+The first line is the executable and is shell-quoted into the launch line as one token, so it names a launcher only, with no arguments.
+Absent, workers launch plain `claude`.
 
 ## Codex permission mode (config/codex-permission-mode)
 
@@ -2007,6 +2013,14 @@ This section is the single owner of the canonical schema and its per-field seman
 {
   "preferred_provider": "<optional quota-axi provider family to spend first>",
   "shared_quota": false,
+  "roles": {
+    "review": [
+      { "harness": "<adapter>", "model": "<model>", "account": "<optional account>" }
+    ],
+    "fix": [
+      { "harness": "<adapter>", "model": "<model>", "account": "<optional account>" }
+    ]
+  },
   "rules": [
     {
       "when": "<natural-language condition describing a kind of task>",
@@ -2036,6 +2050,18 @@ This section is the single owner of the canonical schema and its per-field seman
 | Profile `model` and `effort`; rule `why` | Optional. |
 | Top-level `preferred_provider` | Optional provider-family preference, applied after eligibility checks under `quota-array-dispatch`. |
 | Top-level `shared_quota` | Optional; see "Shared-quota opt-out" below. |
+| Top-level `roles` | Optional object with optional `review` and `fix` non-empty arrays of `{harness, model, account?}` objects; see "Pipeline roles" below. |
+
+**Pipeline roles (`roles.review`, `roles.fix`)**
+
+An optional top-level `roles` object configures ordered fallback lists for `no-mistakes` review and fix turns driven by `bin/fm-deliver.sh`.
+Each supported role (`review`, `fix`) is a non-empty array of profile objects containing required non-empty strings `harness` (a verified harness) and `model` and an optional non-empty `account`; the optional `effort` and `provider` keys are validated like any other profile's, but only `model` and `account` shape the pool call.
+`bin/fm-deliver.sh` resolves the active entry for each present role and writes the resolved model, account, and fallback list to `state/<task>.nm-roles`. `bin/agy-pool/nm-agy` reads that file for the task it maps to, because the no-mistakes daemon spawns it with its own environment; `FM_NM_REVIEW_MODEL` / `FM_NM_FIX_MODEL` and their `_ACCOUNT` / `_FROM_CONFIG` siblings still override the file when set.
+When every eligible account for the active model is exhausted, `bin/fm-deliver.sh` rewrites the file and restarts validation on the same head with the next entry in that role's fallback list.
+When `roles` or a given role entry is absent, `bin/agy-pool/nm-agy` defaults review and fix to `gemini-4-neon-medium`; Hydrogen is used only when a role entry names it.
+Role entries apply only to a pool-built task or one whose worker harness is `agy`/`antigravity`, and only entries whose `harness` is `agy` or `antigravity`; every other task keeps its no-mistakes configuration unchanged.
+Within the pool, `bin/fm-agy-pool.sh` tries the same model on the next allowed account (order of `/etc/firstmate/gpro-models.conf`) before any model step-down, and routes a call carrying `--conversation <id>` to the account that owns that conversation, exiting 75 when that account is exhausted.
+`bin/fm-deliver.sh` never restarts a run from scratch after a non-code failure (push authentication, pool capacity exit 75, argument list too long, an agent conversation whose owning account cannot take the call, or exhausted quota with no fallback left): it reports the specific blocker, records it with its head in `state/<task>.nm-blocker`, and refuses `run` on that head until the cause is fixed and `FM_DELIVER_RETRY=1` is set.
 
 **Preferred provider**
 

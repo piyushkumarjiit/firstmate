@@ -11,6 +11,11 @@ metadata:
 For a no-mistakes ship, trigger validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
 The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.
+When an account-pool ship worker reports `done: committed <sha>`, the pool worker leaves no-mistakes to firstmate, and `bin/fm-spawn.sh` has already armed `bin/fm-deliver.sh <task> autostart` to run validation as the main account the moment that line lands.
+Start `bin/fm-deliver.sh <task> run` yourself only when the spawn reported it could not arm the autostart.
+Firstmate answers only the gates that still reach it via `bin/fm-deliver.sh <task> respond`, never passing `--yes`.
+For `builder=pool` tasks, firstmate answers the gate decisions itself; the decision procedure below owns how.
+At run outcome, `bin/fm-deliver.sh` synchronizes the branch with `no-mistakes axi sync` and appends `done:` or `blocked:` to the status file.
 `bin/fm-dod-lib.sh` owns the worker-side `--intent` contract.
 Once validation starts, prefer routing new requirements to follow-up work rather than expanding the current task, unless a new requirement completely invalidates the work being validated; however, the smallest downstream changes needed to keep already accepted product or engineering behavior correct, add behavioral tests where an executable contract exists, or keep documentation accurate remain within the current task even when they touch files not named at intake, and corrections required to satisfy already accepted intent are not new requirements.
 
@@ -22,7 +27,8 @@ Apart from that single supported abort, do not hand-edit, commit, restart, or st
 Once ownership is settled, validate exactly once against that final head so no obsolete or intermediate head is ever treated as authoritative.
 
 An ask-user finding returns as `needs-decision`; firstmate loads `ask-user-authority` and either decides or escalates per that skill.
-Send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the worker's open decision record closes at answer time.
+For worker-owned runs, send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the worker's open decision record closes at answer time.
+For `builder=pool` tasks, gate decisions (`key=gate-*`) are answered on the operator side via `bin/fm-deliver.sh <task> respond` (or `bin/fm-send.sh <task> --resolve-key <gate-*>`, which routes there) and must never be steered into the pool worker's inbox.
 Require the matching `resolved` event, forbid `--yes`, and require the worker to process every synchronous return until completion or a genuinely new escalation.
 Resume fleet supervision immediately after the decision lands.
 

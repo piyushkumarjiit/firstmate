@@ -21,4 +21,5 @@ These safety facts apply to both:
 - A message beginning `/afk` refreshes away mode; a message beginning `/quiet` refreshes quiet mode.
 - Any other unmarked message means the captain returned in away mode (load `/afk`, run the return owner, and do not process that message as ordinary work until its durable catch-up gate clears), or, in quiet mode, is simply answered as ordinary work with the flag and daemon left untouched until an explicit `/quiet off`.
 - Away and quiet mode never expand approval authority for merges, ask-user findings, destructive actions, irreversible actions, or security-sensitive choices.
+- For `builder=pool` tasks, gate decisions (`key=gate-*`) belong to the operator-side `bin/fm-deliver.sh <task> respond` flow (and `bin/fm-send.sh <task> --resolve-key <gate-*>` routes there automatically); never steer a pool worker inbox for a gate decision.
 - Bias ambiguous input toward exit because a present captain takes precedence.
