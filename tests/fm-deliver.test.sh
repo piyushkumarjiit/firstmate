@@ -1387,6 +1387,39 @@ EOF
   pass "blocker classification ignores project test output"
 }
 
+test_failover_triggers_on_pool_quota_notice_in_review_log() {
+  setup_fixture task_poolnotice >/dev/null
+  local tdir="$TMP_ROOT/task_poolnotice" nmhome="$TMP_ROOT/task_poolnotice/nmhome"
+  mkdir -p "$tdir/bin" "$tdir/config" "$tdir/agy-state" "$nmhome/logs/RUNQ"
+  cat > "$tdir/config/crew-dispatch.json" <<'JSON'
+{"roles":{"review":[{"harness":"agy","model":"gemini-4-neon-high","account":"acct1"},{"harness":"agy","model":"gemini-3.8-flash-high"}]}}
+JSON
+  printf "error: Individual quota reached\n[fm-agy-pool] Account 'acct1' hit quota exhaustion; marked exhausted until 1.\n" > "$nmhome/logs/RUNQ/review.log"
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+cmd="\${1:-} \${2:-}"
+if [[ "\$cmd" == "axi run" ]]; then
+  printf '%s\n' "\${FM_NM_REVIEW_MODEL:-}" >> "$tdir/run-models.log"
+  [[ "\${FM_NM_REVIEW_MODEL:-}" == "gemini-4-neon-high" ]] && : > "$tdir/failed_once"
+  exit 0
+elif [[ "\$cmd" == "axi status" ]]; then
+  if [[ -f "$tdir/failed_once" && ! -f "$tdir/aborted" ]]; then
+    printf 'run:\n  id: "RUNQ"\n  status: failed\noutcome: failed\n'
+  else
+    printf 'run:\n  id: "RUNP"\n  status: completed\noutcome: passed\nbranch_sync:\n  next_action:\n    command: "no-mistakes axi sync"\n'
+  fi
+elif [[ "\$cmd" == "axi abort" ]]; then
+  : > "$tdir/aborted"
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  NM_HOME="$nmhome" deliver_env "$tdir" "$DELIVER" task_poolnotice run >/dev/null 2>&1
+  assert_contains "$(cat "$tdir/run-models.log")" "gemini-3.8-flash-high" \
+    "the pool's own quota notice in review.log must trigger failover to the next model"
+  pass "failover triggers on the pool quota notice in review.log"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -1416,4 +1449,5 @@ fm_test_run \
   test_nm_agy_detects_review_role_from_stdin_prompt \
   test_background_failover_restart_keeps_base_branch \
   test_respond_on_running_run_writes_no_blocked_status \
-  test_blocker_ignores_test_step_output
+  test_blocker_ignores_test_step_output \
+  test_failover_triggers_on_pool_quota_notice_in_review_log

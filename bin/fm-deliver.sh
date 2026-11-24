@@ -393,7 +393,7 @@ export_role_env() {
 
 load_role_configs
 
-QUOTA_EXHAUSTION_RE='^[[:space:]]*(\[fm-agy-pool\][[:space:]]*ERROR:.*|antigravity exited .*error=.*|antigravity reported error:.*|error:.*)?[[:space:]]*(All eligible accounts|No eligible account|Individual quota reached|RESOURCE_EXHAUSTED|429([[:space:]]|$)|rate[ -]?limit exceeded|quota exceeded|out of quota)'
+QUOTA_EXHAUSTION_RE='^[[:space:]]*(\[fm-agy-pool\][[:space:]]*(ERROR:.*)?|antigravity exited .*error=.*|antigravity reported error:.*|error:.*)?[[:space:]]*(All eligible accounts|No eligible account|Account [^ ]+ hit quota exhaustion|Individual quota reached|RESOURCE_EXHAUSTED|429([[:space:]]|$)|rate[ -]?limit exceeded|quota exceeded|out of quota)'
 
 pool_log_lines() {
   grep -E '^[[:space:]]*(\[fm-agy-pool\]|\[nm-agy\]|antigravity )' || true
