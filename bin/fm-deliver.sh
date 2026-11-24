@@ -159,12 +159,24 @@ else
   fi
 fi
 
+BLOCKER_FILE="$FM_STATE/${TASK}.nm-blocker"
+# Prints the blocker kind recorded for the current HEAD, if any.
+recorded_blocker_for_head() {
+  [[ -f "$BLOCKER_FILE" ]] || return 1
+  local rec_head rec_kind
+  rec_head=$(sed -n 's/^head=//p' "$BLOCKER_FILE" | head -n 1)
+  rec_kind=$(sed -n 's/^kind=//p' "$BLOCKER_FILE" | head -n 1)
+  [[ -n "$rec_head" && "$rec_head" == "$ACTUAL_SHA" ]] || return 1
+  printf '%s\n' "$rec_kind"
+}
+
 if [[ "$SUBCMD" == ready ]]; then
   # The worker's latest lifecycle line must be the done report itself.
   last_state=$(grep -E '^[[:space:]]*(working|done|blocked|needs-decision|paused)([[:space:]]|\[|:)' "$STATUS_FILE" | tail -n 1 || true)
   [[ "$last_state" =~ ^[[:space:]]*done.*committed ]] || exit 1
   run_head=$(cd "$WORKTREE" && no-mistakes axi status 2>/dev/null | sed -n 's/^[[:space:]]*head_sha:[[:space:]]*"\{0,1\}\([0-9a-f]*\).*/\1/p' | head -n 1)
   [[ "$run_head" != "$ACTUAL_SHA" ]] || exit 1
+  ! recorded_blocker_for_head >/dev/null || exit 1
   exit 0
 fi
 
@@ -248,7 +260,7 @@ allowed_users_for_model() {
 }
 
 user_is_exhausted() {
-  local user="$1" qfile="$AGY_STATE_DIR/${1}.state.json"
+  local qfile="$AGY_STATE_DIR/${1}.state.json"
   [[ -f "$qfile" ]] || return 1
   local exh reset_at now
   exh=$(jq -r '.exhausted // false' "$qfile" 2>/dev/null || echo false)
@@ -263,7 +275,7 @@ user_is_exhausted() {
 
 all_accounts_exhausted_for_entry() {
   local harness="$1" model="$2" account="$3"
-  [[ "$harness" == "agy" ]] || return 1
+  [[ "$harness" == "agy" || "$harness" == "antigravity" ]] || return 1
   local -a candidates=()
   if [[ -n "$account" ]]; then
     candidates=("$account")
@@ -284,25 +296,41 @@ all_accounts_exhausted_for_entry() {
   return 0
 }
 
+# Gemini scope: the review/fix role plumbing (role record, pool routing) applies
+# only to a pool-built task or one whose worker harness is agy/antigravity, and
+# only for role entries naming that harness. Every other task keeps the
+# no-mistakes configuration it always had. A record naming neither (a minimal
+# or legacy one) counts as in scope so role entries still decide.
+task_in_gemini_scope() {
+  local builder harness
+  builder=$(grep -E '^builder=' "$META_FILE" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+  harness=$(grep -E '^harness=' "$META_FILE" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+  [[ "$builder" == pool ]] && return 0
+  [[ -z "$harness" ]] && return 0
+  case "$harness" in agy|antigravity) return 0 ;; esac
+  return 1
+}
+
 load_role_configs() {
   REVIEW_HARNESSES=(); REVIEW_MODELS=(); REVIEW_ACCOUNTS=(); REVIEW_IDX=0
   FIX_HARNESSES=(); FIX_MODELS=(); FIX_ACCOUNTS=(); FIX_IDX=0
   [[ -f "$DISPATCH_CONFIG" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
-  local row h m a
+  task_in_gemini_scope || return 0
+  local h m a
   while IFS=$'\t' read -r h m a; do
     [[ -n "$h" && -n "$m" ]] || continue
     REVIEW_HARNESSES+=("$h")
     REVIEW_MODELS+=("$m")
     REVIEW_ACCOUNTS+=("$a")
-  done < <(jq -r '(.roles.review // [])[]? | [(.harness // ""), (.model // ""), (.account // "")] | @tsv' "$DISPATCH_CONFIG" 2>/dev/null || true)
+  done < <(jq -r '(.roles.review // [])[]? | select((.harness // "") == "agy" or (.harness // "") == "antigravity") | [(.harness // ""), (.model // ""), (.account // "")] | @tsv' "$DISPATCH_CONFIG" 2>/dev/null || true)
 
   while IFS=$'\t' read -r h m a; do
     [[ -n "$h" && -n "$m" ]] || continue
     FIX_HARNESSES+=("$h")
     FIX_MODELS+=("$m")
     FIX_ACCOUNTS+=("$a")
-  done < <(jq -r '(.roles.fix // [])[]? | [(.harness // ""), (.model // ""), (.account // "")] | @tsv' "$DISPATCH_CONFIG" 2>/dev/null || true)
+  done < <(jq -r '(.roles.fix // [])[]? | select((.harness // "") == "agy" or (.harness // "") == "antigravity") | [(.harness // ""), (.model // ""), (.account // "")] | @tsv' "$DISPATCH_CONFIG" 2>/dev/null || true)
 
   local i
   for (( i = 0; i < ${#REVIEW_MODELS[@]}; i++ )); do
@@ -549,6 +577,41 @@ build_run_intent_and_args() {
   fi
 }
 
+# Non-code failures: a run that failed for a reason no fresh run can fix is
+# never restarted blind. classify_blocker names the cause from the run status,
+# the drive log slice and the run's own step logs; handle_gate_or_outcome
+# reports it and records it per head so `run` refuses until the cause is fixed
+# (FM_DELIVER_RETRY=1 acknowledges that).
+BLOCKER_KIND=""
+BLOCKER_TEXT=""
+classify_blocker() {
+  local status_toon="$1" dlog="$2" log_offset="$3" text="" run_id="" d f
+  BLOCKER_KIND=""; BLOCKER_TEXT=""
+  [[ -f "$dlog" ]] && text=$(tail -c +"$((log_offset + 1))" "$dlog" 2>/dev/null || true)
+  text+=$'\n'"$status_toon"
+  run_id=$(fm_nm_field "$status_toon" id | tr -d '"'"'")
+  d="${NM_HOME:-$HOME/.no-mistakes}/logs/$run_id"
+  if [[ -n "$run_id" && -d "$d" ]]; then
+    for f in "$d"/*.log; do
+      [[ -f "$f" ]] && text+=$'\n'"$(tail -n 100 "$f" 2>/dev/null || true)"
+    done
+  fi
+  if grep -Eiq 'could not read (Username|Password)|terminal prompts disabled|Authentication failed|Permission denied \(publickey\)|HTTP Basic: Access denied' <<<"$text"; then
+    BLOCKER_KIND=push-auth
+    BLOCKER_TEXT="push authentication failed; fix the git credentials for the no-mistakes push (bin/fm-agy-pool-setup.sh check), then retry with FM_DELIVER_RETRY=1"
+  elif grep -Eiq 'argument list too long' <<<"$text"; then
+    BLOCKER_KIND=prompt-too-large
+    BLOCKER_TEXT="review prompt exceeds the agent command-line limit (argument list too long); use the stdin-patched no-mistakes (contrib/no-mistakes-antigravity-stdin), then retry with FM_DELIVER_RETRY=1"
+  elif grep -Eiq 'pool accounts already active|Another pool account|exit status 75|cap is [0-9]+ \(FM_AGY_MAX_ACTIVE\)' <<<"$text"; then
+    BLOCKER_KIND=pool-capacity
+    BLOCKER_TEXT="pool account capacity reached (exit 75, FM_AGY_MAX_ACTIVE); wait for a pool worker to finish, then retry with FM_DELIVER_RETRY=1"
+  elif grep -Eiq "$QUOTA_EXHAUSTION_RE" <<<"$text"; then
+    BLOCKER_KIND=quota
+    BLOCKER_TEXT="every allowed account and fallback model is out of quota; wait for the quota reset, then retry with FM_DELIVER_RETRY=1"
+  fi
+  [[ -n "$BLOCKER_KIND" ]]
+}
+
 # Helper to inspect gate/outcome and update status file (with quota failover restart)
 handle_gate_or_outcome() {
   local wt="$1" stat_file="$2" dlog="$3" log_offset="${4:-0}"
@@ -718,10 +781,17 @@ handle_gate_or_outcome() {
       fi
     fi
 
-    if [[ -n "$outcome" ]]; then
+    if [[ -n "$outcome" ]] || ! fm_nm_run_is_executing "$status_toon"; then
       local now
       now=$(date +%s)
-      echo "blocked [at=$now]: outcome $outcome" >> "$stat_file"
+      if classify_blocker "$status_toon" "$dlog" "$log_offset"; then
+        printf 'head=%s\nkind=%s\n' "$ACTUAL_SHA" "$BLOCKER_KIND" > "$BLOCKER_FILE"
+        echo "blocked [at=$now]: $BLOCKER_TEXT; run not restarted" >> "$stat_file"
+        echo "[fm-deliver] Non-code failure ($BLOCKER_KIND); not restarting the run" >> "$dlog"
+        report_herdr_gate_state blocked "$BLOCKER_KIND" || true
+      elif [[ -n "$outcome" ]]; then
+        echo "blocked [at=$now]: outcome $outcome" >> "$stat_file"
+      fi
     fi
     return 0
   done
@@ -1038,6 +1108,14 @@ case "$SUBCMD" in
     exit "$resolve_rc"
     ;;
   run)
+    if blocker_kind=$(recorded_blocker_for_head); then
+      if [[ "${FM_DELIVER_RETRY:-0}" == 1 ]]; then
+        rm -f "$BLOCKER_FILE"
+      else
+        echo "error: the last run on this head stopped on a non-code failure ($blocker_kind); fix the cause and rerun with FM_DELIVER_RETRY=1 rather than restarting from scratch" >&2
+        exit 1
+      fi
+    fi
     if [[ "${1:-}" == "--background-worker" ]]; then
       shift
       INTENT="$1"

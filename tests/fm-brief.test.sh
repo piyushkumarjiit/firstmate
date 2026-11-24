@@ -1815,3 +1815,26 @@ EOF
 
 test_crewmate_scaffolds_forbid_pool_administration
 test_pool_build_brief_variant
+
+test_pool_build_brief_is_lean_and_keeps_safety_rules() {
+  local home brief bytes
+  home="$TMP_ROOT/pool-lean-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lean-1 proj --mode no-mistakes --pool-build >/dev/null 2>&1
+  brief="$home/data/lean-1/brief.md"
+  bytes=$(wc -c < "$brief")
+  [ "$bytes" -lt 3500 ] || fail "pool brief scaffold must stay under 3500 bytes (got $bytes)"
+  assert_grep 'git rev-parse --show-toplevel' "$brief" "lean pool brief lost the isolation assertion"
+  assert_grep 'launched in primary checkout' "$brief" "lean pool brief lost the isolation stop"
+  assert_grep 'Never push to any remote and never open a PR' "$brief" "lean pool brief lost the no-push rule"
+  assert_grep "blocked [at=<epoch>]: {why}" "$brief" "lean pool brief lost the blocked status"
+  assert_grep "needs-decision [key=<slug>]" "$brief" "lean pool brief lost the needs-decision status"
+  # shellcheck disable=SC2016  # literal backticks in the brief text
+  assert_grep 'Never start a shell command with `cd`' "$brief" "lean pool brief lost the no-cd rule"
+  assert_grep 'handled/' "$brief" "lean pool brief lost the inbox acknowledgement move"
+  assert_grep 'The move IS the acknowledgement' "$brief" "lean pool brief lost the inbox ack statement"
+  assert_grep 'complete only when committed on your branch' "$brief" "lean pool brief lost commit-before-done"
+  assert_grep 'Do NOT run /no-mistakes, do NOT push' "$brief" "lean pool brief lost the delivery prohibition"
+  pass "fm-brief.sh: --pool-build brief stays lean and keeps its safety rules"
+}
+test_pool_build_brief_is_lean_and_keeps_safety_rules

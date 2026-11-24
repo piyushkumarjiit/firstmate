@@ -8368,4 +8368,9 @@ if [ "${BRIEF_BUILDER:-}" = pool ] && [ "$KIND" = ship ] && [ "$MODE" != local-o
   FM_HOME=$FM_HOME "$SCRIPT_DIR/fm-deliver.sh" "$ID" autostart >/dev/null 2>&1 \
     || echo "warning: could not arm delivery autostart for $ID; start it with bin/fm-deliver.sh $ID run" >&2
 fi
+# A finished pool builder must free its FM_AGY_MAX_ACTIVE account slot: a
+# detached poller stops it through fm-control once its latest status is done.
+if [ "${BRIEF_BUILDER:-}" = pool ] && [ "$KIND" = ship ] && [ "${FM_POOL_EXIT:-on}" != off ]; then
+  FM_HOME=$FM_HOME setsid nohup "$SCRIPT_DIR/fm-pool-exit.sh" "$ID" >/dev/null 2>&1 </dev/null &
+fi
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT$SPAWN_ACCOUNT"

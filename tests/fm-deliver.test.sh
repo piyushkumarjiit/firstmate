@@ -1092,6 +1092,123 @@ EOF
   pass "nm-agy reads per-task roles without daemon env and ignores merged task branches"
 }
 
+# Stub no-mistakes whose run fails with the given text and logs every call.
+make_failing_nm() {  # <tdir> <failure text>
+  local tdir=$1 text=$2
+  mkdir -p "$tdir/bin"
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+cmd="\${1:-} \${2:-}"
+printf '%s\n' "\$cmd" >> "$tdir/nm-calls.log"
+if [[ "\$cmd" == "axi run" ]]; then
+  echo "$text" >&2
+  exit 1
+elif [[ "\$cmd" == "axi status" ]]; then
+  cat <<'TOON'
+run:
+  id: "01FAIL"
+  status: failed
+outcome: failed
+TOON
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+}
+
+deliver_env() {  # <tdir> <args>...
+  local tdir=$1
+  shift
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_CONFIG_OVERRIDE="$tdir/config" FM_AGY_STATE_DIR="$tdir/agy-state" \
+    POOL_CONF="$tdir/pool.conf" MODELS_CONF="$tdir/models.conf" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 "$@"
+}
+
+test_non_code_failures_report_blocker_and_never_restart() {
+  local case_name text kind expect sha tdir calls rc err
+  for case_name in \
+    "pushauth|fatal: could not read Username for 'https://github.com': terminal prompts disabled|push authentication" \
+    "prompt|step review failed: agent review: antigravity start: fork/exec nm-agy: argument list too long|argument list too long" \
+    "cap|step review failed: exit status 75: 2 pool accounts already active|pool account capacity" \
+    "quota|antigravity reported error: Individual quota reached. Resets in 2h0m0s.|out of quota"; do
+    kind=${case_name%%|*}
+    text=${case_name#*|}; text=${text%|*}
+    expect=${case_name##*|}
+    sha=$(setup_fixture "task_nc_$kind")
+    tdir="$TMP_ROOT/task_nc_$kind"
+    mkdir -p "$tdir/config" "$tdir/agy-state"
+    make_failing_nm "$tdir" "$text"
+    deliver_env "$tdir" "$DELIVER" "task_nc_$kind" run >/dev/null 2>&1
+    calls=$(grep -c '^axi run$' "$tdir/nm-calls.log")
+    [ "$calls" -eq 1 ] || fail "$kind: run must not be restarted, saw $calls axi run calls"
+    assert_contains "$(tail -n 1 "$tdir/state/task_nc_$kind.status")" "$expect" "$kind: specific blocker reported"
+    assert_contains "$(tail -n 1 "$tdir/state/task_nc_$kind.status")" "blocked" "$kind: blocked state"
+    rc=0
+    err=$(deliver_env "$tdir" "$DELIVER" "task_nc_$kind" run 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || fail "$kind: rerun on the same head must be refused"
+    assert_contains "$err" "FM_DELIVER_RETRY=1" "$kind: refusal names the explicit retry"
+    [ "$(grep -c '^axi run$' "$tdir/nm-calls.log")" -eq 1 ] || fail "$kind: refused rerun must not start a run"
+    deliver_env "$tdir" FM_DELIVER_RETRY=1 "$DELIVER" "task_nc_$kind" run >/dev/null 2>&1
+    [ "$(grep -c '^axi run$' "$tdir/nm-calls.log")" -eq 2 ] || fail "$kind: FM_DELIVER_RETRY=1 must allow one explicit rerun"
+  done
+  pass "fm-deliver reports the specific non-code blocker and never restarts the run blind"
+}
+
+test_non_gemini_task_is_untouched_by_gemini_plumbing() {
+  local sha tdir
+  sha=$(setup_fixture task_claude)
+  tdir="$TMP_ROOT/task_claude"
+  mkdir -p "$tdir/config" "$tdir/agy-state" "$tdir/bin"
+  printf 'harness=claude\n' >> "$tdir/state/task_claude.meta"
+  cat > "$tdir/config/crew-dispatch.json" <<'JSON'
+{ "roles": { "review": [ { "harness": "agy", "model": "gemini-4-neon-high" } ],
+             "fix": [ { "harness": "agy", "model": "gemini-4-neon-medium" } ] } }
+JSON
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-} \${2:-}" == "axi run" ]]; then
+  env | grep '^FM_NM_' > "$tdir/nm-env.log" || : > "$tdir/nm-env.log"
+fi
+if [[ "\${1:-} \${2:-}" == "axi status" ]]; then printf 'run:\n  id: "01OK"\noutcome: passed\n'; fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  deliver_env "$tdir" "$DELIVER" task_claude run >/dev/null 2>&1
+  [ -e "$tdir/nm-env.log" ] || fail "the stub run must have been invoked"
+  [ ! -s "$tdir/nm-env.log" ] || fail "a claude task must not get FM_NM_* role variables: $(cat "$tdir/nm-env.log")"
+  [ ! -e "$tdir/state/task_claude.nm-roles" ] || fail "a claude task must not get a role record"
+
+  sha=$(setup_fixture task_mixed)
+  tdir="$TMP_ROOT/task_mixed"
+  mkdir -p "$tdir/config" "$tdir/agy-state" "$tdir/bin"
+  printf 'builder=pool\n' >> "$tdir/state/task_mixed.meta"
+  cat > "$tdir/config/crew-dispatch.json" <<'JSON'
+{ "roles": { "review": [ { "harness": "claude", "model": "claude-sonnet-5-5" } ] } }
+JSON
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tdir/bin/no-mistakes"; chmod +x "$tdir/bin/no-mistakes"
+  deliver_env "$tdir" "$DELIVER" task_mixed run >/dev/null 2>&1
+  [ ! -e "$tdir/state/task_mixed.nm-roles" ] || fail "non-agy role entries must not reach the Gemini role record"
+  pass "non-Gemini tasks and non-agy role entries are untouched by the Gemini plumbing"
+}
+
+test_nm_agy_defaults_are_neon_medium_without_record() {
+  local tdir="$TMP_ROOT/nm_defaults"
+  mkdir -p "$tdir/bin" "$tdir/state" "$tdir/wt"
+  git -C "$tdir/wt" init -q -b scratch
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/pool-args.log"\n' "$tdir" > "$tdir/bin/fake-pool"
+  chmod +x "$tdir/bin/fake-pool"
+  ( cd "$tdir/wt" && FM_HOME="$tdir" FM_AGY_POOL_BIN="$tdir/bin/fake-pool" \
+      "$ROOT/bin/agy-pool/nm-agy" -p "Focus findings on risks introduced by changed code" >/dev/null 2>&1
+    FM_HOME="$tdir" FM_AGY_POOL_BIN="$tdir/bin/fake-pool" \
+      "$ROOT/bin/agy-pool/nm-agy" -p "Fix finding f1" >/dev/null 2>&1 )
+  [ "$(grep -c -- '--model gemini-4-neon-medium' "$tdir/pool-args.log")" -eq 2 ] \
+    || fail "review and fix must both default to gemini-4-neon-medium: $(cat "$tdir/pool-args.log")"
+  ! grep -q hydrogen "$tdir/pool-args.log" || fail "Hydrogen must not be a default"
+  pass "nm-agy defaults review and fix to gemini-4-neon-medium for runs belonging to no task"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -1112,4 +1229,7 @@ fm_test_run \
   test_quota_failover_restarts_with_next_role_model \
   test_quota_words_in_agent_answer_do_not_fail_over \
   test_herdr_visibility_for_nm_agy_and_gate_park \
-  test_nm_agy_reads_role_file_without_daemon_env
+  test_nm_agy_reads_role_file_without_daemon_env \
+  test_non_code_failures_report_blocker_and_never_restart \
+  test_non_gemini_task_is_untouched_by_gemini_plumbing \
+  test_nm_agy_defaults_are_neon_medium_without_record

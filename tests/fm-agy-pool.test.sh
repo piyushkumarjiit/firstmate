@@ -1064,6 +1064,79 @@ EOF
   pass "Individual quota reached marks account until stated reset time and rotates across space/comma allowlists"
 }
 
+test_conversation_affinity_pins_owner_account() {
+  local fx="$TMP_ROOT/conv"
+  rm -rf "$fx"
+  mkdir -p "$fx/bin" "$fx/state" "$fx/home/piyushk/.gemini/antigravity-cli/conversations" "$fx/home/piyushjiit/.gemini/antigravity-cli/conversations"
+  printf 'piyushjiit\npiyushk\n' > "$fx/pool.conf"
+  printf '*neon* piyushjiit piyushk\n' > "$fx/models.conf"
+  : > "$fx/home/piyushk/.gemini/antigravity-cli/conversations/conv-abc-123.pb"
+  cat > "$fx/bin/id" <<'EOF2'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-u" ]]; then exec /usr/bin/id "$@"; fi
+exit 0
+EOF2
+  cat > "$fx/bin/sudo" <<'EOF2'
+#!/usr/bin/env bash
+TARGET_USER=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|-H) shift ;;
+    -u) TARGET_USER="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$TARGET_USER" exec "$@"
+EOF2
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  cat > "$fx/bin/agy" <<EOF2
+#!/usr/bin/env bash
+printf '%s\n' "\${SUDO_TARGET_USER:-unknown}" >> "$fx/calls.log"
+echo '{"event":"result","result":{"conversation_id":"fresh-conv-777","status":"SUCCESS"}}'
+exit 0
+EOF2
+  chmod +x "$fx"/bin/*
+  conv_run() {
+    env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+      AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+      FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_HOME_BASE="$fx/home" \
+      "$POOL" "$@" 2>&1
+  }
+  local out rc=0
+  out=$(conv_run --model gemini-4-neon-medium --conversation conv-abc-123 -p hi) || rc=$?
+  [ "$rc" -eq 0 ] || fail "resumed call must run on the owning account, got $rc: $out"
+  [ "$(cat "$fx/calls.log")" = piyushk ] || fail "conversation owner is piyushk, ran on: $(cat "$fx/calls.log")"
+
+  rm -f "$fx/calls.log"
+  out=$(conv_run --model gemini-4-neon-medium --conversation=conv-abc-123 --account piyushjiit -p hi) || rc=$?
+  [ "$(cat "$fx/calls.log")" = piyushk ] || fail "--conversation=<id> must also pin the owner over a requested account"
+
+  # a conversation created through the pool is recorded and then pinned
+  rm -f "$fx/calls.log"
+  conv_run --model gemini-4-neon-medium -p first >/dev/null || true
+  first_user=$(cat "$fx/calls.log")
+  rm -f "$fx/calls.log"
+  conv_run --model gemini-4-neon-medium --conversation fresh-conv-777 -p again >/dev/null || true
+  [ "$(cat "$fx/calls.log")" = "$first_user" ] || fail "recorded conversation must route back to $first_user"
+
+  # owner exhausted: exit 75 cleanly, never run on the other account
+  rm -f "$fx/calls.log"
+  printf '{"user":"piyushk","window_start":1,"reset_at":9999999999,"used_sec":0,"budget_sec":5400,"exhausted":true}\n' > "$fx/state/piyushk.state.json"
+  rc=0
+  out=$(conv_run --model gemini-4-neon-medium --conversation conv-abc-123 -p hi) || rc=$?
+  [ "$rc" -eq 75 ] || fail "exhausted conversation owner must exit 75, got $rc: $out"
+  [ ! -e "$fx/calls.log" ] || fail "call must not run on another account: $(cat "$fx/calls.log")"
+  assert_contains "$out" "conv-abc-123" "refusal names the conversation"
+
+  # unknown conversation keeps today's routing
+  rm -f "$fx/calls.log"
+  rc=0
+  out=$(conv_run --model gemini-4-neon-medium --conversation never-seen -p hi) || rc=$?
+  [ "$rc" -eq 0 ] || fail "unknown conversation must route as before, got $rc: $out"
+  pass "--conversation pins the call to the owning account and exits 75 when that account is exhausted"
+}
+
 fm_test_run \
   test_symlink_refuses_claude_model \
   test_pool_model_env_refuses_claude \
@@ -1077,4 +1150,5 @@ fm_test_run \
   test_status_subcommand_reads_log_without_network \
   test_queued_messages_setting \
   test_large_used_sec_without_exhausted_never_skips \
-  test_individual_quota_exhaustion_and_model_allowlist_failover
+  test_individual_quota_exhaustion_and_model_allowlist_failover \
+  test_conversation_affinity_pins_owner_account

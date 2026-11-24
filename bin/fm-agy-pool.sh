@@ -501,6 +501,7 @@ is_user_exhausted() {
 # Parse --user / --account (strip before passing to agy) and inspect --model / -m (keep for agy)
 EXPLICIT_USER="${FM_AGY_USER:-}"
 REQ_MODEL=""
+REQ_CONVERSATION=""
 AGY_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -519,6 +520,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     --model=*|-m=*)
       REQ_MODEL="${1#*=}"
+      AGY_ARGS+=("$1")
+      shift
+      ;;
+    --conversation)
+      REQ_CONVERSATION="${2:-}"
+      AGY_ARGS+=("$1" "${2:-}")
+      shift 2
+      ;;
+    --conversation=*)
+      REQ_CONVERSATION="${1#*=}"
       AGY_ARGS+=("$1")
       shift
       ;;
@@ -542,6 +553,50 @@ case "${ROUTE_MODEL,,}" in
     exit 2
     ;;
 esac
+
+# Conversation affinity. agy keeps a conversation, and the server-side cache
+# behind it, on the account that created it; a resumed call routed to another
+# account silently starts a cold conversation. The owner comes from the small
+# conversation->account record this wrapper keeps, else from the conversation
+# files under each pool account's agy directory.
+AGY_HOME_BASE="${FM_AGY_HOME_BASE:-/home}"
+CONV_RECORD="$STATE_DIR/conversations.tsv"
+CONVERSATION_PINNED=0
+
+conversation_owner() {
+  local id="$1" u owner=""
+  [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  if [[ -f "$CONV_RECORD" ]]; then
+    owner=$(awk -F'\t' -v id="$id" '$1 == id {u = $2} END {if (u != "") print u}' "$CONV_RECORD")
+    [[ -n "$owner" ]] && { printf '%s\n' "$owner"; return 0; }
+  fi
+  for u in "${GPRO_USERS[@]}"; do
+    if [[ -n "$(sudo -n -u "$u" find "$AGY_HOME_BASE/$u/.gemini/antigravity-cli/conversations" -maxdepth 1 -name "*${id}*" -print -quit 2>/dev/null)" ]]; then
+      printf '%s\n' "$u"
+      return 0
+    fi
+  done
+  return 1
+}
+
+record_conversation_owner() {
+  local user="$1" log_tail="$2" id
+  id=$(grep -Eo '"conversation_id"[[:space:]]*:[[:space:]]*"[A-Za-z0-9._-]+"' <<<"$log_tail" | tail -n 1 | sed -E 's/.*"([^"]+)"$/\1/' || true)
+  [[ -n "$id" ]] || return 0
+  grep -qF "$id"$'\t'"$user" "$CONV_RECORD" 2>/dev/null && return 0
+  printf '%s\t%s\n' "$id" "$user" >> "$CONV_RECORD" 2>/dev/null || true
+  chmod 0666 "$CONV_RECORD" 2>/dev/null || true
+}
+
+if [[ -n "$REQ_CONVERSATION" && "${AGY_ARGS[0]:-}" != models ]]; then
+  if conv_owner=$(conversation_owner "$REQ_CONVERSATION"); then
+    if [[ -n "$EXPLICIT_USER" && "$EXPLICIT_USER" != "$conv_owner" ]]; then
+      echo "[fm-agy-pool] Conversation '$REQ_CONVERSATION' belongs to '$conv_owner'; overriding requested account '$EXPLICIT_USER'." >&2
+    fi
+    EXPLICIT_USER="$conv_owner"
+    CONVERSATION_PINNED=1
+  fi
+fi
 
 # Parse reset time from agy log tail:
 # - "Resets in 2h48m0s" / "reset in 45m10s" -> now + duration
@@ -810,6 +865,10 @@ while (( ATTEMPT < MAX_ATTEMPTS )); do
   select_rc=0
   SELECTED_USER=$(select_pool_user) || select_rc=$?
   if [[ -z "$SELECTED_USER" ]]; then
+    if [[ $CONVERSATION_PINNED -eq 1 ]]; then
+      echo "[fm-agy-pool] ERROR: account '$EXPLICIT_USER' owns conversation '$REQ_CONVERSATION' but cannot take the call now; not running it on another account, which would drop the conversation and its cache." >&2
+      exit 75
+    fi
     if [[ $RETRIED_AFTER_QUOTA -eq 1 ]]; then
       echo "[fm-agy-pool] ERROR: All eligible accounts for model '${ROUTE_MODEL:-default}' are exhausted." >&2
       exit 75
@@ -887,6 +946,9 @@ while (( ATTEMPT < MAX_ATTEMPTS )); do
   fi
 
   record_run "$SELECTED_USER" "$DURATION" "$HIT_QUOTA"
+  if (( EXIT_CODE == 0 )) && [[ "${AGY_ARGS[0]:-}" != models ]]; then
+    record_conversation_owner "$SELECTED_USER" "$(tail -c +"$((RUN_LOG_OFFSET + 1))" "$RUN_LOG" 2>/dev/null | tail -n 200 || true)"
+  fi
   AFTER_PCT=$(get_remaining_pct "$SELECTED_USER" "$ROUTE_MODEL")
 
   if [[ -d "$(dirname "$USAGE_LOG")" ]]; then

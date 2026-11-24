@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# no-mistakes antigravity entry point (home-local).
+# no-mistakes antigravity entry point. Defaults: review and fix both gemini-4-neon-medium; Hydrogen only when a role entry asks for it.
 # no-mistakes pins one model for every antigravity call, so this splits roles:
 # the review phase uses the review role and every other call, such as the review
 # fixer, uses the fix role. Roles come from the per-task file
@@ -127,7 +127,7 @@ load_nm_role_file() {
 resolve_nm_task
 load_nm_role_file
 REVIEW_MODEL=${REVIEW_MODEL:-gemini-4-neon-medium}
-FIX_MODEL=${FIX_MODEL:-gemini-4-hydrogen-high}
+FIX_MODEL=${FIX_MODEL:-gemini-4-neon-medium}
 if [[ $is_review -eq 1 ]]; then
   model=$REVIEW_MODEL
   account=$REVIEW_ACCOUNT

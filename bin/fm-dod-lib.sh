@@ -564,6 +564,7 @@ If a check cannot run locally, state which in the done line.
 Leave the worktree clean and commit all changes.
 When it is implemented and committed, append \`done [at=<epoch>]: committed <sha>\` to the status file and stop, where <sha> is your latest commit SHA.
 Do NOT run /no-mistakes, do NOT push, and do NOT open a PR.
+After the done line, stop; firstmate exits your session to free the account slot.
 EOF
     return 0
   fi

@@ -2052,7 +2052,10 @@ An optional top-level `roles` object configures ordered fallback lists for `no-m
 Each supported role (`review`, `fix`) is a non-empty array of objects containing required non-empty strings `harness` (a verified harness) and `model`, plus an optional non-empty string `account`.
 `bin/fm-deliver.sh` resolves the active entry for each present role and writes the resolved model, account, and fallback list to `state/<task>.nm-roles`. `bin/agy-pool/nm-agy` reads that file for the task it maps to, because the no-mistakes daemon spawns it with its own environment; `FM_NM_REVIEW_MODEL` / `FM_NM_FIX_MODEL` and their `_ACCOUNT` / `_FROM_CONFIG` siblings still override the file when set.
 When every eligible account for the active model is exhausted, `bin/fm-deliver.sh` rewrites the file and restarts validation on the same head with the next entry in that role's fallback list.
-When `roles` or a given role entry is absent, `bin/fm-deliver.sh` and `bin/agy-pool/nm-agy` preserve their existing defaults.
+When `roles` or a given role entry is absent, `bin/agy-pool/nm-agy` defaults review and fix to `gemini-4-neon-medium`; Hydrogen is used only when a role entry names it.
+Role entries apply only to a pool-built task or one whose worker harness is `agy`/`antigravity`, and only entries whose `harness` is `agy` or `antigravity`; every other task keeps its no-mistakes configuration unchanged.
+Within the pool, `bin/fm-agy-pool.sh` tries the same model on the next allowed account (order of `/etc/firstmate/gpro-models.conf`) before any model step-down, and routes a call carrying `--conversation <id>` to the account that owns that conversation, exiting 75 when that account is exhausted.
+`bin/fm-deliver.sh` never restarts a run from scratch after a non-code failure (push authentication, pool capacity exit 75, argument list too long, or exhausted quota with no fallback left): it reports the specific blocker, records it for that head, and refuses `run` on that head until the cause is fixed and `FM_DELIVER_RETRY=1` is set.
 
 **Preferred provider**
 

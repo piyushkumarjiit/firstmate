@@ -708,6 +708,14 @@
     {
       "path": ".agents/skills/ui-updates/references/fixture-matrix.md",
       "audience": "agent-runtime"
+    },
+    {
+      "path": "docs/agy-pool-setup.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "contrib/no-mistakes-antigravity-stdin/README.md",
+      "audience": "operator-current"
     }
   ]
 }

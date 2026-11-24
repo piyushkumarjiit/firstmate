@@ -817,29 +817,21 @@ $TASK_SECTION
 # Setup
 $SETUP_BASE
 
-**Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to your disposable task worktree, not the primary checkout. If the path is the primary checkout, STOP - do not branch or commit - append \`blocked [at=<epoch>]: launched in primary checkout, not an isolated worktree\` to the status file and stop.
+**Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must be your disposable task worktree, not the primary checkout. If not, STOP - do not branch or commit - append \`blocked [at=<epoch>]: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
 1. First action: create your branch: \`git checkout -b $BRANCH_Q --\`
 
 # Rules
 $RULE1
-2. Keep project edits inside this worktree; keep proof and scratch output outside it, under \`$DATA/$ID/\` or a temporary directory. Leave the worktree clean before reporting done.
-3. Report status by appending one line:
+2. Keep project edits inside this worktree; keep scratch output under \`$DATA/$ID/\` or a temporary directory. Leave the worktree clean before reporting done.
+3. Report status (sparingly: phase changes and needs-decision/blocked/done only) by appending one line, with \`<epoch>\` from \`date +%s\`:
    \`$STATUS_APPEND\`
-   States: working, needs-decision with [key=], blocked, done.
-   Substitute \`<epoch>\` with the current Unix time in seconds (\`date +%s\`).
-   Report sparingly: only phase changes a supervisor would act on and the needs-decision/blocked/done states.
-   A mid-task \`working:\` line is nonterminal: do not end the turn after it.
-4. If you hit the same obstacle twice, append \`blocked [at=<epoch>]: {why}\` and stop; firstmate will help.
-5. If a decision belongs above the worker, append \`needs-decision [key=<slug>] [at=<epoch>]: {summary of options}\` and stop. Firstmate will reply with the decision. A decision or blocker stays open until a matching \`resolved [at=<epoch>]: {how it cleared}\` line lands.
-6. Never start a shell command with \`cd\`, and never run a search whose path depends on the current directory.
-   Use absolute paths, \`git -C <abs>\`, or a \`( cd <abs> && ... )\` subshell.
-   Pass this rule to every sub-agent you launch.
+   States: working, needs-decision with [key=], blocked, done. A \`working:\` line is nonterminal: keep going.
+4. Same obstacle twice: append \`blocked [at=<epoch>]: {why}\` and stop. A decision above the worker: append \`needs-decision [key=<slug>] [at=<epoch>]: {options}\` and stop; it stays open until a matching \`resolved [at=<epoch>]: {how}\` line lands.
+5. Never start a shell command with \`cd\`, and never run a search whose path depends on the current directory. Use absolute paths, \`git -C <abs>\`, or a \`( cd <abs> && ... )\` subshell. Pass this rule to every sub-agent you launch.
 
 # Firstmate instruction inbox
-Firstmate steers you through durable message files in $INBOX_DIR.
-When an instruction is waiting there - and at any natural checkpoint when you are unsure - list them with \`find $INBOX_DIR -maxdepth 1 -name '*.msg' 2>/dev/null | sort -V\`, read each record in numeric order, act on it, then acknowledge each handled message by moving it: \`mv $INBOX_DIR/NNN.msg $INBOX_DIR/handled/\`.
-The move IS the acknowledgement. An empty or absent inbox needs no action.
+Firstmate steers you through message files in $INBOX_DIR. At natural checkpoints, read each \`*.msg\` there in \`sort -V\` order, act on it, then acknowledge it by moving it into \`$INBOX_DIR/handled/\`. The move IS the acknowledgement; an empty or absent inbox needs no action.
 
 $DOD
 EOF
