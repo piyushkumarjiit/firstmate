@@ -886,6 +886,22 @@ test_agy_pool_route_requires_real_pool_config() {
   pass "fm-spawn: agy routes through the pool only when real pool config exists"
 }
 
+test_agy_direct_pr_keeps_plain_launcher_with_pool_config() {
+  local id rec out rc pc
+  id="agy-poolroute-d1-$$"
+  rec=$(make_agy_spawn_case poolroute-dpr "$id")
+  read_agy_spawn_record "$rec"
+  pc="$CASE_DIR/gpro-pool.conf"
+  printf '%s\n' gpro1 > "$pc"
+  rc=0
+  out=$(POOL_CONF="$pc" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --mode direct-PR --model gemini-3.8-flash-low --effort low) || rc=$?
+  expect_code 0 "$rc" "a direct-PR agy ship must spawn with a plain brief even when a pool config exists: $out"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "$FAKEBIN_DIR/agy" "direct-PR must launch the plain agy binary"
+  assert_not_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "direct-PR must not route through the pool launcher"
+  pass "fm-spawn: a direct-PR agy ship keeps the plain launcher when a pool config exists"
+}
+
 test_agy_missing_binary_refuses_before_pane_creation() {
   local id rec out rc
   id="agy-missing-z5-$$"
@@ -981,5 +997,6 @@ test_agy_unregistered_path_without_a_dialog_fails_the_spawn
 test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_pool_route_requires_real_pool_config
+test_agy_direct_pr_keeps_plain_launcher_with_pool_config
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
 test_agy_spawn_arms_no_busy_wiring

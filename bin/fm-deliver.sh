@@ -656,10 +656,14 @@ handle_gate_or_outcome() {
           in_findings=1; next
         }
         in_findings && /^[[:space:]]+[a-zA-Z0-9_-]+,/{
-          match($0, /^[[:space:]]+([a-zA-Z0-9_-]+)/, m)
-          if (m[1] != "") {
-            if (fids != "") fids = fids ", " m[1]
-            else fids = m[1]
+          fid = ""
+          if (match($0, /^[[:space:]]+[a-zA-Z0-9_-]+/)) {
+            fid = substr($0, RSTART, RLENGTH)
+            sub(/^[[:space:]]+/, "", fid)
+          }
+          if (fid != "") {
+            if (fids != "") fids = fids ", " fid
+            else fids = fid
           }
         }
         END {
@@ -990,20 +994,26 @@ open_gate_keys() {
       has_want = (target_keys != "")
     }
     /^[[:space:]]*needs-decision/ && /\[key=gate-[^]]+\]/ {
-      match($0, /\[key=(gate-[^]]+)\]/, m)
-      if (m[1] != "") {
-        latest_key = m[1]
-        resolved[m[1]] = 0
-        if (!(m[1] in seen)) {
-          seen[m[1]] = 1
-          names[++count] = m[1]
+      gk = ""
+      if (match($0, /\[key=gate-[^]]+\]/)) {
+        gk = substr($0, RSTART + 5, RLENGTH - 6)
+      }
+      if (gk != "") {
+        latest_key = gk
+        resolved[gk] = 0
+        if (!(gk in seen)) {
+          seen[gk] = 1
+          names[++count] = gk
         }
       }
     }
     /^[[:space:]]*resolved/ && /\[key=gate-[^]]+\]/ {
-      match($0, /\[key=(gate-[^]]+)\]/, m)
-      if (m[1] != "") {
-        resolved[m[1]] = 1
+      gk = ""
+      if (match($0, /\[key=gate-[^]]+\]/)) {
+        gk = substr($0, RSTART + 5, RLENGTH - 6)
+      }
+      if (gk != "") {
+        resolved[gk] = 1
       }
     }
     END {

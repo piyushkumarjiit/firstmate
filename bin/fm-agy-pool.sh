@@ -617,9 +617,12 @@ parse_reset_epoch_from_log() {
         s = tolower($0)
         sub(/^.*resets?[[:space:]]+in[[:space:]]+/, "", s)
         total = 0
-        while (match(s, /^[[:space:]]*([0-9]+)[[:space:]]*([dhms])/, m)) {
-          val = m[1] + 0
-          unit = m[2]
+        while (match(s, /^[[:space:]]*[0-9]+[[:space:]]*[dhms]/)) {
+          tok = substr(s, RSTART, RLENGTH)
+          unit = substr(tok, length(tok), 1)
+          val = tok
+          gsub(/[^0-9]/, "", val)
+          val = val + 0
           if (unit == "d") total += val * 86400
           else if (unit == "h") total += val * 3600
           else if (unit == "m") total += val * 60
