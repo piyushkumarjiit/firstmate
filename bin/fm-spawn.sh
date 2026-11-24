@@ -2777,7 +2777,13 @@ agy_model_validate() {  # <agy-bin> <model>
   local bin=$1 model=$2 listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
   case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
   [ -n "$model" ] && [ "$model" != default ] || return 0
-  listing=$(fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
+  # Skip model-listing validation probe for Hydrogen and Neon so a spawn does not
+  # log in as reserved accounts (e.g. piyushjiit) just to list models. Keep the
+  # probe for Flash.
+  case "${model,,}" in
+    *hydrogen*|*neon*) return 0 ;;
+  esac
+  listing=$(FM_AGY_POOL_MODEL="$model" fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
   if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
     if [ "$rc" -eq 124 ]; then
       echo "notice: 'agy models' did not answer within ${bound}s; launching with --model '$model' unvalidated" >&2
@@ -2924,7 +2930,7 @@ launch_template() {
   # project and fetched content. A persistent secondmate receives its own
   # supervisor contract instead, so this task-worker statement does not apply.
   claude)
-    printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ __CLAUDEADDDIRS__--settings __CLAUDESETTINGS__ '
+    printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 __CLAUDEBIN__ __CLAUDEPERMFLAG__ __CLAUDEADDDIRS__--settings __CLAUDESETTINGS__ '
     if [ "$kind" != secondmate ]; then
       printf '%s' '__CLAUDEEXCLUDE__'
       printf '%s' "--append-system-prompt '$(spawn_claude_task_channel_statement)' "
@@ -3441,10 +3447,16 @@ omp)
   }
   ;;
 agy)
-  AGY_BIN=$(resolve_pi_executable agy) || {
-    echo "error: agy executable not found on PATH; install Antigravity CLI or select a different verified harness" >&2
-    exit 1
-  }
+  # The account-pool launcher is reached through bin/agy-pool/agy so the live
+  # process is named agy; bin/fm-agy-pool.sh's header owns why.
+  if [ -x "$SCRIPT_DIR/agy-pool/agy" ]; then
+    AGY_BIN="$SCRIPT_DIR/agy-pool/agy"
+  else
+    AGY_BIN=$(resolve_pi_executable agy) || {
+      echo "error: agy executable not found on PATH; install Antigravity CLI or select a different verified harness" >&2
+      exit 1
+    }
+  fi
   ;;
 kiro)
   KIRO_BIN=$(resolve_pi_executable kiro-cli) || {
@@ -4384,7 +4396,10 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       printf '\n' &&
       cat "$SOURCE_BRIEF" &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
-        fm_brief_intent_overlay "$CAPTAIN_INTENT"
+        BRIEF_BUILDER=$(sed -n 's/^Delivery contract: mode=[^ ]*.*[[:space:]]builder=\([^ ]*\).*$/\1/p' "$SOURCE_BRIEF" | head -n 1)
+        if [ "$BRIEF_BUILDER" != pool ]; then
+          fm_brief_intent_overlay "$CAPTAIN_INTENT"
+        fi
       fi
   } >"$BRIEF_TMP" || {
     rm -f -- "$BRIEF_TMP"
@@ -4494,6 +4509,23 @@ if [ "$KIND" = ship ]; then
     [ "$STANDING_FORGE" = none ] || pr_scaffold="$pr_scaffold --forge $STANDING_FORGE"
     [ "$STANDING_PR" = auto ] || pr_scaffold="$pr_scaffold --pr $STANDING_PR"
     echo "error: PR-text mismatch for $ID: $PROJ_NAME is registered pr=$STANDING_PR but $SOURCE_BRIEF records pr=$BRIEF_PR; keep the filled ## Captain's intent and ## Firstmate spec bodies, remove $SOURCE_BRIEF, re-scaffold it with $pr_scaffold, then re-fill those two subsections, so the worker owns the PR text exactly when the project says so" >&2
+    exit 1
+  fi
+  # Brief/spawn pool-builder agreement
+  BRIEF_BUILDER=$(sed -n 's/^Delivery contract: mode=[^ ]*.*[[:space:]]builder=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  IS_AGY_POOL=0
+  if [ "$HARNESS" = agy ] && [ -x "$SCRIPT_DIR/agy-pool/agy" ]; then
+    IS_AGY_POOL=1
+  fi
+  if [ "$IS_AGY_POOL" -eq 1 ] && [ "$MODE" != local-only ]; then
+    if [ "$BRIEF_BUILDER" != pool ]; then
+      echo "error: brief/spawn delivery mismatch for $ID: agy-pool ship spawn requires a pool-builder brief (scaffold with fm-brief.sh --pool-build)" >&2
+      exit 1
+    fi
+  elif [ "$BRIEF_BUILDER" = pool ] && [ "${FM_POOL_FIX_ESCALATION:-0}" != 1 ]; then
+    # FM_POOL_FIX_ESCALATION=1: firstmate escalates review fixes of a pool-built
+    # task to a stronger non-pool model; the pool DoD (commit only) still applies.
+    echo "error: brief/spawn delivery mismatch for $ID: non-agy-pool spawn cannot use a pool-builder brief" >&2
     exit 1
   fi
   # Merge authority on a Gerrit forge is refused rather than quietly dropped, on
@@ -6269,6 +6301,13 @@ TASK_TMP="/tmp/fm-$ID"
 if (umask 077 && mkdir "$TASK_TMP") 2>/dev/null; then
   [ "$HARNESS" != polytoken ] || SPAWN_TASK_TMP_CREATED=1
 else
+  # An agy-pool launch grants the shared agents group an ACL on this root
+  # (bin/fm-agy-pool.sh grant_task_tmp) and re-grants it on every launch, so on
+  # relaunch strip extended ACLs from a root this user owns before the privacy
+  # check; stripping only tightens access.
+  if [ ! -L "$TASK_TMP" ] && [ -d "$TASK_TMP" ] && [ -O "$TASK_TMP" ] && command -v setfacl >/dev/null 2>&1; then
+    setfacl -R -b "$TASK_TMP" 2>/dev/null || true
+  fi
   if [ -L "$TASK_TMP" ] || [ ! -d "$TASK_TMP" ] || [ ! -O "$TASK_TMP" ] ||
     [ -n "$(find "$TASK_TMP" -prune \( -perm -g=w -o -perm -o=w \) -print 2>/dev/null)" ] ||
     ! chmod 700 "$TASK_TMP"; then
@@ -7326,7 +7365,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness hermes_profile hermes_home kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort opencode_version account account_provider omp_profile busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id hc_session hc_terminal home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
+      split("window endpoint_task_id worktree project harness hermes_profile hermes_home kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort opencode_version account account_provider omp_profile busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id hc_session hc_terminal home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential builder", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -7351,6 +7390,7 @@ preserve_relaunch_meta() {
   echo "tasktmp=$TASK_TMP"
   [ -z "$BASE_BRANCH" ] || echo "base_branch=$BASE_BRANCH"
   [ -z "$UPSTREAM_CONSENT" ] || echo "upstream_consent=$UPSTREAM_CONSENT"
+  [ -z "${BRIEF_BUILDER:-}" ] || echo "builder=$BRIEF_BUILDER"
   # Read by bin/fm-dod-lib.sh's ready-report gate; absent on every other forge.
   [ "$EXTERNAL_REVIEW" = 0 ] || echo "forge=external"
   [ -z "$EXTERNAL_BACKUP_REMOTE" ] || echo "backup_remote=$EXTERNAL_BACKUP_REMOTE"
@@ -7556,6 +7596,13 @@ if [ "$RELAUNCH" -eq 1 ]; then
 fi
 LAUNCH=${LAUNCH//__PIRESUME__/$RESUME_ARGS}
 LAUNCH=${LAUNCH//__CLAUDEPERMFLAG__/$CLAUDE_PERM_FLAG}
+# config/claude-bin names the Claude Code launcher for workers (for example a
+# gateway wrapper such as claude-gw); absent, plain `claude` is used.
+CLAUDE_BIN=claude
+if [ -s "$CONFIG/claude-bin" ]; then
+  CLAUDE_BIN=$(head -n 1 "$CONFIG/claude-bin")
+fi
+LAUNCH=${LAUNCH//__CLAUDEBIN__/$(shell_quote "$CLAUDE_BIN")}
 CLAUDE_EXCLUDE=
 [ -z "$EXCLUDE_TOOLS" ] || [ "$HARNESS" != claude ] || CLAUDE_EXCLUDE="--disallowedTools $(shell_quote "$EXCLUDE_TOOLS") "
 LAUNCH=${LAUNCH//__CLAUDEEXCLUDE__/$CLAUDE_EXCLUDE}
@@ -8315,4 +8362,10 @@ SPAWN_ACCOUNT=
 # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups") tag the
 # new endpoint now rather than at the next watcher poll; off costs one file test.
 [ ! -e "$CONFIG/herdr-project-groups" ] || [ "$BACKEND" != herdr ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-herdr-groups.sh" sync "$ID" || true
+# Pool builds: start validation the moment the builder reports its commit, with
+# no model in the loop (fm-deliver.sh autostart; re-armed on every relaunch).
+if [ "${BRIEF_BUILDER:-}" = pool ] && [ "$KIND" = ship ] && [ "$MODE" != local-only ]; then
+  FM_HOME=$FM_HOME "$SCRIPT_DIR/fm-deliver.sh" "$ID" autostart >/dev/null 2>&1 \
+    || echo "warning: could not arm delivery autostart for $ID; start it with bin/fm-deliver.sh $ID run" >&2
+fi
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT$SPAWN_ACCOUNT"

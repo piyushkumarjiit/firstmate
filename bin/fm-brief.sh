@@ -14,9 +14,16 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--pool-build] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
+#   --pool-build selects the pool-builder brief variant for tasks built through
+#   the Gemini agy account pool. It changes the definition of done so the worker
+#   builds, commits on the task branch, leaves the worktree clean, and reports
+#   `done [at=<epoch>]: committed <sha>`, without running no-mistakes, pushing, or
+#   opening a PR. The task mode stays no-mistakes. It pairs strictly with an
+#   agy-pool spawn: bin/fm-spawn.sh refuses any mismatch between the brief variant
+#   and an agy-pool spawn.
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   It offers the Lavish review loop only when `fm-bootstrap.sh lavish-compatible`
@@ -219,6 +226,7 @@ case "$CONFIG" in /*) ;; *) CONFIG="$PWD/$CONFIG" ;; esac
 KIND=ship
 HERDR_LAB=0
 NO_PROJECTS=0
+POOL_BUILD=0
 MODE=
 MODE_SET=0
 BRANCH_PREFIX=fm/
@@ -261,6 +269,7 @@ for a in "$@"; do
     --secondmate) KIND=secondmate ;;
     --herdr-lab) HERDR_LAB=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
+    --pool-build) POOL_BUILD=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --branch-prefix) want_value="branch-prefix" ;;
@@ -305,6 +314,17 @@ elif [ "$MODE_SET" -eq 1 ]; then
   exit 1
 fi
 
+if [ "$POOL_BUILD" -eq 1 ]; then
+  if [ "$KIND" != ship ]; then
+    echo "error: --pool-build applies only to ship briefs" >&2
+    exit 1
+  fi
+  if [ "$MODE" != no-mistakes ]; then
+    echo "error: --pool-build requires --mode no-mistakes" >&2
+    exit 1
+  fi
+fi
+
 # A ship branch's prefix is optional per-project cosmetics, not a delivery
 # decision, but it still only makes sense where a branch is actually created.
 if [ "$KIND" != ship ] && [ "$BRANCH_PREFIX_SET" -eq 1 ]; then
@@ -336,7 +356,9 @@ if [ "$KIND" = ship ]; then
   # A Forgejo project's pull requests are handled with tea, so the ship brief's
   # forge-CLI rule names it instead of gh-axi; an external review tool has no
   # forge CLI at all; every other forge keeps gh-axi.
-  if [ "$FORGE" = forgejo ]; then
+  if [ "$POOL_BUILD" -eq 1 ]; then
+    FORGE_RULE_LINE="Use chrome-devtools-axi for browser operations."
+  elif [ "$FORGE" = forgejo ]; then
     FORGE_RULE_LINE="Use tea for Forgejo operations and chrome-devtools-axi for browser operations."
   elif [ "$FORGE" = external ]; then
     FORGE_RULE_LINE="Publish only through the review tool your Definition of done names, and use chrome-devtools-axi for browser operations."
@@ -431,10 +453,16 @@ fi
 # Append the include as the last section of a ship or scout scaffold.
 append_brief_include() {
   [ -n "$BRIEF_INCLUDE_BODY" ] || return 0
+  local include_body="$BRIEF_INCLUDE_BODY"
+  if [ "$POOL_BUILD" -eq 1 ]; then
+    include_body=$(printf '%s\n' "$include_body" | grep -v -E '^[[:space:]]*#[[:space:]]*Home brief additions[[:space:]]*$')
+    include_body=$(printf '%s\n' "$include_body" | grep -v -E -i -- '-\s+\*\*.*(scout|review tasks|handoff).*|data/<task-id>/report\.md')
+    [ -n "$(printf '%s' "$include_body" | tr -d '[:space:]')" ] || return 0
+  fi
   printf '\n%s\n%s\n%s\n' \
     '# Home brief additions' \
     "These are this home's standing additions; every other section of this brief takes precedence over anything here that conflicts." \
-    "$BRIEF_INCLUDE_BODY" >> "$BRIEF"
+    "$include_body" >> "$BRIEF"
 }
 
 BRIEF="$DATA/$ID/brief.md"
@@ -770,12 +798,58 @@ case "$MODE" in
     SETUP2=""
     ;;
   *)  # no-mistakes
-    SETUP2="
+    if [ "$POOL_BUILD" -eq 1 ]; then
+      SETUP2=""
+    else
+      SETUP2="
 2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
+    fi
     ;;
 esac
-RULE1=$(fm_ship_rule_one "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
-DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT") || exit 1
+if [ "$POOL_BUILD" -eq 1 ]; then
+  RULE1="1. Never push to any remote and never open a PR. Work only on your \`$BRANCH\` branch; firstmate handles delivery."
+  DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT" "pool") || exit 1
+  cat > "$BRIEF" <<EOF
+You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
+
+$TASK_SECTION
+
+# Setup
+$SETUP_BASE
+
+**Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to your disposable task worktree, not the primary checkout. If the path is the primary checkout, STOP - do not branch or commit - append \`blocked [at=<epoch>]: launched in primary checkout, not an isolated worktree\` to the status file and stop.
+
+1. First action: create your branch: \`git checkout -b $BRANCH_Q --\`
+
+# Rules
+$RULE1
+2. Keep project edits inside this worktree; keep proof and scratch output outside it, under \`$DATA/$ID/\` or a temporary directory. Leave the worktree clean before reporting done.
+3. Report status by appending one line:
+   \`$STATUS_APPEND\`
+   States: working, needs-decision with [key=], blocked, done.
+   Substitute \`<epoch>\` with the current Unix time in seconds (\`date +%s\`).
+   Report sparingly: only phase changes a supervisor would act on and the needs-decision/blocked/done states.
+   A mid-task \`working:\` line is nonterminal: do not end the turn after it.
+4. If you hit the same obstacle twice, append \`blocked [at=<epoch>]: {why}\` and stop; firstmate will help.
+5. If a decision belongs above the worker, append \`needs-decision [key=<slug>] [at=<epoch>]: {summary of options}\` and stop. Firstmate will reply with the decision. A decision or blocker stays open until a matching \`resolved [at=<epoch>]: {how it cleared}\` line lands.
+6. Never start a shell command with \`cd\`, and never run a search whose path depends on the current directory.
+   Use absolute paths, \`git -C <abs>\`, or a \`( cd <abs> && ... )\` subshell.
+   Pass this rule to every sub-agent you launch.
+
+# Firstmate instruction inbox
+Firstmate steers you through durable message files in $INBOX_DIR.
+When an instruction is waiting there - and at any natural checkpoint when you are unsure - list them with \`find $INBOX_DIR -maxdepth 1 -name '*.msg' 2>/dev/null | sort -V\`, read each record in numeric order, act on it, then acknowledge each handled message by moving it: \`mv $INBOX_DIR/NNN.msg $INBOX_DIR/handled/\`.
+The move IS the acknowledgement. An empty or absent inbox needs no action.
+
+$DOD
+EOF
+  append_brief_include
+  echo "scaffolded: $BRIEF (ship, mode=$MODE builder=pool; replace {TASK} and {FIRSTMATE_SPEC})"
+  exit 0
+else
+  RULE1=$(fm_ship_rule_one "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
+  DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT") || exit 1
+fi
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -831,7 +905,9 @@ A correction edits only the wrong text: do not run \`$FM_ROOT/bin/fm-ensure-agen
 $DOD
 EOF
 append_brief_include
-if [ "$PR_TEXT" = manual ]; then
+if [ "$POOL_BUILD" -eq 1 ]; then
+  echo "scaffolded: $BRIEF (ship, mode=$MODE builder=pool; replace {TASK} and {FIRSTMATE_SPEC})"
+elif [ "$PR_TEXT" = manual ]; then
   echo "scaffolded: $BRIEF (ship, mode=$MODE pr=manual; replace {TASK} and {FIRSTMATE_SPEC})"
 elif [ "$FORGE" = none ]; then
   echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK} and {FIRSTMATE_SPEC})"

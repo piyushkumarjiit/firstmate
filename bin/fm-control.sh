@@ -156,6 +156,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2034
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 usage() {
@@ -544,25 +545,36 @@ prepare_interrupt_ack() {
       [ -n "$INTERRUPT_ACK_LOG" ] || return 0
       INTERRUPT_ACK_RUN=$(fm_busy_muse_active_run_id "$INTERRUPT_ACK_LOG" 2>/dev/null || true)
       ;;
+    agy-rendered-row) ;;
   esac
 }
 
 interrupt_cancel_claim() {
   local elapsed=0 terminal=
-  case "$INTERRUPT_ACK_SOURCE:$INTERRUPT_ACK_RUN" in
-    muse-session-terminal:?*) ;;
-    *) printf 'unconfirmed'; return 0 ;;
+  case "$INTERRUPT_ACK_SOURCE" in
+    muse-session-terminal)
+      case "$INTERRUPT_ACK_RUN" in
+        ?*)
+          while :; do
+            terminal=$(fm_busy_muse_run_terminal "$INTERRUPT_ACK_LOG" "$INTERRUPT_ACK_RUN" 2>/dev/null || true)
+            case "$terminal" in
+              cancelled) printf 'confirmed'; return 0 ;;
+              ?*) printf 'unconfirmed'; return 0 ;;
+            esac
+            awk -v e="$elapsed" -v t="$SETTLE_WAIT" 'BEGIN{exit !(e < t)}' || break
+            sleep "$POLL"
+            elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
+          done
+          ;;
+      esac
+      ;;
+    agy-rendered-row)
+      if wait_rendered '(⎿[[:blank:]]*)?Interrupted · What should Antigravity CLI do instead' "$SETTLE_WAIT"; then
+        printf 'confirmed'
+        return 0
+      fi
+      ;;
   esac
-  while :; do
-    terminal=$(fm_busy_muse_run_terminal "$INTERRUPT_ACK_LOG" "$INTERRUPT_ACK_RUN" 2>/dev/null || true)
-    case "$terminal" in
-      cancelled) printf 'confirmed'; return 0 ;;
-      ?*) printf 'unconfirmed'; return 0 ;;
-    esac
-    awk -v e="$elapsed" -v t="$SETTLE_WAIT" 'BEGIN{exit !(e < t)}' || break
-    sleep "$POLL"
-    elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
-  done
   printf 'unconfirmed'
 }
 

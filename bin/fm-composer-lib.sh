@@ -257,6 +257,18 @@ fm_composer_kiro_scope() {
   [ "${FM_COMPOSER_HARNESS:-}" = kiro ]
 }
 
+# fm_composer_agy_scope: 0 when the caller has named the pane's harness as agy
+# through FM_COMPOSER_HARNESS or through identity.
+fm_composer_agy_scope() {  # [has_identity] [identity]
+  [ "${FM_COMPOSER_HARNESS:-}" = agy ] && return 0
+  local has_id="${1:-0}" id="${2:-}"
+  if [ "$has_id" = 1 ] && [ -n "$id" ] && [ "${id%%$'\t'*}" = agy ]; then
+    return 0
+  fi
+  [ -n "$id" ] && [ "${id%%$'\t'*}" = agy ] && return 0
+  return 1
+}
+
 # fm_composer_strip_ghost: the ONE fleet-wide ANSI-aware extractor of "real typed
 # content" from a captured, styled composer row. Reads the styled line on stdin
 # (from `tmux capture-pane -e`, `herdr pane read --format ansi`, or
@@ -2313,6 +2325,67 @@ _fm_composer_hermes_state() {  # <screen> <styled>
     }'
 }
 
+_fm_composer_agy_state() {  # <screen>
+  local screen=$1 plain
+  plain=$(printf '%s\n' "$screen" | fm_composer_strip_ansi)
+  printf '%s\n' "$plain" | awk '
+    function is_hrule(line,   t) {
+      t = line
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
+      if (length(t) < 4) return 0
+      gsub(/─/, "", t)
+      gsub(/-/, "", t)
+      return (length(t) == 0)
+    }
+
+    { rows[NR] = $0 }
+
+    END {
+      last = NR
+      while (last > 0 && rows[last] ~ /^[[:space:]]*$/) last--
+      if (last < 4) exit 1
+
+      footer = rows[last]
+
+      # Row last - 1 must be horizontal rule
+      if (!is_hrule(rows[last - 1])) exit 1
+
+      # Row last - 2 is the prompt row (must start with >)
+      composer_row = rows[last - 2]
+      if (composer_row !~ /^[[:space:]]*>/) exit 1
+
+      # Row last - 3 must be horizontal rule
+      if (!is_hrule(rows[last - 3])) exit 1
+
+      # If footer contains esc to cancel, agy is busy mid-turn: verdict is unknown (never empty)
+      if (footer ~ /esc to cancel/) {
+        print "unknown"
+        exit 0
+      }
+
+      # Footer must contain ? for shortcuts or the model name
+      if (footer !~ /\? for shortcuts/ && footer !~ /[Gg]emini/ && footer !~ /[A-Za-z0-9._-]+[[:space:]]+·[[:space:]]+(low|medium|high|xhigh)/) exit 1
+
+      # Check for typed text in composer_row: exactly > (optionally trailing spaces)
+      if (composer_row !~ /^[[:space:]]*>[[:space:]]*$/) {
+        print "pending"
+        exit 0
+      }
+
+      # Queued doorbells show as ▸ ... rows above the rule - those must NOT read empty.
+      # agy prints finished-turn thought summaries as "▸ Thought for ...", which are not pending doorbells.
+      for (i = 1; i <= last - 4; i++) {
+        if (rows[i] ~ /^[[:space:]]*▸/ && rows[i] !~ /^[[:space:]]*▸[[:space:]]*Thought for/) {
+          print "pending"
+          exit 0
+        }
+      }
+
+      print "empty"
+      exit 0
+    }'
+}
+
 fm_composer_classify_screen() {  # <caps> <screen> [cursor_row] [identity]
   local caps=$1 screen=$2 cy=${3:-} identity=${4:-}
   local styled=0 cursor=0 has_identity=0 cortex_proven=0 cortex_ask=0 kv plain
@@ -2347,6 +2420,13 @@ EOF
   if [ "$has_identity" = 1 ] && [ "${identity%%$'\t'*}" = hermes ]; then
     _fm_composer_hermes_state "$screen" "$styled"
     return
+  fi
+  if fm_composer_agy_scope "$has_identity" "$identity"; then
+    local agy_verdict
+    if agy_verdict=$(_fm_composer_agy_state "$screen"); then
+      printf '%s' "$agy_verdict"
+      return 0
+    fi
   fi
   plain=$(printf '%s\n' "$screen" | fm_composer_strip_ansi)
   _fm_composer_scan_screen "$plain" "$cy" '' "$cortex_proven"

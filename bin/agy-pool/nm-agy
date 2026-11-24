@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# no-mistakes antigravity entry point (home-local).
+# no-mistakes pins one model for every antigravity call, so this splits roles:
+# the review phase keeps the pinned model (Neon), and every other call, such as
+# the review fixer, runs on Hydrogen. Then hands off to the pool launcher.
+set -euo pipefail
+REVIEW_MODEL=${FM_NM_REVIEW_MODEL:-gemini-4-neon-medium}
+FIX_MODEL=${FM_NM_FIX_MODEL:-gemini-4-hydrogen-high}
+is_review=0
+for a in "$@"; do
+  case "$a" in *"Focus findings on risks introduced by changed code"*) is_review=1 ;; esac
+done
+model=$FIX_MODEL
+[[ $is_review -eq 1 ]] && model=$REVIEW_MODEL
+args=()
+skip=0
+for a in "$@"; do
+  if [[ $skip -eq 1 ]]; then args+=("$model"); skip=0; continue; fi
+  case "$a" in
+    --model) args+=("$a"); skip=1 ;;
+    --model=*) args+=("--model=$model") ;;
+    *) args+=("$a") ;;
+  esac
+done
+line="[nm-agy] $(date -u +%FT%TZ) cwd=$PWD role=$([[ $is_review -eq 1 ]] && echo review || echo fix) model=$model"
+echo "$line" >&2
+echo "$line" >> /home/agentic/firstmate/logs/nm-agy.log 2>/dev/null || true
+exec /home/agentic/firstmate/bin/fm-agy-pool.sh "${args[@]}"

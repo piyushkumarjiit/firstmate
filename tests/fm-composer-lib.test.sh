@@ -1375,6 +1375,56 @@ test_matrix_claude_inside_zellij_ansi_dump() {
   pass "matrix: the real claude-in-zellij --ansi dump reads empty in both locales"
 }
 
+test_matrix_agy_composer_recognition() {
+  local rule empty_row typed_row footer_shortcuts footer_model footer_busy
+  local idle_shortcuts idle_model typed queued busy agy_idle thought thought_and_queued
+  agy_idle=$(printf 'agy\tidle')
+  rule='──────────────────────────────────────────────────────────────────────────────'
+  empty_row='>'
+  typed_row='> /quit'
+  footer_shortcuts='? for shortcuts                                                         Gemini 3.8 Flash · low'
+  footer_model='Gemini 3.8 Flash · high'
+  footer_busy='⏺ 5s · esc to cancel · gemini-3.8-flash-low'
+
+  idle_shortcuts="$rule"$'\n'"$empty_row"$'\n'"$rule"$'\n'"$footer_shortcuts"
+  idle_model="$rule"$'\n'"$empty_row"$'\n'"$rule"$'\n'"$footer_model"
+  typed="$rule"$'\n'"$typed_row"$'\n'"$rule"$'\n'"$footer_shortcuts"
+  queued='▸ Firstmate instruction waiting: read 001.msg'$'\n'"$rule"$'\n'"$empty_row"$'\n'"$rule"$'\n'"$footer_shortcuts"
+  busy="$rule"$'\n'"$empty_row"$'\n'"$rule"$'\n'"$footer_busy"
+  thought='▸ Thought for 25s, 313 tokens'$'\n'"$rule"$'\n'"$empty_row"$'\n'"$rule"$'\n'"$footer_shortcuts"
+  thought_and_queued='▸ Thought for 25s, 313 tokens'$'\n''▸ Firstmate instruction waiting: read 001.msg'$'\n'"$rule"$'\n'"$empty_row"$'\n'"$rule"$'\n'"$footer_shortcuts"
+
+  # 1. Under agy scope (FM_COMPOSER_HARNESS=agy or identity=agy):
+  FM_COMPOSER_HARNESS=agy assert_screen "idle agy with shortcuts on herdr" empty "$CAPS_STYLED" "$idle_shortcuts"
+  FM_COMPOSER_HARNESS=agy assert_screen "idle agy with shortcuts on tmux" empty "$CAPS_TMUX" "$idle_shortcuts" 1
+  FM_COMPOSER_HARNESS=agy assert_screen "idle agy with shortcuts on zellij" empty "$CAPS_STYLED_NOID" "$idle_shortcuts"
+  FM_COMPOSER_HARNESS=agy assert_screen "idle agy with shortcuts on cmux/orca" empty "$CAPS_PLAIN" "$idle_shortcuts"
+  assert_screen "idle agy with identity on herdr" empty "$CAPS_STYLED" "$idle_shortcuts" '' "$agy_idle"
+
+  # 2. Idle with model name only (no shortcuts)
+  FM_COMPOSER_HARNESS=agy assert_screen "idle agy with model footer" empty "$CAPS_STYLED" "$idle_model"
+
+  # 3. Typed text reads pending
+  FM_COMPOSER_HARNESS=agy assert_screen "typed agy composer reads pending" pending "$CAPS_STYLED" "$typed"
+
+  # 4. Queued doorbell above rule must NOT read empty (reads pending)
+  FM_COMPOSER_HARNESS=agy assert_screen "queued doorbell above agy rule reads pending" pending "$CAPS_STYLED" "$queued"
+
+  # 5. Busy status row (esc to cancel) does not read empty (reads unknown)
+  FM_COMPOSER_HARNESS=agy assert_screen "busy agy status does not read empty" unknown "$CAPS_STYLED" "$busy"
+
+  # 5b. Finished-turn thought summary above rule must read empty (not pending)
+  FM_COMPOSER_HARNESS=agy assert_screen "idle agy screen with thought summary reads empty" empty "$CAPS_STYLED" "$thought"
+  FM_COMPOSER_HARNESS=agy assert_screen "agy screen with thought summary and queued doorbell reads pending" pending "$CAPS_STYLED" "$thought_and_queued"
+
+  # 6. Dead-shell rule preserved for every other harness (without agy scope)
+  assert_screen "idle agy shape on zellij without agy scope reads unknown under dead-shell rule" unknown "$CAPS_STYLED_NOID" "$idle_shortcuts"
+  assert_screen "idle agy shape on herdr without agy scope reads unknown under dead-shell rule" unknown "$CAPS_STYLED" "$idle_shortcuts" '' probe-absent
+  assert_screen "idle agy shape on tmux without agy scope reads unknown" unknown "$CAPS_TMUX" "$idle_shortcuts" 1 probe-absent
+
+  pass "matrix: agy empty-composer recognition works under agy scope; dead-shell rule preserved without scope"
+}
+
 test_strict_blank_row_divergence() {
   # THE STRICT POSTURE PIN (captain decision blank-row-injection-posture,
   # 2026-08-09): a blank or otherwise unidentified input row with no positive
@@ -1735,6 +1785,7 @@ test_matrix_grok_144_approval_titled_bottom_border
 test_matrix_grok_1077_fast_model_title
 test_matrix_kimi_bordered_shell_glyph_box
 test_matrix_claude_inside_zellij_ansi_dump
+test_matrix_agy_composer_recognition
 test_strict_blank_row_divergence
 test_bare_wrap_region_classifies
 test_contiguous_transcript_reanchors_on_live_prompt

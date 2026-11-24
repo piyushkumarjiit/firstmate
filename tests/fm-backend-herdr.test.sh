@@ -4325,6 +4325,24 @@ test_composer_state_real_text_is_pending() {
   pass "fm_backend_herdr_composer_state: real composer text reads pending"
 }
 
+test_composer_state_scrolled_pane_reads_bottom_screen() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/composer-scrolled"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  # 1. Visible capture returns scrollback without the composer
+  printf '2026-11-23 01:00:00 [info] building task\n2026-11-23 01:00:01 [info] test suite finished\n' > "$resp/1.out"
+  # 2. pane get returns scroll metadata showing pane scrolled back 80 rows
+  printf '{"result":{"pane":{"pane_id":"w1:p2","scroll":{"offset_from_bottom":80,"max_offset_from_bottom":200,"viewport_rows":24}}}}\n' > "$resp/2.out"
+  # 3. pane read with --format ansi --lines 24 returns the bottom screen containing the empty composer
+  printf '  ╭────────────────────────╮\n  │ ❯                      │\n  ╰──────── Composer ──────╯\n\n  Shift+Tab:mode\n' > "$resp/3.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p2' "$ROOT" )
+  [ "$out" = empty ] || fail "scrolled capture should read bottom lines and return empty composer, got '$out'"
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''get'$'\x1f''w1:p2' "must query pane get to inspect scroll state"
+  assert_contains "$(cat "$log")" $'\x1f''--lines'$'\x1f''24' "must read the last viewport_rows lines"
+  pass "fm_backend_herdr_composer_state: scrolled pane classifies the bottom of the screen via viewport_rows lines"
+}
+
 # A titled rounded top rule reads as a composer only for a pane whose native
 # agent probe names cortex; the identical capture under any other agent, or no
 # agent record, keeps the ambiguous verdict every harness reads. The probe
@@ -6691,6 +6709,7 @@ test_busy_state_unknown_on_no_agent
 test_composer_state_bare_prompt_is_empty
 test_composer_state_styled_placeholder_draft_is_pending
 test_composer_state_real_text_is_pending
+test_composer_state_scrolled_pane_reads_bottom_screen
 test_composer_state_titled_box_requires_cortex_identity
 test_composer_state_non_cortex_panes_skip_identity_probe
 test_composer_state_grok_oversized_title_preserves_safe_verdicts

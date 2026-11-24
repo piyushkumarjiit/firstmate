@@ -1145,6 +1145,32 @@ test_muse_interrupt_confirms_adapter_acknowledgement() {
   pass "fm-control interrupt: muse confirms cancellation from its session log"
 }
 
+test_agy_interrupt_confirms_rendered_row() {
+  local dir out rc
+  dir=$(new_case agy-ack)
+  add_task "$dir" t1 agy
+  alive_as "$dir" agy
+  printf '⎿  Interrupted · What should Antigravity CLI do instead?\n' > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "agy interrupt should observe rendered acknowledgement"$'\n'"$out"
+  assert_contains "$out" "verified=agent-alive cancel=confirmed" \
+    "the result should report agy's cancelled terminal acknowledgement"
+  pass "fm-control interrupt: agy confirms cancellation from rendered interrupted row"
+}
+
+test_agy_interrupt_without_row_reports_unconfirmed() {
+  local dir out rc
+  dir=$(new_case agy-no-ack)
+  add_task "$dir" t1 agy
+  alive_as "$dir" agy
+  printf 'Thinking for 5s, 100 tokens...\n' > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "agy interrupt delivery should succeed"$'\n'"$out"
+  assert_contains "$out" "verified=agent-alive cancel=unconfirmed" \
+    "missing interrupted row should leave cancellation unconfirmed"
+  pass "fm-control interrupt: agy reports unconfirmed when interrupted row is absent"
+}
+
 test_interrupt_revalidates_agent_after_acknowledgement_wait() {
   local dir root log out rc
   dir=$(new_case ack-race)
@@ -1365,6 +1391,8 @@ test_exit_refuses_the_confirming_enter
 test_exit_names_a_picker_that_renders_after_the_submit
 test_interrupt_without_acknowledgement_preserves_busy_state
 test_muse_interrupt_confirms_adapter_acknowledgement
+test_agy_interrupt_confirms_rendered_row
+test_agy_interrupt_without_row_reports_unconfirmed
 test_interrupt_revalidates_agent_after_acknowledgement_wait
 test_exit_accepts_agent_stopped_by_busy_interrupt
 test_agent_that_does_not_stop_fails_closed

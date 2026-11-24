@@ -1,0 +1,771 @@
+#!/bin/bash
+set -euo pipefail
+# The shebang is a direct /bin/bash on purpose: firstmate launches this wrapper
+# through the bin/agy-pool/agy symlink, and with a single exec the kernel names
+# the process after that path ("agy"). Herdr and firstmate identify a live agy
+# worker by that process name; an /usr/bin/env hop would rename it to bash.
+
+# ==============================================================================
+# fm-agy-pool.sh
+# Model-aware sticky quota router + live Google quota + local fallback telemetry
+# ==============================================================================
+
+POOL_CONF="${POOL_CONF:-/etc/firstmate/gpro-pool.conf}"
+MODELS_CONF="${MODELS_CONF:-/etc/firstmate/gpro-models.conf}"
+AGY_BIN="${AGY_BIN:-/usr/local/bin/agy}"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+STATE_DIR="${FM_AGY_STATE_DIR:-/tmp/fm-agy-pool}"
+USAGE_LOG="${FM_AGY_USAGE_LOG:-/var/log/firstmate/agy-usage.jsonl}"
+MIN_REMAINING_PCT="${FM_AGY_MIN_PCT:-15}"         # Switch accounts when <= 15% left
+WINDOW_SECONDS="${FM_AGY_WINDOW_SEC:-18000}"       # Fallback 5-hour rolling window
+DEFAULT_BUDGET_SEC="${FM_AGY_BUDGET_SEC:-5400}"    # Fallback budget (auto-calibrates on 429)
+
+mkdir -p "$STATE_DIR"
+chmod 1777 "$STATE_DIR" 2>/dev/null || true
+
+if [[ -f "$POOL_CONF" ]]; then
+  mapfile -t GPRO_USERS < <(grep -Ev '^\s*(#|$)' "$POOL_CONF" | awk '{print $1}')
+else
+  read -r -a GPRO_USERS <<< "${GPRO_POOL_USERS:-gpro1 gpro2}"
+fi
+
+now_epoch() { date +%s; }
+
+is_authenticated() {
+  local user="$1"
+  sudo -n -u "$user" test -s "/home/${user}/.gemini/antigravity-cli/antigravity-oauth-token" 2>/dev/null
+}
+
+init_or_roll_window() {
+  local user="$1"
+  local qfile="$STATE_DIR/${user}.state.json"
+  local now
+  now=$(now_epoch)
+
+  if [[ ! -f "$qfile" ]]; then
+    jq -n --arg u "$user" --argjson b "$DEFAULT_BUDGET_SEC" \
+      '{user: $u, window_start: 0, reset_at: 0, used_sec: 0, budget_sec: $b, exhausted: false}' > "$qfile"
+    chmod 0666 "$qfile" 2>/dev/null || true
+    return
+  fi
+
+  local reset_at
+  reset_at=$(jq -r '.reset_at // 0' "$qfile" 2>/dev/null || echo 0)
+  if (( reset_at > 0 && now >= reset_at )); then
+    local budget
+    budget=$(jq -r ".budget_sec // $DEFAULT_BUDGET_SEC" "$qfile")
+    jq -n --arg u "$user" --argjson b "$budget" \
+      '{user: $u, window_start: 0, reset_at: 0, used_sec: 0, budget_sec: $b, exhausted: false}' > "$qfile"
+    chmod 0666 "$qfile" 2>/dev/null || true
+  fi
+}
+
+get_remaining_pct() {
+  local user="$1"
+  local model="${2:-}"
+
+  init_or_roll_window "$user"
+  local qfile="$STATE_DIR/${user}.state.json"
+  local exhausted used budget
+  exhausted=$(jq -r '.exhausted // false' "$qfile" 2>/dev/null || echo false)
+  if [[ "$exhausted" == "true" ]]; then
+    echo 0
+    return
+  fi
+  # Only the agy /usage check may mark an account low (it sets exhausted).
+  # The local time-used counter is telemetry, never a switch decision, so an
+  # account that is not marked exhausted always reads as available here.
+  if [[ "${FM_AGY_LOCAL_ESTIMATE:-off}" != on ]]; then
+    echo 100
+    return
+  fi
+  used=$(jq -r '.used_sec // 0' "$qfile" 2>/dev/null || echo 0)
+  budget=$(jq -r ".budget_sec // $DEFAULT_BUDGET_SEC" "$qfile" 2>/dev/null || echo "$DEFAULT_BUDGET_SEC")
+  (( budget <= 0 )) && budget=$DEFAULT_BUDGET_SEC
+
+  local pct=$(( 100 - (used * 100 / budget) ))
+  (( pct < 0 )) && pct=0
+  echo "$pct"
+}
+
+record_run() {
+  local user="$1" dur="$2"
+  init_or_roll_window "$user"
+  local qfile="$STATE_DIR/${user}.state.json"
+  local now
+  now=$(now_epoch)
+
+  local wstart reset_at used budget exhausted
+  wstart=$(jq -r '.window_start // 0' "$qfile")
+  reset_at=$(jq -r '.reset_at // 0' "$qfile")
+  used=$(jq -r '.used_sec // 0' "$qfile")
+  budget=$(jq -r ".budget_sec // $DEFAULT_BUDGET_SEC" "$qfile")
+  exhausted=$(jq -r '.exhausted // false' "$qfile" 2>/dev/null || echo false)
+
+  if (( wstart == 0 )); then
+    wstart=$now
+    reset_at=$(( now + WINDOW_SECONDS ))
+  fi
+
+  used=$(( used + dur ))
+
+  # The end-of-session scan logs quota_hit as suspicion in the usage log,
+  # but must not set exhausted or change budgets; the pre-session /usage result
+  # alone decides switch-and-skip.
+
+  jq -n \
+    --arg u "$user" \
+    --argjson ws "$wstart" \
+    --argjson ra "$reset_at" \
+    --argjson us "$used" \
+    --argjson bg "$budget" \
+    --argjson ex "$exhausted" \
+    '{user: $u, window_start: $ws, reset_at: $ra, used_sec: $us, budget_sec: $bg, exhausted: $ex}' > "$qfile"
+  chmod 0666 "$qfile" 2>/dev/null || true
+}
+
+# Return space-separated list of users allowed for a model from MODELS_CONF, or empty if unrestricted
+allowed_users_for_model() {
+  local model="${1:-}"
+  [[ -z "$model" || ! -f "$MODELS_CONF" ]] && return 0
+
+  while IFS= read -r line; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+    local pattern users_csv
+    pattern=$(awk '{print $1}' <<<"$line")
+    users_csv=$(awk '{$1=""; sub(/^ +/,""); print}' <<<"$line")
+    [[ -z "$pattern" || -z "$users_csv" ]] && continue
+    # shellcheck disable=SC2053
+    if [[ "$model" == $pattern ]]; then
+      printf '%s\n' "${users_csv//,/ }"
+      return 0
+    fi
+  done < "$MODELS_CONF"
+}
+
+# Users reserved for special models in MODELS_CONF (deprioritized for general Flash tasks)
+is_reserved_user() {
+  local u="$1"
+  [[ ! -f "$MODELS_CONF" ]] && return 1
+  grep -Ev '^\s*(#|$)' "$MODELS_CONF" | awk '{print $2}' | tr ',' '\n' | grep -Fxq "$u"
+}
+
+is_hydrogen_or_neon() {
+  local model="${1:-}"
+  case "${model,,}" in
+    *hydrogen*|*neon*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Query live usage via `agy -p /usage` for the candidate account.
+# Prints "<min_pct> <reset_timestamp>" on success (Gemini Models lines found),
+# or exits non-zero if failed or unparsable. When verbose=true, also outputs
+# the raw Gemini Models lines first.
+query_live_usage() {
+  local user="$1"
+  local verbose="${2:-false}"
+  local raw_output
+  raw_output=$(sudo -n -u "$user" -H "$AGY_BIN" -p /usage 2>/dev/null || true)
+  [[ -z "$raw_output" ]] && return 1
+
+  local parsed
+  parsed=$(awk -F'\t' '
+  BEGIN { min_pct = 999; min_reset = ""; count = 0 }
+  $1 ~ /^Gemini Models/ {
+    pct = $3
+    gsub(/[^0-9]/, "", pct)
+    reset = $4
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", reset)
+    if (pct != "") {
+      pct_val = pct + 0
+      count++
+      if (pct_val < min_pct) {
+        min_pct = pct_val
+        min_reset = reset
+      }
+    }
+  }
+  END {
+    if (count > 0 && min_pct != 999) {
+      print min_pct, min_reset
+    } else {
+      exit 1
+    }
+  }' <<<"$raw_output") || return 1
+
+  if [[ "$verbose" == "true" ]]; then
+    grep -E '^Gemini Models' <<<"$raw_output" || true
+  fi
+  echo "$parsed"
+  return 0
+}
+
+mark_account_exhausted() {
+  local user="$1"
+  local reset_epoch="${2:-0}"
+  local qfile="$STATE_DIR/${user}.state.json"
+  local now
+  now=$(now_epoch)
+
+  if (( reset_epoch <= 0 )); then
+    reset_epoch=$(( now + WINDOW_SECONDS ))
+  fi
+
+  init_or_roll_window "$user"
+  local used budget
+  used=$(jq -r '.used_sec // 0' "$qfile" 2>/dev/null || echo 0)
+  budget=$(jq -r ".budget_sec // $DEFAULT_BUDGET_SEC" "$qfile" 2>/dev/null || echo "$DEFAULT_BUDGET_SEC")
+
+  jq -n \
+    --arg u "$user" \
+    --argjson ws "$now" \
+    --argjson ra "$reset_epoch" \
+    --argjson us "$used" \
+    --argjson bg "$budget" \
+    --argjson ex true \
+    '{user: $u, window_start: $ws, reset_at: $ra, used_sec: $us, budget_sec: $bg, exhausted: $ex}' > "$qfile"
+  chmod 0666 "$qfile" 2>/dev/null || true
+}
+
+log_usage_check() {
+  local account="$1" min_pct="$2" reset="$3" decision="$4"
+  [[ -d "$(dirname "$USAGE_LOG")" ]] || return 0
+
+  local pct_val="null"
+  if [[ "$min_pct" =~ ^[0-9]+$ ]]; then
+    pct_val="$min_pct"
+  fi
+
+  jq -nc \
+    --arg ts "$(date -Iseconds)" \
+    --arg user "$account" \
+    --arg model "${ROUTE_MODEL:-default}" \
+    --arg task "${FM_TASK_ID:-}" \
+    --arg dec "$decision" \
+    --arg reset "${reset:-}" \
+    --argjson pct "$pct_val" \
+    '{ts: $ts, provider: "google-ai-pro-direct", user: $user, model: $model, task: $task, event: "usage_check", gemini_min_pct: $pct, reset: $reset, decision: $dec}' \
+    >> "$USAGE_LOG" 2>/dev/null || true
+}
+
+pick_sticky_user() {
+  local model="${1:-}"
+  local explicit_user="${2:-${FM_AGY_USER:-}}"
+
+  if [[ -n "$explicit_user" ]]; then
+    if ! id "$explicit_user" >/dev/null 2>&1; then
+      echo "[fm-agy-pool] ERROR: Requested user '$explicit_user' does not exist." >&2
+      return 1
+    fi
+    if ! is_authenticated "$explicit_user"; then
+      echo "[fm-agy-pool] ERROR: Requested user '$explicit_user' is not authenticated." >&2
+      return 1
+    fi
+    if ! (is_hydrogen_or_neon "$model" || is_reserved_user "$explicit_user"); then
+      local usage_info live_pct live_reset
+      if usage_info=$(query_live_usage "$explicit_user"); then
+        read -r live_pct live_reset <<<"$usage_info"
+        if [[ -n "$live_pct" && live_pct -le MIN_REMAINING_PCT ]]; then
+          log_usage_check "$explicit_user" "$live_pct" "$live_reset" "skip"
+          local rst_epoch
+          rst_epoch=$(date -d "$live_reset" +%s 2>/dev/null || echo 0)
+          (( rst_epoch <= 0 )) && rst_epoch=$(( $(now_epoch) + WINDOW_SECONDS ))
+          mark_account_exhausted "$explicit_user" "$rst_epoch"
+          echo "[fm-agy-pool] ERROR: Requested user '$explicit_user' quota is ${live_pct}% (floor=${MIN_REMAINING_PCT}%), exhausted until ${live_reset}." >&2
+          return 1
+        else
+          log_usage_check "$explicit_user" "$live_pct" "$live_reset" "start"
+        fi
+      else
+        log_usage_check "$explicit_user" "" "" "unknown"
+      fi
+    fi
+    echo "$explicit_user"
+    return 0
+  fi
+
+  local -a candidates=()
+  local allowed_str
+  allowed_str=$(allowed_users_for_model "$model")
+
+  if [[ -n "$allowed_str" ]]; then
+    read -r -a candidates <<<"$allowed_str"
+  else
+    # A model with no account rule in the models config must never be routed to
+    # reserved accounts (Flash must never spill onto reserved accounts like piyushjiit).
+    local -a normal=()
+    for u in "${GPRO_USERS[@]}"; do
+      if ! is_reserved_user "$u"; then
+        normal+=("$u")
+      fi
+    done
+    candidates=("${normal[@]}")
+  fi
+
+  for u in "${candidates[@]}"; do
+    id "$u" >/dev/null 2>&1 || continue
+    is_authenticated "$u" || continue
+    local pct
+    pct=$(get_remaining_pct "$u" "$model")
+    if (( pct <= MIN_REMAINING_PCT )); then
+      continue
+    fi
+
+    # Do not run /usage for Hydrogen/Neon (reserved account) spawns for now
+    if is_hydrogen_or_neon "$model" || is_reserved_user "$u"; then
+      echo "$u"
+      return 0
+    fi
+
+    # Check live usage via `agy -p /usage` once as selected account
+    local usage_info live_pct live_reset
+    if usage_info=$(query_live_usage "$u"); then
+      read -r live_pct live_reset <<<"$usage_info"
+      if [[ -n "$live_pct" ]]; then
+        if (( live_pct > MIN_REMAINING_PCT )); then
+          log_usage_check "$u" "$live_pct" "$live_reset" "start"
+          echo "$u"
+          return 0
+        else
+          log_usage_check "$u" "$live_pct" "$live_reset" "skip"
+          local rst_epoch
+          rst_epoch=$(date -d "$live_reset" +%s 2>/dev/null || echo 0)
+          (( rst_epoch <= 0 )) && rst_epoch=$(( $(now_epoch) + WINDOW_SECONDS ))
+          mark_account_exhausted "$u" "$rst_epoch"
+          echo "[fm-agy-pool] Account '$u' live quota is ${live_pct}% (floor=${MIN_REMAINING_PCT}%), exhausted until ${live_reset}; skipping to next account." >&2
+          continue
+        fi
+      fi
+    fi
+
+    # If /usage output cannot be parsed or the command fails, treat as unknown:
+    # start on the sticky account and rely on the quota-error path
+    log_usage_check "$u" "" "" "unknown"
+    echo "$u"
+    return 0
+  done
+  return 1
+}
+
+# Check whether a pool account has a live agy process. Use per-account process checks only.
+account_has_live_agy() {
+  local user="$1"
+  local pgrep_bin="${FM_AGY_PGREP:-pgrep}"
+  "$pgrep_bin" -u "$user" -x agy >/dev/null 2>&1
+}
+
+find_active_pool_users() {
+  local -a active=()
+  for u in "${GPRO_USERS[@]}"; do
+    if account_has_live_agy "$u"; then
+      active+=("$u")
+    fi
+  done
+  if (( ${#active[@]} > 0 )); then
+    printf '%s\n' "${active[@]}"
+  fi
+}
+
+cmd_usage() {
+  local target="${1:-}"
+  if [[ -z "$target" ]]; then
+    echo "[fm-agy-pool] ERROR: --usage requires an account argument (e.g. --usage <account>)." >&2
+    exit 1
+  fi
+
+  local -a active_users=()
+  mapfile -t active_users < <(find_active_pool_users)
+  for act in "${active_users[@]}"; do
+    if [[ "$act" != "$target" ]]; then
+      echo "[fm-agy-pool] ERROR: Another pool account ('$act') is currently active; refusing live usage check for '$target' (only 1 pool account may be active at a time)." >&2
+      exit 75
+    fi
+  done
+
+  local usage_info live_pct live_reset
+  if ! usage_info=$(query_live_usage "$target" true); then
+    echo "[fm-agy-pool] ERROR: Failed to query live usage for '$target'." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$usage_info"
+  read -r live_pct live_reset <<<"$(tail -n 1 <<<"$usage_info")"
+  log_usage_check "$target" "$live_pct" "$live_reset" "manual"
+  if [[ -n "$live_pct" && "$live_pct" =~ ^[0-9]+$ && "$live_pct" -le "$MIN_REMAINING_PCT" ]]; then
+    local rst_epoch
+    rst_epoch=$(date -d "$live_reset" +%s 2>/dev/null || echo 0)
+    (( rst_epoch <= 0 )) && rst_epoch=$(( $(now_epoch) + WINDOW_SECONDS ))
+    mark_account_exhausted "$target" "$rst_epoch"
+  fi
+  exit 0
+}
+
+cmd_status() {
+  printf "%-11s %-14s %-16s %-22s %-26s %s\n" "ACCOUNT" "STATUS" "REMAINING" "RESET_AT" "CHECKED_AT" "SPECIAL_MODELS"
+  for u in "${GPRO_USERS[@]}"; do
+    local auth="PENDING_LOGIN"
+    id "$u" >/dev/null 2>&1 || auth="MISSING_USER"
+    [[ "$auth" == "PENDING_LOGIN" ]] && is_authenticated "$u" && auth="READY"
+
+    local pct="unknown"
+    local rst_str="unknown"
+    local chk_ts="unknown"
+    if [[ -f "$USAGE_LOG" ]]; then
+      local last_entry
+      last_entry=$(jq -s --arg u "$u" '[.[] | select(.user == $u and .event == "usage_check")] | last' "$USAGE_LOG" 2>/dev/null || true)
+      if [[ -n "$last_entry" && "$last_entry" != "null" ]]; then
+        local p r t
+        p=$(jq -r '.gemini_min_pct // empty' <<<"$last_entry" 2>/dev/null || true)
+        r=$(jq -r '.reset // empty' <<<"$last_entry" 2>/dev/null || true)
+        t=$(jq -r '.ts // empty' <<<"$last_entry" 2>/dev/null || true)
+        [[ -n "$r" ]] && rst_str="$r"
+        [[ -n "$t" ]] && chk_ts="$t"
+        if [[ -n "$p" && "$p" =~ ^[0-9]+$ ]]; then
+          if (( p <= MIN_REMAINING_PCT )); then
+            pct="${p}% (skip)"
+          else
+            pct="${p}%"
+          fi
+        fi
+      fi
+    fi
+
+    local special="flash-3.8"
+    if is_reserved_user "$u"; then
+      special="hydrogen,neon"
+    fi
+
+    printf "%-11s %-14s %-16s %-22s %-26s %s\n" \
+      "$u" "$auth" "$pct" "$rst_str" "$chk_ts" "$special"
+  done
+  exit 0
+}
+
+case "${1:-}" in
+  --usage)
+    cmd_usage "${2:-}"
+    ;;
+  --usage=*)
+    cmd_usage "${1#*=}"
+    ;;
+  --status|--stats)
+    cmd_status
+    ;;
+  --reset)
+    target="${2:-}"
+    if [[ -n "$target" ]]; then
+      rm -f "$STATE_DIR/${target}.state.json"
+      echo "[fm-agy-pool] Reset local window counter for '$target'."
+    else
+      rm -f "$STATE_DIR"/*.state.json
+      echo "[fm-agy-pool] Reset local window counters for all accounts."
+    fi
+    exit 0
+    ;;
+esac
+
+is_user_allowed_for_model() {
+  local user="$1" model="${2:-}"
+  local allowed_str
+  allowed_str=$(allowed_users_for_model "$model")
+  if [[ -n "$allowed_str" ]]; then
+    local -a candidates=()
+    read -r -a candidates <<<"$allowed_str"
+    for c in "${candidates[@]}"; do
+      [[ "$c" == "$user" ]] && return 0
+    done
+    return 1
+  else
+    ! is_reserved_user "$user"
+  fi
+}
+
+is_user_exhausted() {
+  local user="$1" model="${2:-}"
+  local pct
+  pct=$(get_remaining_pct "$user" "$model")
+  (( pct <= MIN_REMAINING_PCT ))
+}
+
+# Parse --user / --account (strip before passing to agy) and inspect --model / -m (keep for agy)
+EXPLICIT_USER="${FM_AGY_USER:-}"
+REQ_MODEL=""
+AGY_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --user|--account)
+      EXPLICIT_USER="${2:-}"
+      shift 2
+      ;;
+    --user=*|--account=*)
+      EXPLICIT_USER="${1#*=}"
+      shift
+      ;;
+    --model|-m)
+      REQ_MODEL="${2:-}"
+      AGY_ARGS+=("$1" "${2:-}")
+      shift 2
+      ;;
+    --model=*|-m=*)
+      REQ_MODEL="${1#*=}"
+      AGY_ARGS+=("$1")
+      shift
+      ;;
+    *)
+      AGY_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# A caller that cannot pass --model (for example `agy models`, which rejects the
+# flag) names the model it is asking about through FM_AGY_POOL_MODEL so the
+# listing comes from an account that actually carries that model.
+ROUTE_MODEL="${REQ_MODEL:-${FM_AGY_POOL_MODEL:-}}"
+
+# Claude models never route through Antigravity; they run on the native Claude
+# CLI or the LiteLLM gateway instead.
+case "${ROUTE_MODEL,,}" in
+  claude*)
+    echo "[fm-agy-pool] ERROR: model '$ROUTE_MODEL' is a Claude model; Claude does not run through Antigravity. Use the claude or pi harness." >&2
+    exit 2
+    ;;
+esac
+
+# Active account cap: at most FM_AGY_MAX_ACTIVE pool accounts run at once
+# (default 2, so one account can build on Flash while another reviews or
+# fixes on Neon/Hydrogen). Per-account process check only, no network calls.
+MAX_ACTIVE="${FM_AGY_MAX_ACTIVE:-2}"
+mapfile -t ACTIVE_USERS < <(find_active_pool_users)
+SELECTED_USER=""
+# Prefer reusing an account that is already active and fits this request.
+for ACTIVE_USER in "${ACTIVE_USERS[@]}"; do
+  [[ -n "$EXPLICIT_USER" && "$EXPLICIT_USER" != "$ACTIVE_USER" ]] && continue
+  is_user_allowed_for_model "$ACTIVE_USER" "$ROUTE_MODEL" || continue
+  is_user_exhausted "$ACTIVE_USER" "$ROUTE_MODEL" && continue
+  SELECTED_USER="$ACTIVE_USER"
+  break
+done
+if [[ -z "$SELECTED_USER" ]]; then
+  if (( ${#ACTIVE_USERS[@]} >= MAX_ACTIVE )); then
+    echo "[fm-agy-pool] ERROR: ${#ACTIVE_USERS[@]} pool accounts already active (${ACTIVE_USERS[*]}), none fit model '${ROUTE_MODEL:-default}'${EXPLICIT_USER:+ / account '$EXPLICIT_USER'}; cap is $MAX_ACTIVE (FM_AGY_MAX_ACTIVE)." >&2
+    exit 75
+  fi
+  SELECTED_USER=$(pick_sticky_user "$ROUTE_MODEL" "$EXPLICIT_USER" || true)
+fi
+
+if [[ -z "$SELECTED_USER" ]]; then
+  echo "[fm-agy-pool] ERROR: No eligible account in $POOL_CONF for model '${ROUTE_MODEL:-default}' above ${MIN_REMAINING_PCT}% remaining quota." >&2
+  exit 75
+fi
+
+BEFORE_PCT=$(get_remaining_pct "$SELECTED_USER" "$ROUTE_MODEL")
+TASK_LABEL="${FM_TASK_ID:-${PWD##*/}}"
+START_TS=$(now_epoch)
+RUN_LOG=$(mktemp /tmp/fm-agy-run.XXXXXX)
+trap 'rm -f "$RUN_LOG"' EXIT
+
+echo "[fm-agy-pool] Routing model '${ROUTE_MODEL:-default}' to '$SELECTED_USER' (${BEFORE_PCT}% remaining, floor=${MIN_REMAINING_PCT}%)..." >&2
+umask 0002
+
+# A caller such as no-mistakes writes its --json-schema file private to the
+# operator (mode 600), which the pool account cannot read. Hand the pool a
+# readable copy instead; the schema holds no secrets.
+SCHEMA_COPIES=()
+_fix_args=()
+_want_schema=0
+for _a in "${AGY_ARGS[@]}"; do
+  if [[ $_want_schema -eq 1 && -f "$_a" ]]; then
+    _copy=$(mktemp /tmp/fm-agy-schema.XXXXXX)
+    cat "$_a" > "$_copy" && chmod 0644 "$_copy"
+    SCHEMA_COPIES+=("$_copy"); _a="$_copy"
+  elif [[ "$_a" == --json-schema=* && -f "${_a#--json-schema=}" ]]; then
+    _copy=$(mktemp /tmp/fm-agy-schema.XXXXXX)
+    cat "${_a#--json-schema=}" > "$_copy" && chmod 0644 "$_copy"
+    SCHEMA_COPIES+=("$_copy"); _a="--json-schema=$_copy"
+  fi
+  _want_schema=0
+  [[ "$_a" == --json-schema ]] && _want_schema=1
+  _fix_args+=("$_a")
+done
+AGY_ARGS=("${_fix_args[@]}")
+trap 'rm -f "$RUN_LOG" "${SCHEMA_COPIES[@]}"' EXIT
+
+# sudo's env_reset drops the worker environment, so forward what a firstmate
+# worker needs: PATH (node-based tools such as tasks-axi live under the
+# operator's nvm tree), the task temp and identity variables fm-spawn exports,
+# trace context, and the terminal/multiplexer identity. HOME stays the pool
+# account's own so agy finds that account's sign-in.
+FORWARD_ENV=()
+while IFS= read -r name; do
+  case "$name" in
+    PATH|TERM|COLORTERM|LANG|LC_*|TMPDIR|TMP|TEMP|GOTMPDIR|COMPACT_ADVISER_DISABLE|LAVISH_AXI_HOST|TRACEPARENT|FM_*|HERDR_*|TMUX|TMUX_PANE)
+      FORWARD_ENV+=("$name=${!name}") ;;
+  esac
+done < <(compgen -e)
+
+# fm-spawn creates the per-task temp root private to the operator; grant the
+# shared agents group access so the pool account can use it. Only fm-owned
+# /tmp/fm-* directories owned by this user are touched.
+grant_task_tmp() {
+  local dir=$1 root
+  [[ -n "$dir" ]] || return 0
+  root=$dir
+  while [[ "$root" == /tmp/fm-*/* ]]; do root=${root%/*}; done
+  [[ "$root" == /tmp/fm-* && -d "$root" && -O "$root" ]] || return 0
+  setfacl -R -m g:agents:rwX -m d:g:agents:rwX "$root" 2>/dev/null || true
+}
+grant_task_tmp "${GOTMPDIR:-}"
+grant_task_tmp "${TMPDIR:-}"
+
+# fm-spawn pre-registers the worktree in the operator's agy trust store; mirror
+# exactly that entry into the selected pool account's store so its launch does
+# not stop on the folder-trust dialog. Nothing is mirrored for a folder the
+# operator has not trusted.
+mirror_trust() {
+  local own="$HOME/.gemini/antigravity-cli/settings.json" logical=$PWD resolved
+  resolved=$(pwd -P)
+  [[ -f "$own" ]] || return 0
+  jq -e --arg a "$logical" --arg b "$resolved" '(.trustedWorkspaces // []) | index($a) or index($b)' "$own" >/dev/null 2>&1 || return 0
+  sudo -n -H -u "$SELECTED_USER" /usr/bin/env A="$logical" B="$resolved" bash -c '
+    f="$HOME/.gemini/antigravity-cli/settings.json"
+    mkdir -p "${f%/*}"; [ -s "$f" ] || echo "{}" > "$f"
+    t=$(mktemp "${f}.XXXXXX") &&
+    jq --arg a "$A" --arg b "$B" ".trustedWorkspaces = (((.trustedWorkspaces // []) + [\$a, \$b]) | unique)" "$f" > "$t" &&
+    mv "$t" "$f"' 2>/dev/null || true
+}
+if [[ "${AGY_ARGS[0]:-}" != models ]]; then mirror_trust; fi
+
+# Firstmate's scripts write task records through mktemp+mv, which leaves each
+# record mode 0600 and owned by its writer. Run by the worker as the pool
+# account, they lock the operator's firstmate out of its own records; run by
+# the operator (fm-send's inbox messages), they lock the worker out of its
+# steering. For a firstmate task worker, two helpers restore group access for
+# the shared agents group while the wrapper lives and once more after it exits,
+# each as the only identity allowed to chmod its own files: one as the pool
+# account over that account's files under the task's state and data paths, one
+# as the operator over only this task's own state records and inbox.
+keep_group_access() {
+  local home task
+  task=${FM_TASK_ID:-}
+  [[ -n "$task" ]] || return 0
+  home=${FM_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}
+  [[ -d "$home/state" ]] || return 0
+  local dirs=("$home/state")
+  [[ -d "$home/data/$task" ]] && dirs+=("$home/data/$task")
+  # A named default entry for the operator makes the restored access effective
+  # even in an operator session that predates its agents-group membership.
+  local d me
+  me=$(id -un)
+  for d in "${dirs[@]}"; do
+    [[ -O "$d" ]] && setfacl -m "u:$me:rwX" -m "d:u:$me:rwX" "$d" 2>/dev/null
+  done
+  # A ship can be handed from the pool worker to a worker running as the
+  # operator in the same task copy, so once the pool worker is gone its files
+  # in that copy and in the repository's shared git directory are handed back
+  # too: group-writable, plus a named operator entry for an operator session
+  # that predates its agents-group membership.
+  local top common
+  top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+  # shellcheck disable=SC2016  # expanded by the pool account's bash, not here
+  setsid sudo -n -H -u "$SELECTED_USER" /usr/bin/env WATCH_PID=$$ OP="$me" TOP="$top" COMMON="$common" bash -c '
+    me=$(id -un)
+    sweep() { find "$@" -maxdepth 2 -user "$me" ! -perm -g=rw -exec chmod g+rwX {} + 2>/dev/null; }
+    while [ -d "/proc/$WATCH_PID" ]; do sweep "$@"; sleep 0.5; done
+    sweep "$@"
+    for d in "$TOP" "$COMMON"; do
+      [ -n "$d" ] && [ -d "$d" ] || continue
+      find "$d" -user "$me" ! -perm -g=rw -exec chmod g+rwX {} + 2>/dev/null
+      find "$d" -user "$me" -type f -exec setfacl -m "u:$OP:rwX" {} + 2>/dev/null
+      find "$d" -user "$me" -type d -exec setfacl -m "u:$OP:rwx" -m "d:u:$OP:rwx" {} + 2>/dev/null
+    done' _ "${dirs[@]}" </dev/null >/dev/null 2>&1 &
+  # The doorbell rings right after fm-send writes a message, so this side
+  # sweeps at the same short interval; an unread message is rung again anyway.
+  # shellcheck disable=SC2016  # expanded by the helper's bash, not here
+  setsid /usr/bin/env WATCH_PID=$$ ME="$me" STATE_DIR="$home/state" TASK="$task" bash -c '
+    sweep() {
+      find "$STATE_DIR" -maxdepth 1 \( -name "$TASK.meta" -o -name "$TASK.status" \) \
+        -user "$ME" ! -perm -g=rw -exec chmod g+rw {} + 2>/dev/null
+      [ -d "$STATE_DIR/$TASK.inbox" ] &&
+        find "$STATE_DIR/$TASK.inbox" -maxdepth 2 -user "$ME" ! -perm -g=rw -exec chmod g+rwX {} + 2>/dev/null
+    }
+    while [ -d "/proc/$WATCH_PID" ]; do sweep; sleep 0.5; done
+    sweep' </dev/null >/dev/null 2>&1 &
+}
+if [[ "${AGY_ARGS[0]:-}" != models ]]; then keep_group_access; fi
+
+# Interactive worker sessions deliver steering messages mid-turn: agy's default
+# "Queue" mode holds a typed message until the whole turn ends (observed: over
+# an hour on a long build), while "send-immediately" joins the running turn and
+# the agent reads it after its current step. Applied per launch through
+# --settings (never saved to the account) unless the caller already passes
+# --settings; FM_AGY_QUEUED_MESSAGES=queue keeps agy's default.
+# The same per-launch settings also switch off agy's end-of-turn feedback survey
+# ("How's the CLI experience so far?"), which otherwise replaces the idle input
+# row and makes firstmate's exit and steering checks read the screen as unknown.
+add_queued_messages_setting() {
+  local mode="${FM_AGY_QUEUED_MESSAGES:-send-immediately}" a interactive=0 json
+  for a in "${AGY_ARGS[@]}"; do
+    case "$a" in
+      --settings|--settings=*) return 0 ;;
+      --prompt-interactive|--prompt-interactive=*|-i) interactive=1 ;;
+    esac
+  done
+  (( interactive )) || return 0
+  json='"showFeedbackSurvey":false'
+  [[ "$mode" == queue ]] || json="\"queuedMessages\":\"$mode\",$json"
+  AGY_ARGS+=(--settings "{$json}")
+}
+add_queued_messages_setting
+
+RUN_CMD=(sudo -H -u "$SELECTED_USER"
+  /usr/bin/env -u GEMINI_API_KEY -u GOOGLE_API_KEY -u ANTHROPIC_BASE_URL -u OPENAI_BASE_URL -u LITELLM_BASE_URL
+  "${FORWARD_ENV[@]}"
+  "$AGY_BIN" "${AGY_ARGS[@]}")
+
+set +e
+if [[ -t 0 && -t 1 ]]; then
+  # Interactive worker pane: agy's TUI needs a real terminal on stdout, and a
+  # pipe through tee leaves the pane blank. script(1) keeps the terminal and
+  # still records the session for quota-hit detection.
+  script -q -f -e -c "$(printf '%q ' "${RUN_CMD[@]}")" "$RUN_LOG"
+  EXIT_CODE=$?
+else
+  "${RUN_CMD[@]}" 2>&1 | tee "$RUN_LOG"
+  EXIT_CODE=${PIPESTATUS[0]}
+fi
+set -e
+
+DURATION=$(( $(now_epoch) - START_TS ))
+(( DURATION < 1 )) && DURATION=1
+
+HIT_QUOTA="false"
+if [[ $EXIT_CODE -eq 42 ]]; then
+  HIT_QUOTA="true"
+elif [[ -f "$RUN_LOG" ]] && tail -n 50 "$RUN_LOG" | grep -Eiq "(^|[[:space:]\"':])(429|RESOURCE_EXHAUSTED)([[:space:]\"':]|$)|(rate[ -]?limit exceeded|quota exceeded|out of quota)"; then
+  HIT_QUOTA="true"
+fi
+
+record_run "$SELECTED_USER" "$DURATION" "$HIT_QUOTA"
+AFTER_PCT=$(get_remaining_pct "$SELECTED_USER" "$ROUTE_MODEL")
+
+if [[ -d "$(dirname "$USAGE_LOG")" ]]; then
+  jq -nc \
+    --arg ts "$(date -Iseconds)" \
+    --arg user "$SELECTED_USER" \
+    --arg model "${ROUTE_MODEL:-default}" \
+    --arg task "$TASK_LABEL" \
+    --argjson dur "$DURATION" \
+    --argjson rc "$EXIT_CODE" \
+    --argjson pct "$AFTER_PCT" \
+    --argjson quota "$HIT_QUOTA" \
+    '{ts: $ts, provider: "google-ai-pro-direct", user: $user, model: $model, task: $task, duration_sec: $dur, exit_code: $rc, est_remaining_pct: $pct, quota_hit: $quota}' \
+    >> "$USAGE_LOG" 2>/dev/null || true
+fi
+
+exit "$EXIT_CODE"
