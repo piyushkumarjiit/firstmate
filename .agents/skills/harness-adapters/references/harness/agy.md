@@ -19,7 +19,7 @@ Verified as a full Firstmate harness (Primary, Secondmate, and Crewmate/Scout).
 | Autonomy | `--dangerously-skip-permissions` auto-approves tool calls for the run. |
 | Marker | None; a live TUI carries no `AGY_*` or `ANTIGRAVITY_*` variable. |
 | Resume | `--continue` and `--conversation` exist but carry no verified pane-resume contract; use deterministic relaunch. |
-| Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-3.8-flash-high`); `bin/fm-spawn.sh` refuses a requested id a reachable listing omits. The listing is a remote fetch, so the probe runs stdin-detached under the shared hard bound and an unreachable or hung listing launches unvalidated with a notice. |
+| Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-3.8-flash-high`); `bin/fm-spawn.sh` refuses a requested id a reachable listing omits, except an id naming Hydrogen or Neon, which skips the probe so the spawn never signs in as a reserved pool account. The listing is a remote fetch, so the probe runs stdin-detached under the shared hard bound and an unreachable or hung listing launches unvalidated with a notice. |
 | Effort | `--effort low\|medium\|high`; `xhigh` and `max` stay in task metadata under the record-and-omit contract. |
 | Composer | An agy-scoped empty-composer recognition reads the idle screen (horizontal rule, bare `>` row, horizontal rule, footer with `? for shortcuts` or model name and NOT `esc to cancel`) as `empty`; typed text and queued doorbells read `pending`. Without agy scope, the dead-shell rule preserves `unknown`. |
 
@@ -63,3 +63,5 @@ See `../../../../../docs/supervision-protocols/agy.md` for the complete supervis
 
 Live pool quota is read only via `bin/agy-pool/agy --usage <account>`; never call Google endpoints or other workarounds.
 Pool launches pass `queuedMessages=send-immediately` so steering doorbells land after the current step.
+On a home whose pool config (`POOL_CONF`, default `/etc/firstmate/gpro-pool.conf`) lists at least one account, an `agy` `no-mistakes` ship launches through `bin/agy-pool/agy` and its brief must be scaffolded with `fm-brief.sh --pool-build`; `bin/fm-spawn.sh` refuses either mismatch.
+Every other agy launch - `direct-PR` and `local-only` ships, scouts, and secondmates - keeps the plain binary.

@@ -11,10 +11,10 @@ metadata:
 For a no-mistakes ship, trigger validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
 The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.
-When an account-pool ship worker reports `done: committed <sha>`, the pool worker leaves no-mistakes to firstmate.
-Firstmate starts `bin/fm-deliver.sh <task> run` as the main account to drive validation in the background.
+When an account-pool ship worker reports `done: committed <sha>`, the pool worker leaves no-mistakes to firstmate, and `bin/fm-spawn.sh` has already armed `bin/fm-deliver.sh <task> autostart` to run validation as the main account the moment that line lands.
+Start `bin/fm-deliver.sh <task> run` yourself only when the spawn reported it could not arm the autostart.
 Firstmate answers only the gates that still reach it via `bin/fm-deliver.sh <task> respond`, never passing `--yes`.
-For `builder=pool` tasks, never send steer messages to the worker inbox for `gate-*` decisions: answer directly with `bin/fm-deliver.sh <task> respond` or `bin/fm-send.sh <task> --resolve-key <gate-*>`, which routes pool gate answers to `bin/fm-deliver.sh <task> respond` on the operator side instead of the worker inbox.
+For `builder=pool` tasks, firstmate answers the gate decisions itself; the decision procedure below owns how.
 At run outcome, `bin/fm-deliver.sh` synchronizes the branch with `no-mistakes axi sync` and appends `done:` or `blocked:` to the status file.
 `bin/fm-dod-lib.sh` owns the worker-side `--intent` contract.
 Once validation starts, prefer routing new requirements to follow-up work rather than expanding the current task, unless a new requirement completely invalidates the work being validated; however, the smallest downstream changes needed to keep already accepted product or engineering behavior correct, add behavioral tests where an executable contract exists, or keep documentation accurate remain within the current task even when they touch files not named at intake, and corrections required to satisfy already accepted intent are not new requirements.

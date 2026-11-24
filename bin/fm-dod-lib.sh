@@ -32,6 +32,11 @@
 # captain-approved <host>/<owner>/<repo> publication scope for this one task,
 # rendered as an `upstream-consent=<scope>` suffix token on the Delivery
 # contract line so brief, spawn record, and worker instructions agree.
+# The optional eighth argument is the worker's builder; `pool` renders the
+# account-pool block instead of the ordinary no-mistakes one: build and commit on
+# the task branch, leave the worktree clean, report `done: committed <sha>`, and
+# never run no-mistakes, push, or open a PR, because bin/fm-deliver.sh drives the
+# pipeline afterwards as the operator account.
 # Callers of the gate are bin/fm-crew-state.sh (current-state done),
 # bin/fm-pr-check.sh (PR registration), and bin/fm-inactive-reconcile.sh
 # (secondmate ledger-first publish of a child done). A ship `done:` is not

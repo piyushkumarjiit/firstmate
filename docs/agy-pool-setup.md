@@ -12,11 +12,22 @@ Gemini work runs from separate Linux accounts through the pool launcher, so the 
 ## What it covers
 
 - Access and default ACLs for each pool account on the no-mistakes worktrees directory, plus traverse access on its parent, so pool agents can work in run worktrees.
-- A git HTTPS credential helper in each pool account, backed by the operator's `gh` login, so pushes never stop at a login prompt.
+- A git HTTPS credential helper in each pool account, backed by the operator's `gh` login, so a pool account's own clone or fetch of a private origin never stops at a login prompt.
 - The models allowlist (`/etc/firstmate/gpro-models.conf`): Neon and Hydrogen rules naming the pool accounts, where listed order is the quota failover order.
 - Operator read access to the pool usage log and per-run logs.
-- A report of the no-mistakes reviewer and fixer configuration for Gemini runs.
-  This part is check-only: the script never edits the no-mistakes config.
+- A report of the no-mistakes reviewer and fixer configuration for Gemini runs, including whether `agent_path_override.antigravity` points at `bin/agy-pool/nm-agy`.
+  That file is edited by hand; this step is check-only and the script never writes the no-mistakes config.
+
+## What changes with a pool configured
+
+The pool takes over only on a home whose pool config lists at least one account, and only for `agy` ships in `no-mistakes` mode; every other agy launch keeps the plain binary.
+
+- Scaffold such a ship with `bin/fm-brief.sh --pool-build`, and `bin/fm-spawn.sh` refuses a spawn whose brief and launcher disagree.
+  The worker builds, commits on its task branch, and reports `done: committed <sha>` without running no-mistakes, pushing, or opening a PR.
+- Firstmate then drives validation through `bin/fm-deliver.sh`, which runs as the operator account, so delivery's push and pull request use the operator's own git credential and `gh` login rather than a pool account's.
+- Review and fix models come from the `roles` lists in `config/crew-dispatch.json` ([schema](configuration.md#crew-dispatch-profiles-configcrew-dispatchjson)).
+- At most `FM_AGY_MAX_ACTIVE` pool accounts (default 2) run at once; a call over that cap exits 75, which `bin/fm-deliver.sh` reports as a blocker instead of restarting the run.
+- On Herdr, each review and fix call opens a read-only `review: <task> (<model>)` or `fix: <task> (<model>)` tab, and delivery opens a `deliver: <task>` tab, so the agent runs under the pool accounts are visible in the task's workspace.
 
 ## Limits
 

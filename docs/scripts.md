@@ -72,6 +72,12 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | [`fm-project-origin-lib.sh`](../bin/fm-project-origin-lib.sh) | Accepted origin-form owner shared by both remote provisioning boundaries |
 | `fm-spawn.sh`            | Spawn crewmates, scouts, `id=repo` batches, and secondmates on the resolved harness and runtime backend |
 | [`fm-approval-failover.sh`](../bin/fm-approval-failover.sh) | Save a captain-approved managed-approval fallback and recover a worker after observed defeated bypass |
+| `fm-agy-pool.sh`         | Model-aware sticky account router behind `agy` calls: live quota, conversation affinity, account cap, and usage telemetry ([setup](agy-pool-setup.md)) |
+| `agy-pool/agy`           | The pool launcher symlink to `fm-agy-pool.sh`, keeping the live process named `agy` |
+| `agy-pool/nm-agy`        | no-mistakes antigravity entry point: maps the review and fix roles from `state/<task>.nm-roles`, then hands off to the pool |
+| `fm-agy-pool-setup.sh`   | Read-only check or one idempotent apply of the pool accounts' grants, ACLs, and git credentials ([setup](agy-pool-setup.md)) |
+| `fm-pool-exit.sh`        | Free a finished pool builder's account slot by stopping the builder once its latest status is `done` |
+| `fm-deliver.sh`          | Drive no-mistakes validation, gates, and outcome for a pool-built ship as the operator account, refusing a blind restart after a non-code failure |
 | `fm-git-strip-ai-trailers.sh` | Strip known AI commit trailers at commit-msg time and install that hook, plus any forge=external push guard, for a fleet launch |
 | `fm-git-push-guard.sh`  | Refuse a forge=external task's pushes to the shared origin and of task-prefixed branches, and write its per-task guard record ([design](external-review-forge.md)) |
 | `fm-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |
