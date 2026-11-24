@@ -1365,6 +1365,28 @@ EOF
   pass "respond on a still-running run writes no blocked status"
 }
 
+test_blocker_ignores_test_step_output() {
+  setup_fixture task_testlog >/dev/null
+  local tdir="$TMP_ROOT/task_testlog" nmhome="$TMP_ROOT/task_testlog/nmhome"
+  mkdir -p "$tdir/config" "$tdir/agy-state" "$nmhome/logs/RUN1"
+  printf 'FAIL TestLogin: Authentication failed\nPermission denied (publickey)\n' > "$nmhome/logs/RUN1/test.log"
+  mkdir -p "$tdir/bin"
+  cat > "$tdir/bin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+cmd="${1:-} ${2:-}"
+if [[ "$cmd" == "axi status" ]]; then
+  printf 'run:\n  id: "RUN1"\n  status: failed\noutcome: failed\n'
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  NM_HOME="$nmhome" deliver_env "$tdir" "$DELIVER" task_testlog run >/dev/null 2>&1
+  assert_not_contains "$(tail -n 1 "$tdir/state/task_testlog.status")" "push authentication" \
+    "credential-looking text in the project's test output is a code failure, not a push blocker"
+  [ ! -e "$tdir/state/task_testlog.nm-blocker" ] || fail "no blocker record may be written for test-step output"
+  pass "blocker classification ignores project test output"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -1393,4 +1415,5 @@ fm_test_run \
   test_run_passes_base_branch_from_meta \
   test_nm_agy_detects_review_role_from_stdin_prompt \
   test_background_failover_restart_keeps_base_branch \
-  test_respond_on_running_run_writes_no_blocked_status
+  test_respond_on_running_run_writes_no_blocked_status \
+  test_blocker_ignores_test_step_output

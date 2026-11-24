@@ -16,8 +16,14 @@ ONCE="${2:-}"
 CONTROL="${FM_POOL_EXIT_CONTROL:-$SCRIPT_DIR/fm-control.sh}"
 interval="${FM_POOL_EXIT_INTERVAL:-15}"
 
+BASELINE_LINES=0
+[ "$ONCE" = --once ] || BASELINE_LINES=$(grep -vc '^[[:space:]]*$' "$FM_STATE/$TASK.status" 2>/dev/null || true)
+BASELINE_LINES=${BASELINE_LINES:-0}
+
 is_done() {
-  local last
+  local last lines
+  lines=$(grep -vc '^[[:space:]]*$' "$FM_STATE/$TASK.status" 2>/dev/null || true)
+  [ "${lines:-0}" -gt "$BASELINE_LINES" ] || return 1
   last=$(grep -v '^[[:space:]]*$' "$FM_STATE/$TASK.status" 2>/dev/null | tail -n 1 || true)
   case "$last" in done\ *|done:*) return 0 ;; esac
   return 1

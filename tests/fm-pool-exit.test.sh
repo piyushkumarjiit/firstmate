@@ -34,4 +34,16 @@ rm "$TMP/state/t1.meta"
 "$ROOT/bin/fm-pool-exit.sh" t1 --once
 [ ! -s "$FAKE_LOG" ] || fail "exited a task with no record"
 pass "fm-pool-exit.sh exits only a builder whose latest status is done"
+touch "$TMP/state/t1.meta"
+# wait for a done line appended after arming.
+printf 'done [at=2]: committed abc\n' > "$TMP/state/t1.status"
+: > "$FAKE_LOG"
+FM_POOL_EXIT_INTERVAL=1 "$ROOT/bin/fm-pool-exit.sh" t1 >/dev/null 2>&1 &
+poller=$!
+sleep 2
+[ ! -s "$FAKE_LOG" ] || { kill "$poller" 2>/dev/null; fail "poller exited a relaunched builder on a stale done line"; }
+printf 'done [at=9]: committed def\n' >> "$TMP/state/t1.status"
+wait "$poller" || fail "poller did not exit after a new done line"
+[ "$(cat "$FAKE_LOG")" = "t1 exit" ] || fail "expected control 't1 exit' after fresh done, got: $(cat "$FAKE_LOG")"
+pass "fm-pool-exit.sh ignores a done line that predates arming"
 echo FM_TEST_COMPLETE

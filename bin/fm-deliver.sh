@@ -395,6 +395,10 @@ load_role_configs
 
 QUOTA_EXHAUSTION_RE='^[[:space:]]*(\[fm-agy-pool\][[:space:]]*ERROR:.*|antigravity exited .*error=.*|antigravity reported error:.*|error:.*)?[[:space:]]*(All eligible accounts|No eligible account|Individual quota reached|RESOURCE_EXHAUSTED|429([[:space:]]|$)|rate[ -]?limit exceeded|quota exceeded|out of quota)'
 
+pool_log_lines() {
+  grep -E '^[[:space:]]*(\[fm-agy-pool\]|\[nm-agy\]|antigravity )' || true
+}
+
 is_quota_exhaustion_failure() {
   local wt="$1" status_toon="$2" dlog="$3" log_offset="$4"
   if grep -Eiq "$QUOTA_EXHAUSTION_RE" <<<"$status_toon"; then
@@ -411,7 +415,7 @@ is_quota_exhaustion_failure() {
   run_id=$(fm_nm_field "$status_toon" id | tr -d '"'"'")
   if [[ -n "$run_id" ]]; then
     nm_log="${NM_HOME:-$HOME/.no-mistakes}/logs/$run_id/review.log"
-    if [[ -f "$nm_log" ]] && tail -n 100 "$nm_log" 2>/dev/null | grep -Eiq "$QUOTA_EXHAUSTION_RE"; then
+    if [[ -f "$nm_log" ]] && tail -n 100 "$nm_log" 2>/dev/null | pool_log_lines | grep -Eiq "$QUOTA_EXHAUSTION_RE"; then
       return 0
     fi
   fi
@@ -439,7 +443,7 @@ advance_fallback_role() {
   fi
   run_id=$(fm_nm_field "$status_toon" id | tr -d '"'"'")
   if [[ -n "$run_id" && -f "${NM_HOME:-$HOME/.no-mistakes}/logs/$run_id/review.log" ]]; then
-    nm_log=$(tail -n 100 "${NM_HOME:-$HOME/.no-mistakes}/logs/$run_id/review.log" 2>/dev/null || true)
+    nm_log=$(tail -n 100 "${NM_HOME:-$HOME/.no-mistakes}/logs/$run_id/review.log" 2>/dev/null | pool_log_lines)
   fi
 
   local review_exhausted=0 fix_exhausted=0
@@ -592,9 +596,10 @@ classify_blocker() {
   run_id=$(fm_nm_field "$status_toon" id | tr -d '"'"'")
   d="${NM_HOME:-$HOME/.no-mistakes}/logs/$run_id"
   if [[ -n "$run_id" && -d "$d" ]]; then
-    for f in "$d"/*.log; do
-      [[ -f "$f" ]] && text+=$'\n'"$(tail -n 100 "$f" 2>/dev/null || true)"
+    for f in push pr ci; do
+      [[ -f "$d/$f.log" ]] && text+=$'\n'"$(tail -n 100 "$d/$f.log" 2>/dev/null || true)"
     done
+    [[ -f "$d/review.log" ]] && text+=$'\n'"$(tail -n 100 "$d/review.log" 2>/dev/null | pool_log_lines)"
   fi
   if grep -Eiq 'could not read (Username|Password)|terminal prompts disabled|Authentication failed|Permission denied \(publickey\)|HTTP Basic: Access denied' <<<"$text"; then
     BLOCKER_KIND=push-auth
