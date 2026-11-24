@@ -135,4 +135,16 @@ test_operator_push_credentials_are_checked() {
   pass "check verifies the operator's own push credentials"
 }
 
-fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited test_unreachable_ancestor_is_not_reported_ok test_operator_push_credentials_are_checked
+test_operator_cache_only_helper_is_rejected() {
+  local out rc
+  printf '[credential]\n\thelper = cache\n' > "$TMP_ROOT/ophome/.gitconfig.cache"
+  mv "$TMP_ROOT/ophome/.gitconfig" "$TMP_ROOT/ophome/.gitconfig.off"
+  mv "$TMP_ROOT/ophome/.gitconfig.cache" "$TMP_ROOT/ophome/.gitconfig"
+  out=$(run_setup check); rc=$?
+  mv "$TMP_ROOT/ophome/.gitconfig.off" "$TMP_ROOT/ophome/.gitconfig"
+  [[ $rc -eq 1 ]] || { fail "cache-only helper must fail the check (rc=$rc): $out"; }
+  grep -q 'MISSING operator push credentials: no git credential helper' <<<"$out" || { fail "cache-only helper not reported: $out"; }
+  pass "a helper that cannot serve github.com is rejected"
+}
+
+fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited test_unreachable_ancestor_is_not_reported_ok test_operator_push_credentials_are_checked test_operator_cache_only_helper_is_rejected

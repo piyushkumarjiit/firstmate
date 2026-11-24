@@ -2782,12 +2782,14 @@ agy_model_validate() {  # <agy-bin> <model>
   local bin=$1 model=$2 listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
   case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
   [ -n "$model" ] && [ "$model" != default ] || return 0
-  # Skip model-listing validation probe for Hydrogen and Neon so a spawn does not
+  # Skip model-listing validation probe for Hydrogen and Neon on the pool launcher so a spawn does not
   # log in as reserved accounts (e.g. piyushjiit) just to list models. Keep the
   # probe for Flash.
-  case "${model,,}" in
-    *hydrogen*|*neon*) return 0 ;;
-  esac
+  if [ "$bin" = "$SCRIPT_DIR/agy-pool/agy" ]; then
+    case "${model,,}" in
+      *hydrogen*|*neon*) return 0 ;;
+    esac
+  fi
   listing=$(FM_AGY_POOL_MODEL="$model" fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
   if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
     if [ "$rc" -eq 124 ]; then
