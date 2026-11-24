@@ -570,9 +570,14 @@ conversation_owner() {
   [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
   if [[ -f "$CONV_RECORD" ]]; then
     owner=$(awk -F'\t' -v id="$id" '$1 == id {u = $2} END {if (u != "") print u}' "$CONV_RECORD")
-    [[ -n "$owner" ]] && { printf '%s\n' "$owner"; return 0; }
+    if [[ -n "$owner" ]] && is_user_allowed_for_model "$owner" "$ROUTE_MODEL"; then
+      for u in "${GPRO_USERS[@]}"; do
+        [[ "$u" == "$owner" ]] && { printf '%s\n' "$owner"; return 0; }
+      done
+    fi
   fi
   for u in "${GPRO_USERS[@]}"; do
+    is_user_allowed_for_model "$u" "$ROUTE_MODEL" || continue
     if [[ -n "$(sudo -n -u "$u" find "$AGY_HOME_BASE/$u/.gemini/antigravity-cli/conversations" -maxdepth 1 -name "*${id}*" -print -quit 2>/dev/null)" ]]; then
       printf '%s\n' "$u"
       return 0
@@ -587,7 +592,7 @@ record_conversation_owner() {
   [[ -n "$id" ]] || return 0
   grep -qF "$id"$'\t'"$user" "$CONV_RECORD" 2>/dev/null && return 0
   printf '%s\t%s\n' "$id" "$user" >> "$CONV_RECORD" 2>/dev/null || true
-  chmod 0666 "$CONV_RECORD" 2>/dev/null || true
+  chmod 0644 "$CONV_RECORD" 2>/dev/null || true
 }
 
 if [[ -n "$REQ_CONVERSATION" && "${AGY_ARGS[0]:-}" != models ]]; then

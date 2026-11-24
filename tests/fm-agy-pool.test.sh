@@ -1290,6 +1290,39 @@ EOF
   pass "--usage follows FM_AGY_MAX_ACTIVE: allowed for an active target or under the cap, refused otherwise"
 }
 
+test_forged_conversation_record_is_not_trusted() {
+  local fx="$TMP_ROOT/conv_forged"
+  mkdir -p "$fx/bin" "$fx/state" "$fx/home"
+  printf 'piyushjiit\npiyushk\nother\n' > "$fx/pool.conf"
+  printf '*neon* piyushjiit piyushk\n' > "$fx/models.conf"
+  printf 'conv-forged-1\tevil\nconv-forged-2\tother\n' > "$fx/state/conversations.tsv"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF2'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac
+done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF2
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  printf '#!/usr/bin/env bash\necho "${SUDO_TARGET_USER}" >> "%s/calls.log"\nexit 0\n' "$fx" > "$fx/bin/agy"
+  chmod +x "$fx"/bin/*
+  local c rc
+  for c in conv-forged-1 conv-forged-2; do
+    rc=0
+    env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+      AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+      FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_HOME_BASE="$fx/home" \
+      "$POOL" --model gemini-4-neon-medium --conversation "$c" -p hi >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 0 ] || fail "$c must route normally, got $rc"
+  done
+  [ "$(sort -u "$fx/calls.log" | tr '\n' ' ')" = "piyushjiit " ] \
+    || fail "forged owners must be ignored; calls went to: $(cat "$fx/calls.log")"
+  pass "conversation records naming a non-pool or model-disallowed account are not trusted"
+}
+
 fm_test_run \
   test_symlink_refuses_claude_model \
   test_pool_model_env_refuses_claude \
@@ -1309,4 +1342,5 @@ fm_test_run \
   test_configured_order_wins_over_active_account_until_cap \
   test_no_pool_config_has_no_placeholder_accounts \
   test_cap_reuse_follows_model_order \
-  test_usage_follows_active_cap
+  test_usage_follows_active_cap \
+  test_forged_conversation_record_is_not_trusted
