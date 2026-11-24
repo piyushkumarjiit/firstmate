@@ -1107,7 +1107,17 @@ case "$SUBCMD" in
     fi
     resolve_rc=0
     resolve_open_gate_if_present "$STATUS_FILE" "$DRIVE_LOG" "${NORM_ARGS[@]}" || resolve_rc=$?
-    handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET"
+    if [[ "${FM_DELIVER_FOREGROUND:-0}" == "1" ]]; then
+      handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET"
+    else
+      FM_DELIVER_REATTACH_MAX=0 handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET"
+      post_status=$(cd "$WORKTREE" && no-mistakes axi status 2>/dev/null || true)
+      if ! grep -q '^gate:' <<<"$post_status" &&
+        { fm_nm_run_is_executing "$post_status" || grep -Eq '^[[:space:]]*awaiting_agent:' <<<"$post_status"; }; then
+        ( handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET" ) </dev/null >> "$DRIVE_LOG" 2>&1 &
+        echo "[fm-deliver] Run still executing after respond; watching it in background (PID $!), logging to $DRIVE_LOG" >> "$DRIVE_LOG"
+      fi
+    fi
     exit "$resolve_rc"
     ;;
   run)
@@ -1123,6 +1133,7 @@ case "$SUBCMD" in
       shift
       INTENT="$1"
       shift
+      RUN_EXTRA_ARGS=("$@")
       export_role_env
       LOG_OFFSET=$(wc -c < "$DRIVE_LOG" 2>/dev/null || echo 0)
       echo "[fm-deliver] Starting axi run in $WORKTREE with intent: $INTENT" >> "$DRIVE_LOG"

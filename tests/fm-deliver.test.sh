@@ -1275,6 +1275,59 @@ EOF
   pass "nm-agy detects the review role from a stdin prompt and forwards stdin intact"
 }
 
+test_background_failover_restart_keeps_base_branch() {
+  setup_fixture task_bgfail >/dev/null
+  local tdir="$TMP_ROOT/task_bgfail" i
+  printf 'base_branch=release-x\n' >> "$tdir/state/task_bgfail.meta"
+  mkdir -p "$tdir/bin" "$tdir/config" "$tdir/agy-state"
+  cat > "$tdir/config/crew-dispatch.json" <<'JSON'
+{"roles":{"review":[{"harness":"agy","model":"gemini-4-neon-high"},{"harness":"agy","model":"gemini-3.8-flash-high"}]}}
+JSON
+  printf 'acct1\n' > "$tdir/pool.conf"
+  printf '*neon* acct1\n' > "$tdir/models.conf"
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+cmd="\${1:-} \${2:-}"
+if [[ "\$cmd" == "axi run" ]]; then
+  printf '%s|model=%s\n' "\$*" "\${FM_NM_REVIEW_MODEL:-}" >> "$tdir/run-argv.log"
+  if [[ "\${FM_NM_REVIEW_MODEL:-}" == "gemini-4-neon-high" ]]; then
+    echo "antigravity exited pid=1 error=antigravity reported error: Individual quota reached. Resets in 2h0m0s." >&2
+    printf '{"user":"acct1","window_start":1000,"reset_at":9999999999,"used_sec":10,"budget_sec":5400,"exhausted":true}\n' > "$tdir/agy-state/acct1.state.json"
+    : > "$tdir/failed_once"
+    exit 1
+  fi
+  exit 0
+elif [[ "\$cmd" == "axi abort" ]]; then
+  rm -f "$tdir/failed_once"; : > "$tdir/aborted"
+elif [[ "\$cmd" == "axi sync" ]]; then
+  : > "$tdir/recovered"
+elif [[ "\$cmd" == "axi status" ]]; then
+  if [[ -f "$tdir/failed_once" ]]; then
+    printf 'run:\n  id: "1"\n  status: failed\noutcome: failed\nbranch_sync:\n  state: pipeline_owned\n  next_action:\n    command: "no-mistakes axi sync --recover"\n'
+  elif [[ -f "$tdir/aborted" && ! -f "$tdir/recovered" ]]; then
+    printf 'branch_sync:\n  state: pipeline_owned\n  next_action:\n    command: "no-mistakes axi sync --recover"\n'
+  else
+    printf 'run:\n  id: "2"\n  status: completed\noutcome: passed\nbranch_sync:\n  next_action:\n    command: "no-mistakes axi sync"\n'
+  fi
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_CONFIG_OVERRIDE="$tdir/config" FM_AGY_STATE_DIR="$tdir/agy-state" \
+    POOL_CONF="$tdir/pool.conf" MODELS_CONF="$tdir/models.conf" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_TAB=off \
+    "$DELIVER" task_bgfail run >/dev/null 2>&1
+  for i in $(seq 1 100); do
+    [ "$(grep -c 'axi run' "$tdir/run-argv.log" 2>/dev/null || echo 0)" -ge 2 ] && break
+    sleep 0.2
+  done
+  assert_contains "$(grep 'model=gemini-3.8-flash-high' "$tdir/run-argv.log")" "--base-branch release-x" \
+    "the failover restart on the background path must keep the delivery base branch"
+  pass "background failover restart keeps --base-branch"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -1301,4 +1354,5 @@ fm_test_run \
   test_nm_agy_defaults_are_neon_medium_without_record \
   test_blocker_kind_follows_pool_exit_75_cause \
   test_run_passes_base_branch_from_meta \
-  test_nm_agy_detects_review_role_from_stdin_prompt
+  test_nm_agy_detects_review_role_from_stdin_prompt \
+  test_background_failover_restart_keeps_base_branch
