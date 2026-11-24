@@ -103,42 +103,58 @@ setup_herdr_tab() {
     task="$FM_TASK_ID"
   else
     # A no-mistakes run worktree is a detached checkout, so `abbrev-ref HEAD`
-    # yields HEAD there. Resolve the task from the branch refs the run repo
-    # still carries at this commit, or from the task worktree's own HEAD.
-    local branch="" head_sha="" branch_names="" cand cand_branch cand_wt cand_head
+    # yields HEAD there. Match the task branch ref nearest to HEAD, or the task
+    # worktree's own HEAD when the run repo carries no branch refs.
+    local branch="" head_sha="" cand cand_branch cand_ref cand_wt cand_head
+    local dist best_dist=-1 ties=0 match=""
     branch=$(git -C "$PWD" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
     if [[ -n "$branch" && "$branch" != "HEAD" ]]; then
-      branch_names="$branch"
+      for cand in "$FM_STATE"/*.meta; do
+        [[ -f "$cand" ]] || continue
+        cand_branch=$(grep -E '^branch=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+        [[ "$cand_branch" == "$branch" ]] || continue
+        meta_file="$cand"
+        task=$(basename "$cand" .meta)
+        break
+      done
     else
       head_sha=$(git -C "$PWD" rev-parse HEAD 2>/dev/null || true)
       [[ -n "$head_sha" ]] || return 0
-      branch_names=$(git -C "$PWD" for-each-ref --points-at "$head_sha" --format='%(refname:short)' refs/heads 2>/dev/null || true)
-    fi
-    local match="" count=0
-    for cand in "$FM_STATE"/*.meta; do
-      [[ -f "$cand" ]] || continue
-      cand_branch=$(grep -E '^branch=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
-      [[ -n "$cand_branch" ]] || continue
-      if printf '%s\n' "$branch_names" | grep -Fxq -- "$cand_branch"; then
-        match="$cand"
-        count=$((count + 1))
-      fi
-    done
-    if (( count == 0 )) && [[ -n "$head_sha" ]]; then
       for cand in "$FM_STATE"/*.meta; do
         [[ -f "$cand" ]] || continue
-        cand_wt=$(grep -E '^worktree=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
-        [[ -n "$cand_wt" && -d "$cand_wt" ]] || continue
-        cand_head=$(git -C "$cand_wt" rev-parse HEAD 2>/dev/null || true)
-        if [[ -n "$cand_head" && "$cand_head" == "$head_sha" ]]; then
+        cand_branch=$(grep -E '^branch=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+        [[ -n "$cand_branch" ]] || continue
+        cand_ref="refs/heads/$cand_branch"
+        git -C "$PWD" rev-parse --verify --quiet "$cand_ref" >/dev/null 2>&1 || continue
+        git -C "$PWD" merge-base --is-ancestor "$cand_ref" "$head_sha" 2>/dev/null || continue
+        dist=$(git -C "$PWD" rev-list --count "$cand_ref..$head_sha" 2>/dev/null || echo 0)
+        if (( best_dist < 0 || dist < best_dist )); then
           match="$cand"
-          count=$((count + 1))
+          best_dist=$dist
+          ties=1
+        elif (( dist == best_dist )); then
+          ties=$((ties + 1))
         fi
       done
+      if (( best_dist < 0 || ties != 1 )); then
+        match=""
+        local worktree_ties=0
+        for cand in "$FM_STATE"/*.meta; do
+          [[ -f "$cand" ]] || continue
+          cand_wt=$(grep -E '^worktree=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+          [[ -n "$cand_wt" && -d "$cand_wt" ]] || continue
+          cand_head=$(git -C "$cand_wt" rev-parse HEAD 2>/dev/null || true)
+          if [[ -n "$cand_head" && "$cand_head" == "$head_sha" ]]; then
+            match="$cand"
+            worktree_ties=$((worktree_ties + 1))
+          fi
+        done
+        (( worktree_ties == 1 )) || match=""
+      fi
+      [[ -n "$match" ]] || return 0
+      meta_file="$match"
+      task=$(basename "$meta_file" .meta)
     fi
-    (( count == 1 )) || return 0
-    meta_file="$match"
-    task=$(basename "$meta_file" .meta)
   fi
   [[ -n "$meta_file" && -n "$task" ]] || return 0
 

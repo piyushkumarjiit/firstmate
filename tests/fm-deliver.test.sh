@@ -824,18 +824,30 @@ test_herdr_visibility_for_nm_agy_and_gate_park() {
   printf 'backend=herdr\nherdr_workspace_id=wH1\nherdr_session=sH1\n' >> "$tdir/state/task_herdr_vis.meta"
 
   # Separate no-mistakes checkout on the same branch (simulates
-  # ~/.no-mistakes/worktrees/...): the branch ref exists in the run repo, but the
-  # worktree itself is checked out at a detached HEAD, as no-mistakes does.
+  # ~/.no-mistakes/worktrees/...): branch refs exist in the run repo, but the
+  # worktree itself is checked out at a detached HEAD that a fix step has already
+  # committed past, as no-mistakes does.
   git -C "$tdir/nm-wt" init -q
   git -C "$tdir/nm-wt" config user.email "test@example.com"
   git -C "$tdir/nm-wt" config user.name "Test"
+  echo "base" > "$tdir/nm-wt/base.txt"
+  git -C "$tdir/nm-wt" add base.txt
+  git -C "$tdir/nm-wt" commit -q -m "base commit"
   echo "x" > "$tdir/nm-wt/f.txt"
   git -C "$tdir/nm-wt" add f.txt
   git -C "$tdir/nm-wt" commit -q -m "nm mirror commit"
   git -C "$tdir/nm-wt" branch "fm/task_herdr_vis"
+  git -C "$tdir/nm-wt" branch "fm/task_base_ancestor" HEAD~1
   git -C "$tdir/nm-wt" checkout -q --detach HEAD
+  echo "fix" > "$tdir/nm-wt/g.txt"
+  git -C "$tdir/nm-wt" add g.txt
+  git -C "$tdir/nm-wt" commit -q -m "fix commit on the run worktree"
   [ "$(git -C "$tdir/nm-wt" rev-parse --abbrev-ref HEAD)" = "HEAD" ] \
     || fail "fixture must be a detached-HEAD no-mistakes worktree"
+  [ "$(git -C "$tdir/nm-wt" rev-parse HEAD)" != "$(git -C "$tdir/nm-wt" rev-parse refs/heads/fm/task_herdr_vis)" ] \
+    || fail "fixture must have committed past the task branch tip"
+  printf 'backend=herdr\nherdr_workspace_id=wDecoy\nbranch=fm/task_base_ancestor\n' \
+    > "$tdir/state/task_base_ancestor.meta"
 
   local herdr_log="$tdir/herdr.calls"
   cat > "$tdir/bin/herdr" <<EOF
