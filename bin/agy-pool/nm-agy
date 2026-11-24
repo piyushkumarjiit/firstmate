@@ -1,30 +1,141 @@
 #!/usr/bin/env bash
 # no-mistakes antigravity entry point (home-local).
 # no-mistakes pins one model for every antigravity call, so this splits roles:
-# the review phase uses FM_NM_REVIEW_MODEL (default gemini-4-neon-medium), and
-# every other call, such as the review fixer, uses FM_NM_FIX_MODEL (default
-# gemini-4-hydrogen-high). Optional FM_NM_REVIEW_ACCOUNT / FM_NM_FIX_ACCOUNT
-# override the target pool account when set. Then hands off to fm-agy-pool.sh.
+# the review phase uses the review role and every other call, such as the review
+# fixer, uses the fix role. Roles come from the per-task file
+# state/<task>.nm-roles that bin/fm-deliver.sh writes, because the no-mistakes
+# daemon spawns this script with its own environment. FM_NM_REVIEW_MODEL /
+# FM_NM_FIX_MODEL and their _ACCOUNT / _FROM_CONFIG siblings still override the
+# file when set; absent both, the legacy defaults apply. Then hands off to
+# fm-agy-pool.sh.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 FM_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
-REVIEW_MODEL=${FM_NM_REVIEW_MODEL:-gemini-4-neon-medium}
-FIX_MODEL=${FM_NM_FIX_MODEL:-gemini-4-hydrogen-high}
+FM_STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+FM_DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+REVIEW_MODEL=${FM_NM_REVIEW_MODEL:-}
+FIX_MODEL=${FM_NM_FIX_MODEL:-}
 REVIEW_ACCOUNT=${FM_NM_REVIEW_ACCOUNT:-}
 FIX_ACCOUNT=${FM_NM_FIX_ACCOUNT:-}
+REVIEW_FROM_CONFIG=${FM_NM_REVIEW_FROM_CONFIG:-}
+FIX_FROM_CONFIG=${FM_NM_FIX_FROM_CONFIG:-}
 is_review=0
 for a in "$@"; do
   case "$a" in *"Focus findings on risks introduced by changed code"*) is_review=1 ;; esac
 done
+
+# Map this working tree to its firstmate task, the same way for the role file
+# and the Herdr tab. A no-mistakes run worktree is a detached checkout, so
+# `abbrev-ref HEAD` yields HEAD there: match the task branch ref nearest to
+# HEAD (fix rounds commit past it), skipping task branches already merged into
+# the base branch, or the task worktree whose own HEAD is the run HEAD. No
+# match means the run belongs to no firstmate task: keep defaults, open no tab.
+NM_TASK=""
+NM_TASK_META=""
+resolve_nm_task() {
+  NM_TASK=""
+  NM_TASK_META=""
+  [[ -d "$FM_STATE" ]] || return 0
+  if [[ -n "${FM_TASK_ID:-}" && -f "$FM_STATE/${FM_TASK_ID}.meta" ]]; then
+    NM_TASK="$FM_TASK_ID"
+    NM_TASK_META="$FM_STATE/${FM_TASK_ID}.meta"
+    return 0
+  fi
+  local branch="" head_sha="" cand cand_branch cand_ref cand_wt cand_head base_ref
+  local dist best_dist=-1 ties=0 match="" merged=0
+  local -a base_refs=()
+  branch=$(git -C "$PWD" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  if [[ -n "$branch" && "$branch" != "HEAD" ]]; then
+    for cand in "$FM_STATE"/*.meta; do
+      [[ -f "$cand" ]] || continue
+      cand_branch=$(grep -E '^branch=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+      [[ "$cand_branch" == "$branch" ]] || continue
+      NM_TASK_META="$cand"
+      NM_TASK=$(basename "$cand" .meta)
+      return 0
+    done
+    return 0
+  fi
+  head_sha=$(git -C "$PWD" rev-parse HEAD 2>/dev/null || true)
+  [[ -n "$head_sha" ]] || return 0
+  for base_ref in refs/heads/main refs/heads/master; do
+    git -C "$PWD" rev-parse --verify --quiet "$base_ref" >/dev/null 2>&1 || continue
+    base_refs+=("$base_ref")
+  done
+  for cand in "$FM_STATE"/*.meta; do
+    [[ -f "$cand" ]] || continue
+    cand_branch=$(grep -E '^branch=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+    [[ -n "$cand_branch" ]] || continue
+    cand_ref="refs/heads/$cand_branch"
+    git -C "$PWD" rev-parse --verify --quiet "$cand_ref" >/dev/null 2>&1 || continue
+    git -C "$PWD" merge-base --is-ancestor "$cand_ref" "$head_sha" 2>/dev/null || continue
+    merged=0
+    for base_ref in ${base_refs[@]+"${base_refs[@]}"}; do
+      if git -C "$PWD" merge-base --is-ancestor "$cand_ref" "$base_ref" 2>/dev/null; then
+        merged=1
+        break
+      fi
+    done
+    (( merged == 0 )) || continue
+    dist=$(git -C "$PWD" rev-list --count "$cand_ref..$head_sha" 2>/dev/null || echo 0)
+    if (( best_dist < 0 || dist < best_dist )); then
+      match="$cand"
+      best_dist=$dist
+      ties=1
+    elif (( dist == best_dist )); then
+      ties=$((ties + 1))
+    fi
+  done
+  if (( best_dist < 0 || ties != 1 )); then
+    match=""
+    local worktree_ties=0
+    for cand in "$FM_STATE"/*.meta; do
+      [[ -f "$cand" ]] || continue
+      cand_wt=$(grep -E '^worktree=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+      [[ -n "$cand_wt" && -d "$cand_wt" ]] || continue
+      cand_head=$(git -C "$cand_wt" rev-parse HEAD 2>/dev/null || true)
+      if [[ -n "$cand_head" && "$cand_head" == "$head_sha" ]]; then
+        match="$cand"
+        worktree_ties=$((worktree_ties + 1))
+      fi
+    done
+    (( worktree_ties == 1 )) || match=""
+  fi
+  [[ -n "$match" ]] || return 0
+  NM_TASK_META="$match"
+  NM_TASK=$(basename "$match" .meta)
+}
+
+load_nm_role_file() {
+  [[ -n "$NM_TASK" ]] || return 0
+  local role_file="$FM_STATE/${NM_TASK}.nm-roles"
+  [[ -f "$role_file" ]] || return 0
+  local key val
+  while IFS='=' read -r key val; do
+    case "$key" in
+      review_model) [[ -n "$REVIEW_MODEL" ]] || REVIEW_MODEL=$val ;;
+      review_account) [[ -n "$REVIEW_ACCOUNT" ]] || REVIEW_ACCOUNT=$val ;;
+      review_from_config) [[ -n "$REVIEW_FROM_CONFIG" ]] || REVIEW_FROM_CONFIG=$val ;;
+      fix_model) [[ -n "$FIX_MODEL" ]] || FIX_MODEL=$val ;;
+      fix_account) [[ -n "$FIX_ACCOUNT" ]] || FIX_ACCOUNT=$val ;;
+      fix_from_config) [[ -n "$FIX_FROM_CONFIG" ]] || FIX_FROM_CONFIG=$val ;;
+    esac
+  done < "$role_file"
+}
+
+resolve_nm_task
+load_nm_role_file
+REVIEW_MODEL=${REVIEW_MODEL:-gemini-4-neon-medium}
+FIX_MODEL=${FIX_MODEL:-gemini-4-hydrogen-high}
 if [[ $is_review -eq 1 ]]; then
   model=$REVIEW_MODEL
   account=$REVIEW_ACCOUNT
-  from_config=${FM_NM_REVIEW_FROM_CONFIG:-0}
+  from_config=${REVIEW_FROM_CONFIG:-0}
 else
   model=$FIX_MODEL
   account=$FIX_ACCOUNT
-  from_config=${FM_NM_FIX_FROM_CONFIG:-0}
+  from_config=${FIX_FROM_CONFIG:-0}
 fi
 args=()
 skip_next=""
@@ -75,8 +186,6 @@ POOL_BIN="${FM_AGY_POOL_BIN:-$FM_ROOT/bin/fm-agy-pool.sh}"
 # task with backend=herdr and herdr_workspace_id=, open or reuse a role/model/task
 # tab, stream the live run log read-only, and report agent lifecycle.
 # Best effort only: never fails or delays the review/fix call itself.
-FM_STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-FM_DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 role_name=$([[ $is_review -eq 1 ]] && echo review || echo fix)
 
 run_herdr_bounded() {
@@ -97,65 +206,7 @@ setup_herdr_tab() {
   command -v jq >/dev/null 2>&1 || return 0
   [[ -d "$FM_STATE" ]] || return 0
 
-  local meta_file="" backend="" ws="" session="" task=""
-  if [[ -n "${FM_TASK_ID:-}" && -f "$FM_STATE/${FM_TASK_ID}.meta" ]]; then
-    meta_file="$FM_STATE/${FM_TASK_ID}.meta"
-    task="$FM_TASK_ID"
-  else
-    # A no-mistakes run worktree is a detached checkout, so `abbrev-ref HEAD`
-    # yields HEAD there. Match the task branch ref nearest to HEAD, or the task
-    # worktree's own HEAD when the run repo carries no branch refs.
-    local branch="" head_sha="" cand cand_branch cand_ref cand_wt cand_head
-    local dist best_dist=-1 ties=0 match=""
-    branch=$(git -C "$PWD" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-    if [[ -n "$branch" && "$branch" != "HEAD" ]]; then
-      for cand in "$FM_STATE"/*.meta; do
-        [[ -f "$cand" ]] || continue
-        cand_branch=$(grep -E '^branch=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
-        [[ "$cand_branch" == "$branch" ]] || continue
-        meta_file="$cand"
-        task=$(basename "$cand" .meta)
-        break
-      done
-    else
-      head_sha=$(git -C "$PWD" rev-parse HEAD 2>/dev/null || true)
-      [[ -n "$head_sha" ]] || return 0
-      for cand in "$FM_STATE"/*.meta; do
-        [[ -f "$cand" ]] || continue
-        cand_branch=$(grep -E '^branch=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
-        [[ -n "$cand_branch" ]] || continue
-        cand_ref="refs/heads/$cand_branch"
-        git -C "$PWD" rev-parse --verify --quiet "$cand_ref" >/dev/null 2>&1 || continue
-        git -C "$PWD" merge-base --is-ancestor "$cand_ref" "$head_sha" 2>/dev/null || continue
-        dist=$(git -C "$PWD" rev-list --count "$cand_ref..$head_sha" 2>/dev/null || echo 0)
-        if (( best_dist < 0 || dist < best_dist )); then
-          match="$cand"
-          best_dist=$dist
-          ties=1
-        elif (( dist == best_dist )); then
-          ties=$((ties + 1))
-        fi
-      done
-      if (( best_dist < 0 || ties != 1 )); then
-        match=""
-        local worktree_ties=0
-        for cand in "$FM_STATE"/*.meta; do
-          [[ -f "$cand" ]] || continue
-          cand_wt=$(grep -E '^worktree=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
-          [[ -n "$cand_wt" && -d "$cand_wt" ]] || continue
-          cand_head=$(git -C "$cand_wt" rev-parse HEAD 2>/dev/null || true)
-          if [[ -n "$cand_head" && "$cand_head" == "$head_sha" ]]; then
-            match="$cand"
-            worktree_ties=$((worktree_ties + 1))
-          fi
-        done
-        (( worktree_ties == 1 )) || match=""
-      fi
-      [[ -n "$match" ]] || return 0
-      meta_file="$match"
-      task=$(basename "$meta_file" .meta)
-    fi
-  fi
+  local meta_file="$NM_TASK_META" task="$NM_TASK" backend="" ws="" session=""
   [[ -n "$meta_file" && -n "$task" ]] || return 0
 
   backend=$(grep -E '^backend=' "$meta_file" 2>/dev/null | head -n 1 | cut -d= -f2- || true)

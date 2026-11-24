@@ -2050,8 +2050,8 @@ This section is the single owner of the canonical schema and its per-field seman
 
 An optional top-level `roles` object configures ordered fallback lists for `no-mistakes` review and fix turns driven by `bin/fm-deliver.sh`.
 Each supported role (`review`, `fix`) is a non-empty array of objects containing required non-empty strings `harness` (a verified harness) and `model`, plus an optional non-empty string `account`.
-`bin/fm-deliver.sh` resolves the active entry for each present role and exports `FM_NM_REVIEW_MODEL` / `FM_NM_FIX_MODEL` and `FM_NM_REVIEW_ACCOUNT` / `FM_NM_FIX_ACCOUNT` to `bin/agy-pool/nm-agy`.
-When every eligible account for the active model is exhausted, `bin/fm-deliver.sh` restarts validation on the same head with the next entry in that role's fallback list.
+`bin/fm-deliver.sh` resolves the active entry for each present role and writes the resolved model, account, and fallback list to `state/<task>.nm-roles`. `bin/agy-pool/nm-agy` reads that file for the task it maps to, because the no-mistakes daemon spawns it with its own environment; `FM_NM_REVIEW_MODEL` / `FM_NM_FIX_MODEL` and their `_ACCOUNT` / `_FROM_CONFIG` siblings still override the file when set.
+When every eligible account for the active model is exhausted, `bin/fm-deliver.sh` rewrites the file and restarts validation on the same head with the next entry in that role's fallback list.
 When `roles` or a given role entry is absent, `bin/fm-deliver.sh` and `bin/agy-pool/nm-agy` preserve their existing defaults.
 
 **Preferred provider**

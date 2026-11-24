@@ -631,6 +631,17 @@ EOF
   [ -n "$fix_line" ] || fail "missing fix call in pool args: $pool_out"
   assert_not_contains "$fix_line" "piyushk" "omitted role account must strip hardcoded --account so pool can rotate"
 
+  local roles_file
+  roles_file=$(cat "$tdir/state/task_roles.nm-roles" 2>/dev/null || true)
+  assert_contains "$roles_file" "review_model=gemini-4-neon-high" \
+    "fm-deliver must persist the resolved review model for daemon-spawned nm-agy"
+  assert_contains "$roles_file" "review_account=neon_acct" \
+    "fm-deliver must persist the resolved review account"
+  assert_contains "$roles_file" "review_fallback=gemini-4-neon-high,gemini-3.8-flash-high" \
+    "fm-deliver must persist the review fallback list"
+  assert_contains "$roles_file" "fix_model=gemini-4-hydrogen-high" \
+    "fm-deliver must persist the resolved fix model"
+
   # Absent roles preserves legacy defaults and incoming --account
   rm -f "$tdir/config/crew-dispatch.json" "$tdir/pool-args.log" "$tdir/env.log"
   env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
@@ -638,6 +649,8 @@ EOF
     FM_CONFIG_OVERRIDE="$tdir/config" FM_AGY_STATE_DIR="$tdir/agy-state" \
     FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 \
     "$DELIVER" task_roles run >/dev/null 2>&1 || true
+  [ ! -e "$tdir/state/task_roles.nm-roles" ] \
+    || fail "absent roles must remove a stale role file so nm-agy keeps its defaults"
   assert_contains "$(cat "$tdir/env.log")" "REVIEW_MODEL= REVIEW_ACCT= FIX_MODEL= FIX_ACCT=" \
     "absent roles must not export FM_NM_* overrides"
   pool_out=$(cat "$tdir/pool-args.log")
@@ -827,18 +840,18 @@ test_herdr_visibility_for_nm_agy_and_gate_park() {
   # ~/.no-mistakes/worktrees/...): branch refs exist in the run repo, but the
   # worktree itself is checked out at a detached HEAD that a fix step has already
   # committed past, as no-mistakes does.
-  git -C "$tdir/nm-wt" init -q
+  git -C "$tdir/nm-wt" init -q -b main
   git -C "$tdir/nm-wt" config user.email "test@example.com"
   git -C "$tdir/nm-wt" config user.name "Test"
   echo "base" > "$tdir/nm-wt/base.txt"
   git -C "$tdir/nm-wt" add base.txt
   git -C "$tdir/nm-wt" commit -q -m "base commit"
+  git -C "$tdir/nm-wt" checkout -q -b "fm/task_herdr_vis"
   echo "x" > "$tdir/nm-wt/f.txt"
   git -C "$tdir/nm-wt" add f.txt
   git -C "$tdir/nm-wt" commit -q -m "nm mirror commit"
-  git -C "$tdir/nm-wt" branch "fm/task_herdr_vis"
-  git -C "$tdir/nm-wt" branch "fm/task_base_ancestor" HEAD~1
-  git -C "$tdir/nm-wt" checkout -q --detach HEAD
+  git -C "$tdir/nm-wt" branch "fm/task_base_ancestor" main
+  git -C "$tdir/nm-wt" checkout -q --detach "fm/task_herdr_vis"
   echo "fix" > "$tdir/nm-wt/g.txt"
   git -C "$tdir/nm-wt" add g.txt
   git -C "$tdir/nm-wt" commit -q -m "fix commit on the run worktree"
@@ -961,6 +974,124 @@ EOF
   pass "nm-agy and fm-deliver project visible read-only tabs and report-agent lifecycle in Herdr"
 }
 
+test_nm_agy_reads_role_file_without_daemon_env() {
+  local sha
+  sha=$(setup_fixture task_role_file)
+  local tdir="$TMP_ROOT/task_role_file"
+  mkdir -p "$tdir/bin" "$tdir/nm-wt" "$tdir/decoy-wt"
+  printf 'backend=herdr\nherdr_workspace_id=wR1\n' >> "$tdir/state/task_role_file.meta"
+
+  # A no-mistakes run checkout: the task branch ref sits at the builder's tip,
+  # the detached run HEAD has one fix commit past it, and main is the base.
+  git -C "$tdir/nm-wt" init -q -b main
+  git -C "$tdir/nm-wt" config user.email "test@example.com"
+  git -C "$tdir/nm-wt" config user.name "Test"
+  echo "base" > "$tdir/nm-wt/base.txt"
+  git -C "$tdir/nm-wt" add base.txt
+  git -C "$tdir/nm-wt" commit -q -m "base commit"
+  git -C "$tdir/nm-wt" checkout -q -b "fm/task_role_file"
+  echo "built" > "$tdir/nm-wt/built.txt"
+  git -C "$tdir/nm-wt" add built.txt
+  git -C "$tdir/nm-wt" commit -q -m "builder commit"
+  git -C "$tdir/nm-wt" checkout -q --detach "fm/task_role_file"
+  echo "fix" > "$tdir/nm-wt/fix.txt"
+  git -C "$tdir/nm-wt" add fix.txt
+  git -C "$tdir/nm-wt" commit -q -m "fix commit on the run worktree"
+
+  # An operator run from main whose only ancestor task branch is already merged
+  # into main and waiting for teardown: it belongs to no firstmate task.
+  git -C "$tdir/decoy-wt" init -q -b main
+  git -C "$tdir/decoy-wt" config user.email "test@example.com"
+  git -C "$tdir/decoy-wt" config user.name "Test"
+  echo "base" > "$tdir/decoy-wt/base.txt"
+  git -C "$tdir/decoy-wt" add base.txt
+  git -C "$tdir/decoy-wt" commit -q -m "base commit"
+  git -C "$tdir/decoy-wt" branch "fm/task_merged"
+  echo "operator" > "$tdir/decoy-wt/op.txt"
+  git -C "$tdir/decoy-wt" add op.txt
+  git -C "$tdir/decoy-wt" commit -q -m "operator commit"
+  printf 'backend=herdr\nherdr_workspace_id=wDecoy\nbranch=fm/task_merged\n' \
+    > "$tdir/state/task_merged.meta"
+
+  cat > "$tdir/state/task_role_file.nm-roles" <<'EOF'
+review_model=gemini-4-neon-file
+review_account=fileacct
+review_from_config=1
+review_fallback=gemini-4-neon-file,gemini-3.8-flash-high
+fix_model=gemini-4-hydrogen-file
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-file
+EOF
+
+  cat > "$tdir/bin/fake-pool" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$tdir/pool-args.log"
+exit 0
+EOF
+  chmod +x "$tdir/bin/fake-pool"
+
+  local herdr_log="$tdir/herdr.calls"
+  cat > "$tdir/bin/herdr" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$herdr_log"
+case "\${1:-} \${2:-}" in
+  "tab create")
+    echo '{"result":{"tab":{"tab_id":"tR1"},"root_pane":{"pane_id":"wR1:pR1"}}}'
+    exit 0
+    ;;
+esac
+exit 0
+EOF
+  chmod +x "$tdir/bin/herdr"
+
+  local nm_agy="$ROOT/bin/agy-pool/nm-agy"
+  local -a clean_env=(
+    env -u FM_NM_REVIEW_MODEL -u FM_NM_REVIEW_ACCOUNT -u FM_NM_REVIEW_FROM_CONFIG
+    -u FM_NM_FIX_MODEL -u FM_NM_FIX_ACCOUNT -u FM_NM_FIX_FROM_CONFIG
+    PATH="$tdir/bin:$PATH" FM_HOME="$tdir"
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data"
+    FM_AGY_POOL_BIN="$tdir/bin/fake-pool"
+  )
+
+  ( cd "$tdir/nm-wt" && "${clean_env[@]}" \
+    "$nm_agy" --account piyushk --model wire -p "Focus findings on risks introduced by changed code" >/dev/null 2>&1 )
+  ( cd "$tdir/nm-wt" && "${clean_env[@]}" \
+    "$nm_agy" --account piyushk --model wire -p "Fix finding f1" >/dev/null 2>&1 )
+
+  local pool_out review_line fix_line hlog
+  pool_out=$(cat "$tdir/pool-args.log")
+  review_line=$(grep 'Focus findings' <<<"$pool_out" || true)
+  fix_line=$(grep 'Fix finding f1' <<<"$pool_out" || true)
+  [ -n "$review_line" ] && [ -n "$fix_line" ] || fail "both role calls must reach the pool: $pool_out"
+  assert_contains "$review_line" "--model gemini-4-neon-file" \
+    "nm-agy must read the review model from the task role file without env"
+  assert_contains "$review_line" "--account fileacct" \
+    "nm-agy must read the review account from the task role file without env"
+  assert_not_contains "$review_line" "piyushk" \
+    "a role-file account must replace the incoming config account"
+  assert_contains "$fix_line" "--model gemini-4-hydrogen-file" \
+    "nm-agy must read the fix model from the task role file without env"
+  assert_not_contains "$fix_line" "piyushk" \
+    "an empty role-file account must strip the incoming config account so the pool can rotate"
+
+  hlog=$(cat "$herdr_log")
+  assert_contains "$hlog" "tab create --workspace wR1 --label review: task_role_file (gemini-4-neon-file)" \
+    "the same branch-to-task resolver must map the detached run to the review tab"
+
+  # The merged task branch must not claim an operator run that has no task.
+  : > "$tdir/pool-args.log"
+  : > "$herdr_log"
+  ( cd "$tdir/decoy-wt" && "${clean_env[@]}" \
+    "$nm_agy" --account piyushk --model wire -p "Focus findings on risks introduced by changed code" >/dev/null 2>&1 )
+  pool_out=$(cat "$tdir/pool-args.log")
+  assert_contains "$pool_out" "--account piyushk --model gemini-4-neon-medium" \
+    "a run with no live task must keep the legacy model and incoming account"
+  [ ! -s "$herdr_log" ] || fail "a run with no live task must not open a Herdr tab: $(cat "$herdr_log")"
+
+  pass "nm-agy reads per-task roles without daemon env and ignores merged task branches"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -980,4 +1111,5 @@ fm_test_run \
   test_run_resolves_roles_and_nm_agy_consumes_them \
   test_quota_failover_restarts_with_next_role_model \
   test_quota_words_in_agent_answer_do_not_fail_over \
-  test_herdr_visibility_for_nm_agy_and_gate_park
+  test_herdr_visibility_for_nm_agy_and_gate_park \
+  test_nm_agy_reads_role_file_without_daemon_env

@@ -319,7 +319,36 @@ load_role_configs() {
   done
 }
 
+write_role_file() {
+  local role_file="$FM_STATE/${TASK}.nm-roles"
+  if (( ${#REVIEW_MODELS[@]} == 0 && ${#FIX_MODELS[@]} == 0 )); then
+    rm -f "$role_file"
+    return 0
+  fi
+  mkdir -p "$FM_STATE"
+  local fb sep m
+  {
+    if (( ${#REVIEW_MODELS[@]} > 0 )); then
+      fb=""; sep=""
+      for m in "${REVIEW_MODELS[@]}"; do fb+="${sep}${m}"; sep=","; done
+      printf 'review_model=%s\n' "${REVIEW_MODELS[$REVIEW_IDX]}"
+      printf 'review_account=%s\n' "${REVIEW_ACCOUNTS[$REVIEW_IDX]}"
+      printf 'review_from_config=1\n'
+      printf 'review_fallback=%s\n' "$fb"
+    fi
+    if (( ${#FIX_MODELS[@]} > 0 )); then
+      fb=""; sep=""
+      for m in "${FIX_MODELS[@]}"; do fb+="${sep}${m}"; sep=","; done
+      printf 'fix_model=%s\n' "${FIX_MODELS[$FIX_IDX]}"
+      printf 'fix_account=%s\n' "${FIX_ACCOUNTS[$FIX_IDX]}"
+      printf 'fix_from_config=1\n'
+      printf 'fix_fallback=%s\n' "$fb"
+    fi
+  } > "$role_file"
+}
+
 export_role_env() {
+  write_role_file
   if (( ${#REVIEW_MODELS[@]} > 0 )); then
     export FM_NM_REVIEW_MODEL="${REVIEW_MODELS[$REVIEW_IDX]}"
     export FM_NM_REVIEW_HARNESS="${REVIEW_HARNESSES[$REVIEW_IDX]}"
