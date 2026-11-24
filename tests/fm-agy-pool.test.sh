@@ -264,20 +264,25 @@ test_probe_skip_for_hydrogen_and_neon() {
   mkdir -p "$d"
   printf '#!/usr/bin/env bash\necho ran >> "%s/models-ran"\necho gemini-3.8-flash-high\n' "$d" > "$d/agy"
   chmod +x "$d/agy"
+  mkdir -p "$d/sd/agy-pool"
+  cp "$d/agy" "$d/sd/agy-pool/agy"
   run_validate() {
     rm -f "$d/models-ran"
-    out=$(SCRIPT_DIR="$ROOT/bin" bash -c '
-      . "$SCRIPT_DIR/fm-timeout-lib.sh"
-      eval "$(sed -n "/^agy_model_validate() {/,/^}/p" "$SCRIPT_DIR/fm-spawn.sh")"
+    out=$(SCRIPT_DIR="$d/sd" bash -c '
+      . "'"$ROOT"'/bin/fm-timeout-lib.sh"
+      eval "$(sed -n "/^agy_model_validate() {/,/^}/p" "'"$ROOT"'/bin/fm-spawn.sh")"
       agy_model_validate "$1" "$2"' _ "$1" "$2" 2>&1); rc=$?
   }
   run_validate "$d/agy" gemini-4-neon-typo
   [ "$rc" -ne 0 ] || fail "plain agy must refuse an unlisted neon id"
   assert_contains "$out" "is not listed by 'agy models'" "plain agy lost its listing check"
   [ -e "$d/models-ran" ] || fail "plain agy must run the listing probe"
-  run_validate "$ROOT/bin/agy-pool/agy" gemini-4-neon-typo
+  run_validate "$d/sd/agy-pool/agy" gemini-4-neon-typo
   [ "$rc" -eq 0 ] || fail "pool launcher must skip the probe for neon (rc=$rc): $out"
   [ ! -e "$d/models-ran" ] || fail "pool launcher must not sign in to list models"
+  run_validate "$d/sd/agy-pool/agy" gemini-3.8-flash-high
+  [ "$rc" -eq 0 ] || fail "pool launcher must accept a listed flash id (rc=$rc): $out"
+  [ -e "$d/models-ran" ] || fail "pool launcher must still probe non-Neon/Hydrogen models"
   pass "probe skip applies to Hydrogen and Neon only on the pool launcher"
 }
 

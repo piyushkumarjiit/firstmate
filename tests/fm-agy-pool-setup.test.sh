@@ -140,9 +140,10 @@ test_operator_store_helper_with_github_entry_is_accepted() {
   local out rc
   mv "$TMP_ROOT/ophome/.gitconfig" "$TMP_ROOT/ophome/.gitconfig.off"
   printf '[credential]\n\thelper = store\n' > "$TMP_ROOT/ophome/.gitconfig"
+  mv "$TMP_ROOT/ophome/.git-credentials" "$TMP_ROOT/ophome/.git-credentials.off"
   printf 'https://user:token@github.com\n' > "$TMP_ROOT/ophome/.git-credentials"
   out=$(run_setup check); rc=$?
-  rm -f "$TMP_ROOT/ophome/.git-credentials"
+  mv "$TMP_ROOT/ophome/.git-credentials.off" "$TMP_ROOT/ophome/.git-credentials"
   mv "$TMP_ROOT/ophome/.gitconfig.off" "$TMP_ROOT/ophome/.gitconfig"
   ! grep -q 'MISSING operator push credentials' <<<"$out" || { fail "store helper with a github.com entry rejected (rc=$rc): $out"; }
   grep -q 'ok      operator push credentials: git credential' <<<"$out" || { fail "store helper not confirmed: $out"; }
