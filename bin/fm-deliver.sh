@@ -336,7 +336,7 @@ export_role_env() {
 
 load_role_configs
 
-QUOTA_EXHAUSTION_RE="(Individual quota reached|No eligible account|(^|[[:space:]\"':])(429|RESOURCE_EXHAUSTED)([[:space:]\"':]|$)|rate[ -]?limit exceeded|quota exceeded|out of quota)"
+QUOTA_EXHAUSTION_RE='^[[:space:]]*(\[fm-agy-pool\][[:space:]]*ERROR:.*|antigravity exited .*error=.*|antigravity reported error:.*|error:.*)?[[:space:]]*(All eligible accounts|No eligible account|Individual quota reached|RESOURCE_EXHAUSTED|429([[:space:]]|$)|rate[ -]?limit exceeded|quota exceeded|out of quota)'
 
 is_quota_exhaustion_failure() {
   local wt="$1" status_toon="$2" dlog="$3" log_offset="$4"
@@ -877,12 +877,9 @@ for p in parts:
   return 0
 }
 
-resolve_open_gate_if_present() {
-  local sfile="$1" dlog="$2"
-  shift 2
-
-  local open_gate_key
-  open_gate_key=$(awk -v target_keys="${FM_DELIVER_GATE_KEYS:-}" '
+open_gate_keys() {
+  local sfile="$1"
+  awk -v target_keys="${FM_DELIVER_GATE_KEYS:-}" '
     BEGIN {
       n = split(target_keys, tarr, /[[:space:]]+/)
       for (i = 1; i <= n; i++) {
@@ -894,8 +891,11 @@ resolve_open_gate_if_present() {
       match($0, /\[key=(gate-[^]]+)\]/, m)
       if (m[1] != "") {
         latest_key = m[1]
-        resolved[latest_key] = 0
-        if (has_want && want[latest_key]) wanted_key = latest_key
+        resolved[m[1]] = 0
+        if (!(m[1] in seen)) {
+          seen[m[1]] = 1
+          names[++count] = m[1]
+        }
       }
     }
     /^[[:space:]]*resolved/ && /\[key=gate-[^]]+\]/ {
@@ -905,15 +905,25 @@ resolve_open_gate_if_present() {
       }
     }
     END {
-      if (wanted_key != "" && resolved[wanted_key] == 0) {
-        print wanted_key
+      if (has_want) {
+        for (i = 1; i <= count; i++) {
+          k = names[i]
+          if (want[k] && resolved[k] == 0) print k
+        }
       } else if (latest_key != "" && resolved[latest_key] == 0) {
         print latest_key
       }
     }
-  ' "$sfile")
+  ' "$sfile"
+}
 
-  [[ -z "$open_gate_key" ]] && return 0
+resolve_open_gate_if_present() {
+  local sfile="$1" dlog="$2"
+  shift 2
+
+  local open_gate_key_list="" k
+  open_gate_key_list=$(open_gate_keys "$sfile")
+  [[ -n "$open_gate_key_list" ]] || return 0
 
   local action="" findings="" ignore="" prev=""
   for arg in "$@"; do
@@ -947,23 +957,29 @@ resolve_open_gate_if_present() {
   fi
 
   local now resolved_line
+  local -a resolved_lines=()
   now=$(date +%s)
-  resolved_line="resolved [at=$now] [key=${open_gate_key}]: $note"
+  for k in $open_gate_key_list; do
+    resolved_line="resolved [at=$now] [key=${k}]: $note"
+    resolved_lines+=("$resolved_line")
+  done
   if [[ "${FM_DELIVER_SELF_ANNOUNCED:-0}" == "1" && -r "$SCRIPT_DIR/fm-wake-lib.sh" ]]; then
     # shellcheck disable=SC1091
     . "$SCRIPT_DIR/fm-classify-lib.sh"
     # shellcheck disable=SC1091
     . "$SCRIPT_DIR/fm-wake-lib.sh"
     local app_rc=0
-    fm_wake_status_append_self_announced "$FM_STATE" "$sfile" "$resolved_line" || app_rc=$?
+    fm_wake_status_append_self_announced "$FM_STATE" "$sfile" ${resolved_lines[@]+"${resolved_lines[@]}"} || app_rc=$?
     if [[ "$app_rc" -eq 2 ]]; then
-      echo "error: could not append resolved line to $sfile" >&2
+      echo "error: could not append resolved lines to $sfile" >&2
       return 1
     fi
   else
-    echo "$resolved_line" >> "$sfile"
+    printf '%s\n' ${resolved_lines[@]+"${resolved_lines[@]}"} >> "$sfile"
   fi
-  echo "[fm-deliver] Resolved gate '${open_gate_key}': $note" >> "$dlog"
+  for k in $open_gate_key_list; do
+    echo "[fm-deliver] Resolved gate '${k}': $note" >> "$dlog"
+  done
 }
 
 case "$SUBCMD" in
@@ -977,13 +993,20 @@ case "$SUBCMD" in
     ;;
   respond)
     normalize_respond_args "$@"
-    resolve_open_gate_if_present "$STATUS_FILE" "$DRIVE_LOG" "${NORM_ARGS[@]}"
 
     export_role_env
     LOG_OFFSET=$(wc -c < "$DRIVE_LOG" 2>/dev/null || echo 0)
     echo "[fm-deliver] Running respond in $WORKTREE: no-mistakes axi respond ${NORM_ARGS[*]}" >> "$DRIVE_LOG"
-    ( cd "$WORKTREE" && no-mistakes axi respond "${NORM_ARGS[@]}" ) >> "$DRIVE_LOG" 2>&1 || true
+    respond_rc=0
+    ( cd "$WORKTREE" && no-mistakes axi respond "${NORM_ARGS[@]}" ) >> "$DRIVE_LOG" 2>&1 || respond_rc=$?
+    if [[ "$respond_rc" -ne 0 ]]; then
+      echo "[fm-deliver] respond failed (exit $respond_rc); leaving the gate open" >> "$DRIVE_LOG"
+      exit "$respond_rc"
+    fi
+    resolve_rc=0
+    resolve_open_gate_if_present "$STATUS_FILE" "$DRIVE_LOG" "${NORM_ARGS[@]}" || resolve_rc=$?
     handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET"
+    exit "$resolve_rc"
     ;;
   run)
     if [[ "${1:-}" == "--background-worker" ]]; then

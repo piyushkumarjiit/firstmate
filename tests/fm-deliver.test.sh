@@ -265,6 +265,74 @@ EOF
   pass "respond resolves open gate key with action and ids, and appends nothing when none open"
 }
 
+test_respond_keeps_gate_open_when_respond_fails() {
+  local sha
+  sha=$(setup_fixture task_respond_fail)
+  local tdir="$TMP_ROOT/task_respond_fail"
+  mkdir -p "$tdir/bin"
+
+  cat > "$tdir/bin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-} ${2:-}" == "axi respond" ]]; then
+  echo "error: no active run to respond to" >&2
+  exit 1
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+
+  echo "needs-decision [at=100] [key=gate-review]: review findings" >> "$tdir/state/task_respond_fail.status"
+
+  local rc=0
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" \
+    "$DELIVER" task_respond_fail respond --action fix --findings f1 >/dev/null 2>&1 || rc=$?
+
+  [ "$rc" -ne 0 ] || fail "respond must exit nonzero when no-mistakes axi respond fails"
+  if grep -q 'resolved.*\[key=gate-review\]' "$tdir/state/task_respond_fail.status"; then
+    fail "gate must stay open when the answer never reached the run: $(cat "$tdir/state/task_respond_fail.status")"
+  fi
+
+  pass "respond keeps the gate open and exits nonzero when the answer is not delivered"
+}
+
+test_respond_closes_every_named_gate_key() {
+  local sha
+  sha=$(setup_fixture task_respond_multi)
+  local tdir="$TMP_ROOT/task_respond_multi"
+  mkdir -p "$tdir/bin"
+
+  cat > "$tdir/bin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+
+  cat >> "$tdir/state/task_respond_multi.status" <<'EOF'
+needs-decision [at=100] [key=gate-review]: review findings
+needs-decision [at=101] [key=gate-fix]: fix findings
+needs-decision [at=102] [key=gate-ci]: ci findings
+EOF
+
+  local rc=0
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_GATE_KEYS="gate-review gate-fix" \
+    "$DELIVER" task_respond_multi respond --action approve >/dev/null 2>&1 || rc=$?
+
+  [ "$rc" -eq 0 ] || fail "responding to two named gate keys must succeed, got $rc"
+  grep -q 'resolved.*\[key=gate-review\]' "$tdir/state/task_respond_multi.status" \
+    || fail "every named gate key must be closed: $(cat "$tdir/state/task_respond_multi.status")"
+  grep -q 'resolved.*\[key=gate-fix\]' "$tdir/state/task_respond_multi.status" \
+    || fail "every named gate key must be closed: $(cat "$tdir/state/task_respond_multi.status")"
+  if grep -q 'resolved.*\[key=gate-ci\]' "$tdir/state/task_respond_multi.status"; then
+    fail "gate keys not named in the send must stay open: $(cat "$tdir/state/task_respond_multi.status")"
+  fi
+
+  pass "respond closes every named gate key and leaves unnamed ones open"
+}
+
 test_run_intent_includes_firstmate_decisions() {
   local sha
   sha=$(setup_fixture task_decisions)
@@ -616,6 +684,7 @@ printf '%s|model=%s|head=%s\n' "\$cmd" "\${FM_NM_REVIEW_MODEL:-}" "\$(git rev-pa
 if [[ "\$cmd" == "axi run" ]]; then
   if [[ "\${FM_NM_REVIEW_MODEL:-}" == "gemini-4-neon-high" ]]; then
     echo "antigravity reported error: Individual quota reached. Resets in 2h0m0s." >&2
+    echo "antigravity exited pid=4242 error=antigravity reported error: Individual quota reached. Resets in 2h0m0s." >&2
     cat > "$tdir/agy-state/acct1.state.json" <<'JSON'
 {"user":"acct1","window_start":1000,"reset_at":9999999999,"used_sec":10,"budget_sec":5400,"exhausted":true}
 JSON
@@ -689,6 +758,64 @@ EOF
   pass "fm-deliver restarts on the same head with the next role fallback model when all accounts are exhausted"
 }
 
+test_quota_words_in_agent_answer_do_not_fail_over() {
+  local sha
+  sha=$(setup_fixture task_quota_words)
+  local tdir="$TMP_ROOT/task_quota_words"
+  mkdir -p "$tdir/bin" "$tdir/config" "$tdir/agy-state"
+
+  cat > "$tdir/config/crew-dispatch.json" <<'JSON'
+{
+  "roles": {
+    "review": [
+      { "harness": "agy", "model": "gemini-4-neon-high" },
+      { "harness": "agy", "model": "gemini-3.8-flash-high" }
+    ]
+  }
+}
+JSON
+
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+cmd="\${1:-} \${2:-}"
+printf '%s\n' "\$cmd" >> "$tdir/nm-calls.log"
+if [[ "\$cmd" == "axi run" ]]; then
+  echo 'finding: the retry path treats Individual quota reached as a bare 429 token'
+  echo 'review failed: compile error in src/app.go'
+  exit 1
+elif [[ "\$cmd" == "axi status" ]]; then
+  cat <<'TOON'
+run:
+  id: "01WORDS"
+  status: failed
+outcome: failed
+TOON
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_CONFIG_OVERRIDE="$tdir/config" FM_AGY_STATE_DIR="$tdir/agy-state" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 \
+    "$DELIVER" task_quota_words run >/dev/null 2>&1 || true
+
+  local calls
+  calls=$(cat "$tdir/nm-calls.log")
+  assert_not_contains "$calls" "axi abort" \
+    "a non-quota failure whose findings mention quota words must not abort the run"
+  [ "$(grep -c '^axi run$' "$tdir/nm-calls.log")" -eq 1 ] \
+    || fail "a non-quota failure must not restart on a fallback model: $calls"
+
+  local last_status
+  last_status=$(tail -n 1 "$tdir/state/task_quota_words.status")
+  assert_contains "$last_status" "blocked" \
+    "a non-quota failure must be reported as blocked: $last_status"
+
+  pass "quota words inside agent findings do not trigger a fallback model restart"
+}
+
 test_herdr_visibility_for_nm_agy_and_gate_park() {
   local sha
   sha=$(setup_fixture task_herdr_vis)
@@ -696,13 +823,19 @@ test_herdr_visibility_for_nm_agy_and_gate_park() {
   mkdir -p "$tdir/bin" "$tdir/nm-wt"
   printf 'backend=herdr\nherdr_workspace_id=wH1\nherdr_session=sH1\n' >> "$tdir/state/task_herdr_vis.meta"
 
-  # Separate no-mistakes checkout on the same branch (simulates ~/.no-mistakes/worktrees/...)
-  git -C "$tdir/nm-wt" init -q -b "fm/task_herdr_vis"
+  # Separate no-mistakes checkout on the same branch (simulates
+  # ~/.no-mistakes/worktrees/...): the branch ref exists in the run repo, but the
+  # worktree itself is checked out at a detached HEAD, as no-mistakes does.
+  git -C "$tdir/nm-wt" init -q
   git -C "$tdir/nm-wt" config user.email "test@example.com"
   git -C "$tdir/nm-wt" config user.name "Test"
   echo "x" > "$tdir/nm-wt/f.txt"
   git -C "$tdir/nm-wt" add f.txt
   git -C "$tdir/nm-wt" commit -q -m "nm mirror commit"
+  git -C "$tdir/nm-wt" branch "fm/task_herdr_vis"
+  git -C "$tdir/nm-wt" checkout -q --detach HEAD
+  [ "$(git -C "$tdir/nm-wt" rev-parse --abbrev-ref HEAD)" = "HEAD" ] \
+    || fail "fixture must be a detached-HEAD no-mistakes worktree"
 
   local herdr_log="$tdir/herdr.calls"
   cat > "$tdir/bin/herdr" <<EOF
@@ -826,10 +959,13 @@ fm_test_run \
   test_refuse_yes_in_respond \
   test_sync_action_allowlist_and_unexpected_blocking \
   test_respond_resolves_open_gate_key \
+  test_respond_keeps_gate_open_when_respond_fails \
+  test_respond_closes_every_named_gate_key \
   test_run_intent_includes_firstmate_decisions \
   test_run_opens_progress_tab_on_herdr \
   test_run_reattaches_while_run_in_progress \
   test_respond_normalizes_supervisor_forms \
   test_run_resolves_roles_and_nm_agy_consumes_them \
   test_quota_failover_restarts_with_next_role_model \
+  test_quota_words_in_agent_answer_do_not_fail_over \
   test_herdr_visibility_for_nm_agy_and_gate_park

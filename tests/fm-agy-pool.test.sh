@@ -367,6 +367,48 @@ EOF
   last_quota_hit=$(tail -n 1 "$fixture_dir/usage.jsonl" | jq -r '.quota_hit')
   [ "$last_quota_hit" = "true" ] || fail "end-of-session exit 42 must record quota_hit: true in usage log"
 
+  # A successful answer whose final lines discuss quota errors (a review of rate
+  # limiting, for example) must not lock the account or rerun the same prompt.
+  cat > "$fixture_dir/pool.conf" <<EOF
+
+gpro1
+
+gpro2
+EOF
+  : > "$fixture_dir/models.conf"
+  local run_log="$fixture_dir/success-runs.log"
+  : > "$run_log"
+  cat > "$fixture_dir/bin/agy" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
+printf '%s\n' "\${SUDO_TARGET_USER:-unknown}" >> "$run_log"
+echo "review findings follow"
+echo "  - the retry loop treats a bare 429 and Individual quota reached as exhaustion"
+echo "  - RESOURCE_EXHAUSTED is only a label here"
+echo "verdict: changes requested; no quota error occurred"
+exit 0
+EOF
+  chmod +x "$fixture_dir/bin/agy"
+
+  local rc=0
+  env PATH="$fixture_dir/bin:$PATH" \
+    POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
+    AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
+    FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    "$POOL" --model gemini-3.8-flash-high -p hello >/dev/null 2>&1 || rc=$?
+
+  [ "$rc" -eq 0 ] || fail "successful run whose findings mention quota errors must exit 0, got $rc"
+  [ "$(wc -l < "$run_log")" -eq 1 ] \
+    || fail "quota words in a successful answer must not rerun the prompt: $(cat "$run_log")"
+  exh=$(jq -r '.exhausted' "$fixture_dir/state/gpro1.state.json")
+  [ "$exh" = "false" ] \
+    || fail "quota words in a successful answer must not mark the account exhausted"
+
   pass "quota-hit false positive fix logs suspicion without setting exhausted"
 }
 

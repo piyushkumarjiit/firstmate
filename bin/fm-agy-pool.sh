@@ -797,7 +797,7 @@ add_queued_messages_setting() {
 }
 add_queued_messages_setting
 
-QUOTA_EXHAUSTION_RE="(^|[[:space:]\"':])(429|RESOURCE_EXHAUSTED)([[:space:]\"':]|$)|(Individual quota reached|rate[ -]?limit exceeded|quota exceeded|out of quota)"
+QUOTA_EXHAUSTION_RE='^[[:space:]]*(\[fm-agy-pool\][[:space:]]*ERROR:.*|antigravity exited .*error=.*|antigravity reported error:.*|error:.*)?[[:space:]]*(All eligible accounts|No eligible account|Individual quota reached|RESOURCE_EXHAUSTED|429([[:space:]]|$)|rate[ -]?limit exceeded|quota exceeded|out of quota)'
 RETRIED_AFTER_QUOTA=0
 MAX_ATTEMPTS=$(( ${#GPRO_USERS[@]} + 2 ))
 ATTEMPT=0
@@ -876,7 +876,7 @@ while (( ATTEMPT < MAX_ATTEMPTS )); do
   if [[ -f "$RUN_LOG" ]]; then
     tail_clean=$(tail -c +"$((RUN_LOG_OFFSET + 1))" "$RUN_LOG" 2>/dev/null | tail -n 50 | tr -d '\r' | sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' || true)
   fi
-  if [[ -n "$tail_clean" ]] && grep -Eiq "$QUOTA_EXHAUSTION_RE" <<<"$tail_clean"; then
+  if [[ -n "$tail_clean" ]] && (( EXIT_CODE != 0 )) && grep -Eiq "$QUOTA_EXHAUSTION_RE" <<<"$tail_clean"; then
     QUOTA_LOG_MATCH="true"
     HIT_QUOTA="true"
     rst_epoch=$(parse_reset_epoch_from_log "$tail_clean")
