@@ -641,7 +641,7 @@ EOF
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
     FM_TEST_USAGE_LOG_FILE="$usage_calls" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_MAX_ACTIVE=1 \
     "$POOL" --usage gpro2 2>&1) || rc=$?
   [ "$rc" -eq 75 ] || fail "--usage gpro2 when gpro1 is active must exit 75, got $rc: $err"
   assert_contains "$err" "Another pool account ('gpro1') is currently active" "must name active account on refusal"
@@ -1247,6 +1247,49 @@ EOF
   pass "at the active cap reuse follows the model's configured account order"
 }
 
+test_usage_follows_active_cap() {
+  local fx="$TMP_ROOT/usage_cap"
+  mkdir -p "$fx/bin" "$fx/state"
+  printf '%s\n' gpro1 gpro2 gpro3 > "$fx/pool.conf"
+  : > "$fx/models.conf"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac
+done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF
+  cat > "$fx/bin/agy" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t95%%\t2026-11-29T12:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t88%%\t2026-11-23T06:00:00Z\n"
+fi
+exit 0
+EOF
+  chmod +x "$fx/bin/"*
+  local rc out active
+  run_usage() {  # <active csv> <target>
+    printf '#!/usr/bin/env bash\nfor u in %s; do [[ "$*" == *"-u $u"* ]] && exit 0; done\nexit 1\n' "$(printf '%s' "$1" | tr ',' ' ')" > "$fx/bin/fake-pgrep"
+    chmod +x "$fx/bin/fake-pgrep"
+    rc=0
+    out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+      AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+      FM_AGY_PGREP="$fx/bin/fake-pgrep" "$POOL" --usage "$2" 2>&1) || rc=$?
+  }
+  run_usage gpro1,gpro2 gpro1
+  [ "$rc" -eq 0 ] || fail "--usage on an active target must succeed at the cap, got $rc: $out"
+  run_usage gpro1 gpro2
+  [ "$rc" -eq 0 ] || fail "--usage on an inactive target under the cap must succeed, got $rc: $out"
+  run_usage gpro1,gpro2 gpro3
+  [ "$rc" -eq 75 ] || fail "--usage on an inactive target at the cap must exit 75, got $rc: $out"
+  assert_contains "$out" "FM_AGY_MAX_ACTIVE" "refusal must name the cap"
+  pass "--usage follows FM_AGY_MAX_ACTIVE: allowed for an active target or under the cap, refused otherwise"
+}
+
 fm_test_run \
   test_symlink_refuses_claude_model \
   test_pool_model_env_refuses_claude \
@@ -1265,4 +1308,5 @@ fm_test_run \
   test_stdin_prompt_survives_quota_rotation \
   test_configured_order_wins_over_active_account_until_cap \
   test_no_pool_config_has_no_placeholder_accounts \
-  test_cap_reuse_follows_model_order
+  test_cap_reuse_follows_model_order \
+  test_usage_follows_active_cap

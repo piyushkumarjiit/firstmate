@@ -383,12 +383,14 @@ cmd_usage() {
 
   local -a active_users=()
   mapfile -t active_users < <(find_active_pool_users)
-  for act in "${active_users[@]}"; do
-    if [[ "$act" != "$target" ]]; then
-      echo "[fm-agy-pool] ERROR: Another pool account ('$act') is currently active; refusing live usage check for '$target' (only 1 pool account may be active at a time)." >&2
-      exit 75
-    fi
+  local max_active="${FM_AGY_MAX_ACTIVE:-2}" target_active=0 act
+  for act in ${active_users[@]+"${active_users[@]}"}; do
+    [[ "$act" == "$target" ]] && target_active=1
   done
+  if (( target_active == 0 && ${#active_users[@]} >= max_active )); then
+    echo "[fm-agy-pool] ERROR: Another pool account ('${active_users[0]}') is currently active; refusing live usage check for '$target' (${#active_users[@]} pool accounts active, cap is $max_active (FM_AGY_MAX_ACTIVE))." >&2
+    exit 75
+  fi
 
   local usage_info live_pct live_reset
   if ! usage_info=$(query_live_usage "$target" true); then
