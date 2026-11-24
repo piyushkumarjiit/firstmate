@@ -1130,6 +1130,7 @@ case "$SUBCMD" in
       post_status=$(cd "$WORKTREE" && no-mistakes axi status 2>/dev/null || true)
       if ! grep -q '^gate:' <<<"$post_status" &&
         { fm_nm_run_is_executing "$post_status" || grep -Eq '^[[:space:]]*awaiting_agent:' <<<"$post_status"; }; then
+        # shellcheck disable=SC2094 # the background watcher reads the drive-log slice and appends its own progress to it
         ( handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET" ) </dev/null >> "$DRIVE_LOG" 2>&1 &
         echo "[fm-deliver] Run still executing after respond; watching it in background (PID $!), logging to $DRIVE_LOG" >> "$DRIVE_LOG"
       else

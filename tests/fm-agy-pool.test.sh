@@ -1191,6 +1191,7 @@ if [[ "${1:-}" == "test" ]]; then exit 0; fi
 SUDO_TARGET_USER="$T" exec "$@"
 EOF
   printf '#!/usr/bin/env bash\n[[ "$*" == *"-u gpro2"* ]] && exit 0\nexit 1\n' > "$fx/bin/fake-pgrep"
+  # shellcheck disable=SC2016 # single quotes are intentional: the fixture script expands at run time
   printf '#!/usr/bin/env bash\necho "${SUDO_TARGET_USER}" >> "%s/calls.log"\nexit 0\n' "$fx" > "$fx/bin/agy"
   chmod +x "$fx/bin/"*
   local rc=0 out
@@ -1236,6 +1237,7 @@ if [[ "${1:-}" == "test" ]]; then exit 0; fi
 SUDO_TARGET_USER="$T" exec "$@"
 EOF
   printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/fake-pgrep"
+  # shellcheck disable=SC2016 # single quotes are intentional: the fixture script expands at run time
   printf '#!/usr/bin/env bash\necho "${SUDO_TARGET_USER}" >> "%s/calls.log"\nexit 0\n' "$fx" > "$fx/bin/agy"
   chmod +x "$fx/bin/"*
   local rc=0 out
@@ -1273,6 +1275,7 @@ EOF
   chmod +x "$fx/bin/"*
   local rc out active
   run_usage() {  # <active csv> <target>
+    # shellcheck disable=SC2016 # single quotes are intentional: the fixture script expands at run time
     printf '#!/usr/bin/env bash\nfor u in %s; do [[ "$*" == *"-u $u"* ]] && exit 0; done\nexit 1\n' "$(printf '%s' "$1" | tr ',' ' ')" > "$fx/bin/fake-pgrep"
     chmod +x "$fx/bin/fake-pgrep"
     rc=0
@@ -1307,6 +1310,7 @@ if [[ "${1:-}" == "test" ]]; then exit 0; fi
 SUDO_TARGET_USER="$T" exec "$@"
 EOF2
   printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  # shellcheck disable=SC2016 # single quotes are intentional: the fixture script expands at run time
   printf '#!/usr/bin/env bash\necho "${SUDO_TARGET_USER}" >> "%s/calls.log"\nexit 0\n' "$fx" > "$fx/bin/agy"
   chmod +x "$fx"/bin/*
   local c rc
