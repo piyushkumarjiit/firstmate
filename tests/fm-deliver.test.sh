@@ -1330,21 +1330,36 @@ EOF
 
 test_respond_on_running_run_writes_no_blocked_status() {
   setup_fixture task_resp_run >/dev/null
-  local tdir="$TMP_ROOT/task_resp_run"
+  local tdir="$TMP_ROOT/task_resp_run" i
   mkdir -p "$tdir/bin"
-  cat > "$tdir/bin/no-mistakes" <<'EOF'
+  cat > "$tdir/bin/no-mistakes" <<EOF
 #!/usr/bin/env bash
-cmd="${1:-} ${2:-}"
-if [[ "$cmd" == "axi status" ]]; then
-  printf 'run:\n  id: "1"\n  status: running\n'
+cmd="\${1:-} \${2:-}"
+if [[ "\$cmd" == "axi status" ]]; then
+  n=\$(cat "$tdir/status-calls" 2>/dev/null || echo 0)
+  n=\$((n + 1))
+  printf '%s' "\$n" > "$tdir/status-calls"
+  if [[ "\$n" -le 2 ]]; then
+    printf 'run:\n  id: "1"\n  status: running\n'
+  else
+    printf 'run:\n  id: "1"\n  status: completed\noutcome: passed\nbranch_sync:\n  next_action:\n    command: "no-mistakes axi sync"\n'
+  fi
 fi
 exit 0
 EOF
   chmod +x "$tdir/bin/no-mistakes"
   env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
     FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
-    FM_MAIN_USER="$(id -un)" FM_DELIVER_REATTACH_MAX=0 \
+    FM_MAIN_USER="$(id -un)" \
     "$DELIVER" task_resp_run respond approve >/dev/null 2>&1
+  for i in $(seq 1 100); do
+    grep -q 'Run still executing after respond' "$tdir/data/task_resp_run/drive.log" 2>/dev/null &&
+      [ "$(cat "$tdir/status-calls" 2>/dev/null || echo 0)" -ge 3 ] && break
+    sleep 0.2
+  done
+  sleep 1
+  assert_contains "$(cat "$tdir/data/task_resp_run/drive.log")" "Run still executing after respond" \
+    "respond must hand a still-running run to the background watcher"
   assert_not_contains "$(cat "$tdir/state/task_resp_run.status")" "blocked" \
     "answering a gate while the run keeps executing must not write a blocked record"
   pass "respond on a still-running run writes no blocked status"
