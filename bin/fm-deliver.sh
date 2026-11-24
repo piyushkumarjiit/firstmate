@@ -605,7 +605,7 @@ classify_blocker() {
   fi
   if grep -Eiq 'could not read (Username|Password)|terminal prompts disabled|Authentication failed|Permission denied \(publickey\)|HTTP Basic: Access denied' <<<"$text"; then
     BLOCKER_KIND=push-auth
-    BLOCKER_TEXT="push authentication failed; fix the git credentials for the no-mistakes push (bin/fm-agy-pool-setup.sh check), then retry with FM_DELIVER_RETRY=1"
+    BLOCKER_TEXT="push authentication failed; fix the operator account's git push credentials (run bin/fm-agy-pool-setup.sh check and resolve its 'operator push credentials' lines: gh login and git credential helper), then retry with FM_DELIVER_RETRY=1"
   elif grep -Eiq 'argument list too long' <<<"$text"; then
     BLOCKER_KIND=prompt-too-large
     BLOCKER_TEXT="review prompt exceeds the agent command-line limit (argument list too long); use the stdin-patched no-mistakes (contrib/no-mistakes-antigravity-stdin), then retry with FM_DELIVER_RETRY=1"

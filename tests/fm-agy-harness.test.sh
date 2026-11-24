@@ -551,7 +551,7 @@ SH
 set -u
 if [ "${1:-}" = models ]; then
   if [ "${FM_FAKE_AGY_MODELS_FAIL:-0}" = 1 ]; then exit 3; fi
-  if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then cat > /dev/null; sleep 30; exit 0; fi
+  if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then cat > /dev/null; date +%s > "$FM_FAKE_AGY_STATE.probe-start"; sleep "${FM_FAKE_AGY_MODELS_HANG_SECS:-30}" & hang=$!; trap 'date +%s > "$FM_FAKE_AGY_STATE.probe-end"; kill "$hang" 2>/dev/null; exit 143' TERM INT; wait "$hang"; exit 0; fi
   printf 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n'
   printf 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)\n'
   printf 'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n'
@@ -620,6 +620,7 @@ run_agy_spawn() {
     FM_FAKE_AGY_SETTINGS="$home/.gemini/antigravity-cli/settings.json" \
     FM_FAKE_AGY_MODELS_FAIL="${FM_FAKE_AGY_MODELS_FAIL:-0}" \
     FM_FAKE_AGY_MODELS_HANG="${FM_FAKE_AGY_MODELS_HANG:-0}" \
+    FM_FAKE_AGY_MODELS_HANG_SECS="${FM_FAKE_AGY_MODELS_HANG_SECS:-30}" \
     FM_FAKE_AGY_IGNORE_TRUST="${FM_FAKE_AGY_IGNORE_TRUST:-0}" \
     FM_FAKE_AGY_ASSUME_TRUSTED="${FM_FAKE_AGY_ASSUME_TRUSTED:-0}" \
     FM_FAKE_AGY_RACE="${FM_FAKE_AGY_RACE:-0}" \
@@ -720,21 +721,27 @@ test_agy_hung_listing_is_cut_off_and_launches() {
 }
 
 test_agy_zero_model_timeout_is_clamped_to_the_default_bound() {
-  local id rec out rc started elapsed
+  local id rec out rc started elapsed probe
   id="agy-zerobound-z14-$$"
   rec=$(make_agy_spawn_case zerobound "$id")
   read_agy_spawn_record "$rec"
   rc=0
   started=$(date +%s)
-  out=$(FM_FAKE_AGY_MODELS_HANG=1 FM_AGY_MODELS_TIMEOUT=0 \
+  out=$(FM_FAKE_AGY_MODELS_HANG=1 FM_FAKE_AGY_MODELS_HANG_SECS=22 FM_AGY_MODELS_TIMEOUT=0 \
     run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
     "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
   elapsed=$(( $(date +%s) - started ))
   expect_code 0 "$rc" "a hung listing with a zero bound must not block the spawn"
-  [ "$elapsed" -lt 32 ] || fail "a zero model bound disabled the deadline (took ${elapsed}s)"
-  # The fake listing hangs for 30s, so an un-clamped zero bound cannot finish
-  # under 30s while the documented 15s clamp does even with the spawn's own
-  # fixed setup time. The notice below pins the clamp value itself.
+  # The ceiling is on the probe's own lifetime, recorded by the stand-in: the
+  # spawn's fixed setup (thousands of process launches) is load-dependent and
+  # is not what the clamp governs.
+  [ -s "$CASE_DIR/agy.state.probe-start" ] && [ -s "$CASE_DIR/agy.state.probe-end" ] \
+    || fail "the hung listing stand-in recorded no probe lifetime"
+  probe=$(( $(cat "$CASE_DIR/agy.state.probe-end") - $(cat "$CASE_DIR/agy.state.probe-start") ))
+  [ "$probe" -lt 25 ] || fail "a zero model bound disabled the deadline (probe ran ${probe}s)"
+  # The fake listing hangs for 22s, so an un-clamped zero bound never reaches
+  # its deadline and prints no notice, while the documented 15s clamp does.
+  # The notice below pins the clamp value itself.
   assert_contains "$out" "did not answer within 15s" \
     "a zero model bound was not clamped to the documented default"
   [ -s "$CASE_DIR/launch.log" ] || fail "a zero model bound produced no launch command"

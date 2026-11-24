@@ -17,6 +17,8 @@
 #                operator's own git credential and gh login instead.
 #   3. models    the models allowlist maps Neon and Hydrogen models to accounts;
 #                its account order is the quota failover order.
+#      The operator account itself must also hold a gh login and git credential
+#      helper (check only): fm-deliver pushes as the operator.
 #   4. run-log   the operator can read the pool usage log and per-run logs.
 #   5. nm-config reports the no-mistakes reviewer/fixer configuration for
 #                Gemini runs. Check only: the operator config is never edited.
@@ -179,6 +181,25 @@ step_git_auth() {
   done
 }
 
+# --- 2b. the operator's own push credentials ------------------------------------------
+# fm-deliver runs no-mistakes as the operator, so the push is authenticated by
+# the operator's gh login and git credential helper, not by a pool account's.
+# Check only: the operator's git config and login are never edited here.
+step_operator_push_auth() {
+  local helpers
+  if GH_CONFIG_DIR="$GH_CONFIG_DIR" "$GH_BIN" auth status >/dev/null 2>&1; then
+    ok "operator push credentials: gh login for $OPERATOR"
+  else
+    miss "operator push credentials: no working gh login for $OPERATOR in $GH_CONFIG_DIR (run: gh auth login)"
+  fi
+  helpers=$(git config --global --get-all "$CRED_KEY" 2>/dev/null; git config --global --get-all credential.helper 2>/dev/null)
+  if [[ -n "$helpers" ]]; then
+    ok "operator push credentials: git credential helper for $OPERATOR"
+  else
+    miss "operator push credentials: no git credential helper for $OPERATOR (run: git config --global --replace-all '$CRED_KEY' '$(cred_helper_value)')"
+  fi
+}
+
 # --- 3. models allowlist --------------------------------------------------------
 step_models() {
   local u pat
@@ -265,6 +286,7 @@ step_nm_config() {
 echo "fm-agy-pool-setup: mode=$MODE operator=$OPERATOR pool=${POOL_USERS[*]:-<none>}"
 step_acl
 step_git_auth
+step_operator_push_auth
 step_models
 step_run_log
 step_nm_config

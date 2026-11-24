@@ -1157,6 +1157,20 @@ test_non_code_failures_report_blocker_and_never_restart() {
   pass "fm-deliver reports the specific non-code blocker and never restarts the run blind"
 }
 
+test_push_auth_blocker_names_the_operator_check() {
+  local sha tdir line
+  sha=$(setup_fixture task_opauth)
+  tdir="$TMP_ROOT/task_opauth"
+  mkdir -p "$tdir/config" "$tdir/agy-state"
+  make_failing_nm "$tdir" "fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+  deliver_env "$tdir" "$DELIVER" task_opauth run >/dev/null 2>&1
+  line=$(tail -n 1 "$tdir/state/task_opauth.status")
+  assert_contains "$line" "operator" "push-auth blocker must name the operator account"
+  assert_contains "$line" "fm-agy-pool-setup.sh check" "push-auth blocker must name the setup check"
+  assert_contains "$line" "operator push credentials" "push-auth blocker must name the exact check lines"
+  pass "fm-deliver push-auth blocker names the operator credential check"
+}
+
 test_non_gemini_task_is_untouched_by_gemini_plumbing() {
   local sha tdir
   sha=$(setup_fixture task_claude)
@@ -1523,6 +1537,7 @@ fm_test_run \
   test_herdr_visibility_for_nm_agy_and_gate_park \
   test_nm_agy_reads_role_file_without_daemon_env \
   test_non_code_failures_report_blocker_and_never_restart \
+  test_push_auth_blocker_names_the_operator_check \
   test_non_gemini_task_is_untouched_by_gemini_plumbing \
   test_nm_agy_defaults_are_neon_medium_without_record \
   test_blocker_kind_follows_pool_exit_75_cause \

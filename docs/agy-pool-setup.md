@@ -13,6 +13,7 @@ Gemini work runs from separate Linux accounts through the pool launcher, so the 
 
 - Access and default ACLs for each pool account on the no-mistakes worktrees directory, plus traverse access on its parent, so pool agents can work in run worktrees.
 - A git HTTPS credential helper in each pool account, backed by the operator's `gh` login, so a pool account's own clone or fetch of a private origin never stops at a login prompt.
+- The operator account's own push credentials (check only): a working `gh` login and a git credential helper, because `fm-deliver` runs no-mistakes, and so the push, as the operator. A failed push reports a blocker naming these `operator push credentials` check lines.
 - The models allowlist (`/etc/firstmate/gpro-models.conf`): Neon and Hydrogen rules naming the pool accounts, where listed order is the quota failover order.
 - Operator read access to the pool usage log and per-run logs.
 - A report of the no-mistakes reviewer and fixer configuration for Gemini runs, including whether `agent_path_override.antigravity` points at `bin/agy-pool/nm-agy`.

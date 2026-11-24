@@ -29,12 +29,22 @@ unset GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_CONFIG_COUNT
 HOME="$TMP_ROOT/poolhome" exec "\$@"
 EOF
 chmod +x "$TMP_ROOT/bin/stubsudo"
+# Stub gh: "auth status" succeeds only while the marker file exists.
+cat > "$TMP_ROOT/bin/gh" <<EOF
+#!/usr/bin/env bash
+[ "\$1 \$2" = "auth status" ] && [ -e "$TMP_ROOT/gh-logged-in" ]
+EOF
+chmod +x "$TMP_ROOT/bin/gh"
+touch "$TMP_ROOT/gh-logged-in"
+# The operator's own HOME is isolated so its git config is the test's to set.
+mkdir -p "$TMP_ROOT/ophome"
+printf '[credential "https://github.com"]\n\thelper = !gh auth git-credential\n' > "$TMP_ROOT/ophome/.gitconfig"
 
 run_setup() {
-  env POOL_CONF="$TMP_ROOT/pool.conf" MODELS_CONF="${MODELS:-$TMP_ROOT/models.conf}" \
+  env -u GIT_CONFIG_GLOBAL POOL_CONF="$TMP_ROOT/pool.conf" MODELS_CONF="${MODELS:-$TMP_ROOT/models.conf}" \
     FM_NM_WORKTREES="$TMP_ROOT/nm/worktrees" FM_NM_CONFIG="$TMP_ROOT/nm/config.yaml" \
     FM_AGY_USAGE_LOG="$TMP_ROOT/usage.jsonl" FM_AGY_STATE_DIR="$TMP_ROOT/state" \
-    FM_GH_CONFIG_DIR="$TMP_ROOT/gh" FM_GH_BIN=/usr/bin/gh \
+    FM_GH_CONFIG_DIR="$TMP_ROOT/gh" FM_GH_BIN="$TMP_ROOT/bin/gh" HOME="$TMP_ROOT/ophome" \
     FM_SETUP_SUDO="${SUDOCMD:-$TMP_ROOT/bin/stubsudo}" bash "$SETUP" "$@" 2>&1
 }
 
@@ -107,4 +117,22 @@ EOF
   pass "check reports a pool account that cannot traverse to the worktrees"
 }
 
-fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited test_unreachable_ancestor_is_not_reported_ok
+test_operator_push_credentials_are_checked() {
+  local out rc
+  out=$(run_setup check); rc=$?
+  grep -q 'ok      operator push credentials: gh login' <<<"$out" || { fail "operator gh login not confirmed: $out"; }
+  grep -q 'ok      operator push credentials: git credential helper' <<<"$out" || { fail "operator helper not confirmed: $out"; }
+  rm -f "$TMP_ROOT/gh-logged-in"
+  out=$(run_setup check); rc=$?
+  touch "$TMP_ROOT/gh-logged-in"
+  [[ $rc -eq 1 ]] || { fail "check must fail without an operator gh login (rc=$rc): $out"; }
+  grep -q 'MISSING operator push credentials: no working gh login' <<<"$out" || { fail "missing operator login not reported: $out"; }
+  mv "$TMP_ROOT/ophome/.gitconfig" "$TMP_ROOT/ophome/.gitconfig.off"
+  out=$(run_setup check); rc=$?
+  mv "$TMP_ROOT/ophome/.gitconfig.off" "$TMP_ROOT/ophome/.gitconfig"
+  [[ $rc -eq 1 ]] || { fail "check must fail without an operator credential helper (rc=$rc): $out"; }
+  grep -q 'MISSING operator push credentials: no git credential helper' <<<"$out" || { fail "missing operator helper not reported: $out"; }
+  pass "check verifies the operator's own push credentials"
+}
+
+fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited test_unreachable_ancestor_is_not_reported_ok test_operator_push_credentials_are_checked
