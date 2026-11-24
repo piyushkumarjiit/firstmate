@@ -1328,6 +1328,28 @@ EOF
   pass "background failover restart keeps --base-branch"
 }
 
+test_respond_on_running_run_writes_no_blocked_status() {
+  setup_fixture task_resp_run >/dev/null
+  local tdir="$TMP_ROOT/task_resp_run"
+  mkdir -p "$tdir/bin"
+  cat > "$tdir/bin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+cmd="${1:-} ${2:-}"
+if [[ "$cmd" == "axi status" ]]; then
+  printf 'run:\n  id: "1"\n  status: running\n'
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_REATTACH_MAX=0 \
+    "$DELIVER" task_resp_run respond approve >/dev/null 2>&1
+  assert_not_contains "$(cat "$tdir/state/task_resp_run.status")" "blocked" \
+    "answering a gate while the run keeps executing must not write a blocked record"
+  pass "respond on a still-running run writes no blocked status"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -1355,4 +1377,5 @@ fm_test_run \
   test_blocker_kind_follows_pool_exit_75_cause \
   test_run_passes_base_branch_from_meta \
   test_nm_agy_detects_review_role_from_stdin_prompt \
-  test_background_failover_restart_keeps_base_branch
+  test_background_failover_restart_keeps_base_branch \
+  test_respond_on_running_run_writes_no_blocked_status

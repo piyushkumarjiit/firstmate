@@ -1110,12 +1110,13 @@ case "$SUBCMD" in
     if [[ "${FM_DELIVER_FOREGROUND:-0}" == "1" ]]; then
       handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET"
     else
-      FM_DELIVER_REATTACH_MAX=0 handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET"
       post_status=$(cd "$WORKTREE" && no-mistakes axi status 2>/dev/null || true)
       if ! grep -q '^gate:' <<<"$post_status" &&
         { fm_nm_run_is_executing "$post_status" || grep -Eq '^[[:space:]]*awaiting_agent:' <<<"$post_status"; }; then
         ( handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET" ) </dev/null >> "$DRIVE_LOG" 2>&1 &
         echo "[fm-deliver] Run still executing after respond; watching it in background (PID $!), logging to $DRIVE_LOG" >> "$DRIVE_LOG"
+      else
+        handle_gate_or_outcome "$WORKTREE" "$STATUS_FILE" "$DRIVE_LOG" "$LOG_OFFSET"
       fi
     fi
     exit "$resolve_rc"
