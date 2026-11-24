@@ -34,6 +34,10 @@
 #                                   and prints the command instead
 set -uo pipefail
 
+SETUP_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SETUP_DIR/fm-timeout-lib.sh"
+
 MODE=check
 case "${1:-}" in
   ""|check) MODE=check ;;
@@ -186,17 +190,17 @@ step_git_auth() {
 # the operator's gh login and git credential helper, not by a pool account's.
 # Check only: the operator's git config and login are never edited here.
 step_operator_push_auth() {
-  local helpers
+  local filled
   if GH_CONFIG_DIR="$GH_CONFIG_DIR" "$GH_BIN" auth status --hostname github.com >/dev/null 2>&1; then
     ok "operator push credentials: gh login for $OPERATOR"
   else
     miss "operator push credentials: no working gh login for $OPERATOR in $GH_CONFIG_DIR (run: gh auth login)"
   fi
-  helpers=$(git config --global --get-all "$CRED_KEY" 2>/dev/null; git config --global --get-all credential.helper 2>/dev/null)
-  if grep -Eq 'auth git-credential|manager|osxkeychain|libsecret|wincred' <<<"$helpers"; then
+  filled=$(printf 'protocol=https\nhost=github.com\n\n' | GH_CONFIG_DIR="$GH_CONFIG_DIR" GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true fm_run_timed 20 git credential fill 2>/dev/null)
+  if grep -q '^password=.' <<<"$filled"; then
     ok "operator push credentials: git credential helper for $OPERATOR"
   else
-    miss "operator push credentials: no git credential helper for $OPERATOR (run: git config --global --replace-all '$CRED_KEY' '$(cred_helper_value)')"
+    miss "operator push credentials: no git credential for github.com served to $OPERATOR (run: git config --global --replace-all '$CRED_KEY' '$(cred_helper_value)')"
   fi
 }
 

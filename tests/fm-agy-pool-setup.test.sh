@@ -32,13 +32,14 @@ chmod +x "$TMP_ROOT/bin/stubsudo"
 # Stub gh: "auth status" succeeds only while the marker file exists.
 cat > "$TMP_ROOT/bin/gh" <<EOF
 #!/usr/bin/env bash
-[ "\$1 \$2" = "auth status" ] && [ -e "$TMP_ROOT/gh-logged-in" ]
+[ "\$1 \$2 \$3 \$4" = "auth status --hostname github.com" ] && [ -e "$TMP_ROOT/gh-logged-in" ]
 EOF
 chmod +x "$TMP_ROOT/bin/gh"
 touch "$TMP_ROOT/gh-logged-in"
 # The operator's own HOME is isolated so its git config is the test's to set.
 mkdir -p "$TMP_ROOT/ophome"
-printf '[credential "https://github.com"]\n\thelper = !gh auth git-credential\n' > "$TMP_ROOT/ophome/.gitconfig"
+printf '[credential]\n\thelper = store\n' > "$TMP_ROOT/ophome/.gitconfig"
+printf 'https://user:token@github.com\n' > "$TMP_ROOT/ophome/.git-credentials"
 
 run_setup() {
   env -u GIT_CONFIG_GLOBAL POOL_CONF="$TMP_ROOT/pool.conf" MODELS_CONF="${MODELS:-$TMP_ROOT/models.conf}" \
@@ -131,8 +132,21 @@ test_operator_push_credentials_are_checked() {
   out=$(run_setup check); rc=$?
   mv "$TMP_ROOT/ophome/.gitconfig.off" "$TMP_ROOT/ophome/.gitconfig"
   [[ $rc -eq 1 ]] || { fail "check must fail without an operator credential helper (rc=$rc): $out"; }
-  grep -q 'MISSING operator push credentials: no git credential helper' <<<"$out" || { fail "missing operator helper not reported: $out"; }
+  grep -q 'MISSING operator push credentials: no git credential for github.com' <<<"$out" || { fail "missing operator helper not reported: $out"; }
   pass "check verifies the operator's own push credentials"
+}
+
+test_operator_store_helper_with_github_entry_is_accepted() {
+  local out rc
+  mv "$TMP_ROOT/ophome/.gitconfig" "$TMP_ROOT/ophome/.gitconfig.off"
+  printf '[credential]\n\thelper = store\n' > "$TMP_ROOT/ophome/.gitconfig"
+  printf 'https://user:token@github.com\n' > "$TMP_ROOT/ophome/.git-credentials"
+  out=$(run_setup check); rc=$?
+  rm -f "$TMP_ROOT/ophome/.git-credentials"
+  mv "$TMP_ROOT/ophome/.gitconfig.off" "$TMP_ROOT/ophome/.gitconfig"
+  ! grep -q 'MISSING operator push credentials' <<<"$out" || { fail "store helper with a github.com entry rejected (rc=$rc): $out"; }
+  grep -q 'ok      operator push credentials: git credential' <<<"$out" || { fail "store helper not confirmed: $out"; }
+  pass "a store helper holding a github.com entry is accepted"
 }
 
 test_operator_cache_only_helper_is_rejected() {
@@ -143,8 +157,8 @@ test_operator_cache_only_helper_is_rejected() {
   out=$(run_setup check); rc=$?
   mv "$TMP_ROOT/ophome/.gitconfig.off" "$TMP_ROOT/ophome/.gitconfig"
   [[ $rc -eq 1 ]] || { fail "cache-only helper must fail the check (rc=$rc): $out"; }
-  grep -q 'MISSING operator push credentials: no git credential helper' <<<"$out" || { fail "cache-only helper not reported: $out"; }
+  grep -q 'MISSING operator push credentials: no git credential for github.com' <<<"$out" || { fail "cache-only helper not reported: $out"; }
   pass "a helper that cannot serve github.com is rejected"
 }
 
-fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited test_unreachable_ancestor_is_not_reported_ok test_operator_push_credentials_are_checked test_operator_cache_only_helper_is_rejected
+fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited test_unreachable_ancestor_is_not_reported_ok test_operator_push_credentials_are_checked test_operator_cache_only_helper_is_rejected test_operator_store_helper_with_github_entry_is_accepted
