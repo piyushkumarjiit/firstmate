@@ -447,7 +447,7 @@ family_for_basename() {
       printf '%s\n' hc
       ;;
     fm-argon-pack.test.sh|\
-    fm-agy-pool.test.sh|fm-agy-pool-setup.test.sh|\
+    fm-agy-pool.test.sh|fm-agy-pool-setup.test.sh|fm-agy-pool-provision.test.sh|\
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
     fm-busy-state.test.sh|fm-capacity.test.sh|fm-capacity-auto.test.sh|fm-lane-vitals.test.sh|\
     fm-classify-corr-token.test.sh|\
@@ -739,6 +739,7 @@ tests/fm-afk-return.test.sh 47380
 tests/fm-agy-harness.test.sh 50959
 tests/fm-agy-pool.test.sh 4000
 tests/fm-agy-pool-setup.test.sh 3000
+tests/fm-agy-pool-provision.test.sh 3000
 tests/fm-agy-primary-live-e2e.test.sh 75
 tests/fm-agy-primary.test.sh 45000
 tests/fm-agy-signals-live-e2e.test.sh 53
@@ -1687,6 +1688,9 @@ families_for_changed_path() {
       ;;
     bin/fm-agy-pool-setup.sh)
       printf '%s\n' "__script__:fm-agy-pool-setup.test.sh"
+      ;;
+    bin/fm-agy-pool-provision.sh)
+      printf '%s\n' "__script__:fm-agy-pool-provision.test.sh"
       ;;
     bin/fm-deliver.sh)
       printf '%s\n' "__script__:fm-deliver.test.sh"

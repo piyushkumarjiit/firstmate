@@ -75,6 +75,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-agy-pool.sh`         | Model-aware sticky account router behind `agy` calls: live quota, conversation affinity, account cap, and usage telemetry ([setup](agy-pool-setup.md)) |
 | `agy-pool/agy`           | The pool launcher symlink to `fm-agy-pool.sh`, keeping the live process named `agy` |
 | `agy-pool/nm-agy`        | no-mistakes antigravity entry point: maps the review and fix roles from `state/<task>.nm-roles`, then hands off to the pool |
+| `fm-agy-pool-provision.sh` | Root-only idempotent creation of the pool Linux users, shared group, system `agy` copy, ACLs, and sudoers rule ([setup](agy-pool-setup.md)) |
 | `fm-agy-pool-setup.sh`   | Read-only check or one idempotent apply of the pool accounts' grants, ACLs, and git credentials ([setup](agy-pool-setup.md)) |
 | `fm-pool-exit.sh`        | Free a finished pool builder's account slot by stopping the builder once its latest status is `done` |
 | `fm-deliver.sh`          | Drive no-mistakes validation, gates, and outcome for a pool-built ship as the operator account, refusing a blind restart after a non-code failure |

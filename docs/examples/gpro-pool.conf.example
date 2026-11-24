@@ -1,0 +1,7 @@
+# Example /etc/firstmate/gpro-pool.conf for the Gemini (agy) account pool.
+# Copy to /etc/firstmate/gpro-pool.conf and replace the placeholders.
+# One Linux username per line, one per Google AI Pro account.
+# Blank lines and lines starting with # are ignored; only the first word of a line is used.
+# Provision with: sudo bin/fm-agy-pool-provision.sh (see its header and docs/agy-pool-setup.md).
+gpro1
+gpro2
