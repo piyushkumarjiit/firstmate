@@ -12,7 +12,9 @@
 #                operator-side run worktrees.
 #   2. git-auth  each pool account gets a git HTTPS credential helper backed by
 #                the operator's gh login (read-only ACL on the gh config dir),
-#                so pushes from pool-account runs never hit a login prompt.
+#                so a pool account's own clone or fetch never hits a login
+#                prompt; the push is bin/fm-deliver.sh's, and it uses the
+#                operator's own git credential and gh login instead.
 #   3. models    the models allowlist maps Neon and Hydrogen models to accounts;
 #                its account order is the quota failover order.
 #   4. run-log   the operator can read the pool usage log and per-run logs.
