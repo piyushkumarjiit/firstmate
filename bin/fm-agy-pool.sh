@@ -150,7 +150,7 @@ allowed_users_for_model() {
 is_reserved_user() {
   local u="$1"
   [[ ! -f "$MODELS_CONF" ]] && return 1
-  grep -Ev '^\s*(#|$)' "$MODELS_CONF" | awk '{print $2}' | tr ',' '\n' | grep -Fxq "$u"
+  grep -Ev '^\s*(#|$)' "$MODELS_CONF" | awk '{for (i=2; i<=NF; i++) print $i}' | tr ',' '\n' | grep -Fxq "$u"
 }
 
 is_hydrogen_or_neon() {
@@ -263,6 +263,10 @@ pick_sticky_user() {
     fi
     if ! is_authenticated "$explicit_user"; then
       echo "[fm-agy-pool] ERROR: Requested user '$explicit_user' is not authenticated." >&2
+      return 1
+    fi
+    if is_user_exhausted "$explicit_user" "$model"; then
+      echo "[fm-agy-pool] ERROR: Requested user '$explicit_user' is marked exhausted for model '${model:-default}'." >&2
       return 1
     fi
     if ! (is_hydrogen_or_neon "$model" || is_reserved_user "$explicit_user"); then
@@ -480,7 +484,10 @@ is_user_allowed_for_model() {
     done
     return 1
   else
-    ! is_reserved_user "$user"
+    if is_reserved_user "$user"; then
+      return 1
+    fi
+    return 0
   fi
 }
 
@@ -536,46 +543,110 @@ case "${ROUTE_MODEL,,}" in
     ;;
 esac
 
+# Parse reset time from agy log tail:
+# - "Resets in 2h48m0s" / "reset in 45m10s" -> now + duration
+# - "Resets at <timestamp>" / "reset at <timestamp>" -> date -d epoch
+# Prints epoch > now, or 0 if unparsable.
+parse_reset_epoch_from_log() {
+  local text="${1:-}" now rst_epoch=0
+  now=$(now_epoch)
+
+  local dur_line
+  dur_line=$(grep -Eio 'resets?[[:space:]]+in[[:space:]]+[0-9]+[[:space:]]*[dhms]([[:space:]]*[0-9]+[[:space:]]*[dhms])*' <<<"$text" | tail -n 1 || true)
+  if [[ -n "$dur_line" ]]; then
+    local total_sec
+    total_sec=$(awk '
+      {
+        s = tolower($0)
+        sub(/^.*resets?[[:space:]]+in[[:space:]]+/, "", s)
+        total = 0
+        while (match(s, /^[[:space:]]*([0-9]+)[[:space:]]*([dhms])/, m)) {
+          val = m[1] + 0
+          unit = m[2]
+          if (unit == "d") total += val * 86400
+          else if (unit == "h") total += val * 3600
+          else if (unit == "m") total += val * 60
+          else if (unit == "s") total += val
+          s = substr(s, RSTART + RLENGTH)
+        }
+        print total
+      }' <<<"$dur_line")
+    if [[ "$total_sec" =~ ^[0-9]+$ ]] && (( total_sec > 0 )); then
+      echo $(( now + total_sec ))
+      return 0
+    fi
+  fi
+
+  local ts_line ts_val
+  ts_line=$(grep -Eio '(resets?[[:space:]]+at|until)[[:space:]]+[^[:space:]]+' <<<"$text" | tail -n 1 || true)
+  if [[ -n "$ts_line" ]]; then
+    ts_val=$(sed -E 's/^(resets?[[:space:]]+at|until)[[:space:]]+//I; s/[.,;]+$//' <<<"$ts_line")
+    rst_epoch=$(date -d "$ts_val" +%s 2>/dev/null || echo 0)
+    if [[ "$rst_epoch" =~ ^[0-9]+$ ]] && (( rst_epoch > now )); then
+      echo "$rst_epoch"
+      return 0
+    fi
+  fi
+
+  echo 0
+}
+
 # Active account cap: at most FM_AGY_MAX_ACTIVE pool accounts run at once
 # (default 2, so one account can build on Flash while another reviews or
 # fixes on Neon/Hydrogen). Per-account process check only, no network calls.
 MAX_ACTIVE="${FM_AGY_MAX_ACTIVE:-2}"
-mapfile -t ACTIVE_USERS < <(find_active_pool_users)
-SELECTED_USER=""
-# Prefer reusing an account that is already active and fits this request.
-for ACTIVE_USER in "${ACTIVE_USERS[@]}"; do
-  [[ -n "$EXPLICIT_USER" && "$EXPLICIT_USER" != "$ACTIVE_USER" ]] && continue
-  is_user_allowed_for_model "$ACTIVE_USER" "$ROUTE_MODEL" || continue
-  is_user_exhausted "$ACTIVE_USER" "$ROUTE_MODEL" && continue
-  SELECTED_USER="$ACTIVE_USER"
-  break
-done
-if [[ -z "$SELECTED_USER" ]]; then
-  if (( ${#ACTIVE_USERS[@]} >= MAX_ACTIVE )); then
-    echo "[fm-agy-pool] ERROR: ${#ACTIVE_USERS[@]} pool accounts already active (${ACTIVE_USERS[*]}), none fit model '${ROUTE_MODEL:-default}'${EXPLICIT_USER:+ / account '$EXPLICIT_USER'}; cap is $MAX_ACTIVE (FM_AGY_MAX_ACTIVE)." >&2
-    exit 75
+
+select_pool_user() {
+  local active_users=() active_user picked=""
+  mapfile -t active_users < <(find_active_pool_users)
+  # Prefer reusing an account that is already active and fits this request.
+  for active_user in "${active_users[@]}"; do
+    [[ -n "$EXPLICIT_USER" && "$EXPLICIT_USER" != "$active_user" ]] && continue
+    is_user_allowed_for_model "$active_user" "$ROUTE_MODEL" || continue
+    is_user_exhausted "$active_user" "$ROUTE_MODEL" && continue
+    picked="$active_user"
+    break
+  done
+  if [[ -z "$picked" ]]; then
+    if (( ${#active_users[@]} >= MAX_ACTIVE )); then
+      echo "[fm-agy-pool] ERROR: ${#active_users[@]} pool accounts already active (${active_users[*]}), none fit model '${ROUTE_MODEL:-default}'${EXPLICIT_USER:+ / account $EXPLICIT_USER}; cap is $MAX_ACTIVE (FM_AGY_MAX_ACTIVE)." >&2
+      return 75
+    fi
+    picked=$(pick_sticky_user "$ROUTE_MODEL" "$EXPLICIT_USER" || true)
   fi
-  SELECTED_USER=$(pick_sticky_user "$ROUTE_MODEL" "$EXPLICIT_USER" || true)
-fi
+  if [[ -z "$picked" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$picked"
+}
 
-if [[ -z "$SELECTED_USER" ]]; then
-  echo "[fm-agy-pool] ERROR: No eligible account in $POOL_CONF for model '${ROUTE_MODEL:-default}' above ${MIN_REMAINING_PCT}% remaining quota." >&2
-  exit 75
-fi
-
-BEFORE_PCT=$(get_remaining_pct "$SELECTED_USER" "$ROUTE_MODEL")
 TASK_LABEL="${FM_TASK_ID:-${PWD##*/}}"
-START_TS=$(now_epoch)
-RUN_LOG=$(mktemp /tmp/fm-agy-run.XXXXXX)
-trap 'rm -f "$RUN_LOG"' EXIT
-
-echo "[fm-agy-pool] Routing model '${ROUTE_MODEL:-default}' to '$SELECTED_USER' (${BEFORE_PCT}% remaining, floor=${MIN_REMAINING_PCT}%)..." >&2
+RUN_LOG_EPHEMERAL=1
+if [[ -n "${FM_AGY_RUN_LOG:-}" ]]; then
+  RUN_LOG="$FM_AGY_RUN_LOG"
+  RUN_LOG_EPHEMERAL=0
+  mkdir -p "$(dirname "$RUN_LOG")" 2>/dev/null || true
+  : >> "$RUN_LOG"
+  chmod 0644 "$RUN_LOG" 2>/dev/null || true
+else
+  RUN_LOG=$(mktemp /tmp/fm-agy-run.XXXXXX)
+  chmod 0644 "$RUN_LOG" 2>/dev/null || true
+fi
+SCHEMA_COPIES=()
+cleanup_pool_tmp() {
+  if [[ "$RUN_LOG_EPHEMERAL" -eq 1 ]]; then
+    rm -f "$RUN_LOG"
+  fi
+  if (( ${#SCHEMA_COPIES[@]} > 0 )); then
+    rm -f "${SCHEMA_COPIES[@]}"
+  fi
+}
+trap cleanup_pool_tmp EXIT
 umask 0002
 
 # A caller such as no-mistakes writes its --json-schema file private to the
 # operator (mode 600), which the pool account cannot read. Hand the pool a
 # readable copy instead; the schema holds no secrets.
-SCHEMA_COPIES=()
 _fix_args=()
 _want_schema=0
 for _a in "${AGY_ARGS[@]}"; do
@@ -593,7 +664,6 @@ for _a in "${AGY_ARGS[@]}"; do
   _fix_args+=("$_a")
 done
 AGY_ARGS=("${_fix_args[@]}")
-trap 'rm -f "$RUN_LOG" "${SCHEMA_COPIES[@]}"' EXIT
 
 # sudo's env_reset drops the worker environment, so forward what a firstmate
 # worker needs: PATH (node-based tools such as tasks-axi live under the
@@ -638,7 +708,6 @@ mirror_trust() {
     jq --arg a "$A" --arg b "$B" ".trustedWorkspaces = (((.trustedWorkspaces // []) + [\$a, \$b]) | unique)" "$f" > "$t" &&
     mv "$t" "$f"' 2>/dev/null || true
 }
-if [[ "${AGY_ARGS[0]:-}" != models ]]; then mirror_trust; fi
 
 # Firstmate's scripts write task records through mktemp+mv, which leaves each
 # record mode 0600 and owned by its writer. Run by the worker as the pool
@@ -697,7 +766,6 @@ keep_group_access() {
     while [ -d "/proc/$WATCH_PID" ]; do sweep; sleep 0.5; done
     sweep' </dev/null >/dev/null 2>&1 &
 }
-if [[ "${AGY_ARGS[0]:-}" != models ]]; then keep_group_access; fi
 
 # Interactive worker sessions deliver steering messages mid-turn: agy's default
 # "Queue" mode holds a typed message until the whole turn ends (observed: over
@@ -708,64 +776,139 @@ if [[ "${AGY_ARGS[0]:-}" != models ]]; then keep_group_access; fi
 # The same per-launch settings also switch off agy's end-of-turn feedback survey
 # ("How's the CLI experience so far?"), which otherwise replaces the idle input
 # row and makes firstmate's exit and steering checks read the screen as unknown.
+IS_INTERACTIVE=0
+for _a in "${AGY_ARGS[@]}"; do
+  case "$_a" in
+    --prompt-interactive|--prompt-interactive=*|-i) IS_INTERACTIVE=1 ;;
+  esac
+done
+
 add_queued_messages_setting() {
-  local mode="${FM_AGY_QUEUED_MESSAGES:-send-immediately}" a interactive=0 json
+  local mode="${FM_AGY_QUEUED_MESSAGES:-send-immediately}" a json
   for a in "${AGY_ARGS[@]}"; do
     case "$a" in
       --settings|--settings=*) return 0 ;;
-      --prompt-interactive|--prompt-interactive=*|-i) interactive=1 ;;
     esac
   done
-  (( interactive )) || return 0
+  (( IS_INTERACTIVE )) || return 0
   json='"showFeedbackSurvey":false'
   [[ "$mode" == queue ]] || json="\"queuedMessages\":\"$mode\",$json"
   AGY_ARGS+=(--settings "{$json}")
 }
 add_queued_messages_setting
 
-RUN_CMD=(sudo -H -u "$SELECTED_USER"
-  /usr/bin/env -u GEMINI_API_KEY -u GOOGLE_API_KEY -u ANTHROPIC_BASE_URL -u OPENAI_BASE_URL -u LITELLM_BASE_URL
-  "${FORWARD_ENV[@]}"
-  "$AGY_BIN" "${AGY_ARGS[@]}")
+QUOTA_EXHAUSTION_RE="(^|[[:space:]\"':])(429|RESOURCE_EXHAUSTED)([[:space:]\"':]|$)|(Individual quota reached|rate[ -]?limit exceeded|quota exceeded|out of quota)"
+RETRIED_AFTER_QUOTA=0
+MAX_ATTEMPTS=$(( ${#GPRO_USERS[@]} + 2 ))
+ATTEMPT=0
+EXIT_CODE=0
+KEPT_ACCESS_USERS=""
 
-set +e
-if [[ -t 0 && -t 1 ]]; then
-  # Interactive worker pane: agy's TUI needs a real terminal on stdout, and a
-  # pipe through tee leaves the pane blank. script(1) keeps the terminal and
-  # still records the session for quota-hit detection.
-  script -q -f -e -c "$(printf '%q ' "${RUN_CMD[@]}")" "$RUN_LOG"
-  EXIT_CODE=$?
-else
-  "${RUN_CMD[@]}" 2>&1 | tee "$RUN_LOG"
-  EXIT_CODE=${PIPESTATUS[0]}
-fi
-set -e
+while (( ATTEMPT < MAX_ATTEMPTS )); do
+  ATTEMPT=$(( ATTEMPT + 1 ))
+  SELECTED_USER=""
+  select_rc=0
+  SELECTED_USER=$(select_pool_user) || select_rc=$?
+  if [[ -z "$SELECTED_USER" ]]; then
+    if [[ $RETRIED_AFTER_QUOTA -eq 1 ]]; then
+      echo "[fm-agy-pool] ERROR: All eligible accounts for model '${ROUTE_MODEL:-default}' are exhausted." >&2
+      exit 75
+    fi
+    if [[ $select_rc -ne 75 ]]; then
+      echo "[fm-agy-pool] ERROR: No eligible account in $POOL_CONF for model '${ROUTE_MODEL:-default}' above ${MIN_REMAINING_PCT}% remaining quota." >&2
+    fi
+    exit 75
+  fi
 
-DURATION=$(( $(now_epoch) - START_TS ))
-(( DURATION < 1 )) && DURATION=1
+  BEFORE_PCT=$(get_remaining_pct "$SELECTED_USER" "$ROUTE_MODEL")
+  START_TS=$(now_epoch)
+  if [[ "$RUN_LOG_EPHEMERAL" -eq 1 ]]; then
+    : > "$RUN_LOG"
+  fi
+  chmod 0644 "$RUN_LOG" 2>/dev/null || true
+  RUN_LOG_OFFSET=$(wc -c < "$RUN_LOG" 2>/dev/null || echo 0)
 
-HIT_QUOTA="false"
-if [[ $EXIT_CODE -eq 42 ]]; then
-  HIT_QUOTA="true"
-elif [[ -f "$RUN_LOG" ]] && tail -n 50 "$RUN_LOG" | grep -Eiq "(^|[[:space:]\"':])(429|RESOURCE_EXHAUSTED)([[:space:]\"':]|$)|(rate[ -]?limit exceeded|quota exceeded|out of quota)"; then
-  HIT_QUOTA="true"
-fi
+  echo "[fm-agy-pool] Routing model '${ROUTE_MODEL:-default}' to '$SELECTED_USER' (${BEFORE_PCT}% remaining, floor=${MIN_REMAINING_PCT}%)..." >&2
 
-record_run "$SELECTED_USER" "$DURATION" "$HIT_QUOTA"
-AFTER_PCT=$(get_remaining_pct "$SELECTED_USER" "$ROUTE_MODEL")
+  if [[ "${AGY_ARGS[0]:-}" != models ]]; then
+    mirror_trust
+    case " $KEPT_ACCESS_USERS " in
+      *" $SELECTED_USER "*) ;;
+      *)
+        keep_group_access
+        KEPT_ACCESS_USERS="${KEPT_ACCESS_USERS} ${SELECTED_USER}"
+        ;;
+    esac
+  fi
 
-if [[ -d "$(dirname "$USAGE_LOG")" ]]; then
-  jq -nc \
-    --arg ts "$(date -Iseconds)" \
-    --arg user "$SELECTED_USER" \
-    --arg model "${ROUTE_MODEL:-default}" \
-    --arg task "$TASK_LABEL" \
-    --argjson dur "$DURATION" \
-    --argjson rc "$EXIT_CODE" \
-    --argjson pct "$AFTER_PCT" \
-    --argjson quota "$HIT_QUOTA" \
-    '{ts: $ts, provider: "google-ai-pro-direct", user: $user, model: $model, task: $task, duration_sec: $dur, exit_code: $rc, est_remaining_pct: $pct, quota_hit: $quota}' \
-    >> "$USAGE_LOG" 2>/dev/null || true
-fi
+  RUN_CMD=(sudo -H -u "$SELECTED_USER"
+    /usr/bin/env -u GEMINI_API_KEY -u GOOGLE_API_KEY -u ANTHROPIC_BASE_URL -u OPENAI_BASE_URL -u LITELLM_BASE_URL
+    "${FORWARD_ENV[@]}"
+    "$AGY_BIN" "${AGY_ARGS[@]}")
+
+  set +e
+  if [[ -t 0 && -t 1 ]]; then
+    # Interactive worker pane: agy's TUI needs a real terminal on stdout, and a
+    # pipe through tee leaves the pane blank. script(1) keeps the terminal and
+    # still records the session for quota-hit detection.
+    if [[ "$RUN_LOG_EPHEMERAL" -eq 0 ]]; then
+      script -q -f -a -e -c "$(printf '%q ' "${RUN_CMD[@]}")" "$RUN_LOG"
+    else
+      script -q -f -e -c "$(printf '%q ' "${RUN_CMD[@]}")" "$RUN_LOG"
+    fi
+    EXIT_CODE=$?
+  else
+    if [[ "$RUN_LOG_EPHEMERAL" -eq 0 ]]; then
+      "${RUN_CMD[@]}" 2>&1 | tee -a "$RUN_LOG"
+    else
+      "${RUN_CMD[@]}" 2>&1 | tee "$RUN_LOG"
+    fi
+    EXIT_CODE=${PIPESTATUS[0]}
+  fi
+  set -e
+
+  DURATION=$(( $(now_epoch) - START_TS ))
+  (( DURATION < 1 )) && DURATION=1
+
+  HIT_QUOTA="false"
+  QUOTA_LOG_MATCH="false"
+  tail_clean=""
+  if [[ -f "$RUN_LOG" ]]; then
+    tail_clean=$(tail -c +"$((RUN_LOG_OFFSET + 1))" "$RUN_LOG" 2>/dev/null | tail -n 50 | tr -d '\r' | sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' || true)
+  fi
+  if [[ -n "$tail_clean" ]] && grep -Eiq "$QUOTA_EXHAUSTION_RE" <<<"$tail_clean"; then
+    QUOTA_LOG_MATCH="true"
+    HIT_QUOTA="true"
+    rst_epoch=$(parse_reset_epoch_from_log "$tail_clean")
+    mark_account_exhausted "$SELECTED_USER" "$rst_epoch"
+    echo "[fm-agy-pool] Account '$SELECTED_USER' hit quota exhaustion; marked exhausted until ${rst_epoch:-default-window}." >&2
+  elif [[ $EXIT_CODE -eq 42 ]]; then
+    HIT_QUOTA="true"
+  fi
+
+  record_run "$SELECTED_USER" "$DURATION" "$HIT_QUOTA"
+  AFTER_PCT=$(get_remaining_pct "$SELECTED_USER" "$ROUTE_MODEL")
+
+  if [[ -d "$(dirname "$USAGE_LOG")" ]]; then
+    jq -nc \
+      --arg ts "$(date -Iseconds)" \
+      --arg user "$SELECTED_USER" \
+      --arg model "${ROUTE_MODEL:-default}" \
+      --arg task "$TASK_LABEL" \
+      --argjson dur "$DURATION" \
+      --argjson rc "$EXIT_CODE" \
+      --argjson pct "$AFTER_PCT" \
+      --argjson quota "$HIT_QUOTA" \
+      '{ts: $ts, provider: "google-ai-pro-direct", user: $user, model: $model, task: $task, duration_sec: $dur, exit_code: $rc, est_remaining_pct: $pct, quota_hit: $quota}' \
+      >> "$USAGE_LOG" 2>/dev/null || true
+  fi
+
+  if [[ "$QUOTA_LOG_MATCH" == "true" && "$IS_INTERACTIVE" -eq 0 && -z "$EXPLICIT_USER" && "${AGY_ARGS[0]:-}" != models ]]; then
+    RETRIED_AFTER_QUOTA=1
+    echo "[fm-agy-pool] Rotating away from exhausted account '$SELECTED_USER' to next eligible account..." >&2
+    continue
+  fi
+  break
+done
 
 exit "$EXIT_CODE"

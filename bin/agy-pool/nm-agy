@@ -1,28 +1,197 @@
 #!/usr/bin/env bash
 # no-mistakes antigravity entry point (home-local).
 # no-mistakes pins one model for every antigravity call, so this splits roles:
-# the review phase keeps the pinned model (Neon), and every other call, such as
-# the review fixer, runs on Hydrogen. Then hands off to the pool launcher.
+# the review phase uses FM_NM_REVIEW_MODEL (default gemini-4-neon-medium), and
+# every other call, such as the review fixer, uses FM_NM_FIX_MODEL (default
+# gemini-4-hydrogen-high). Optional FM_NM_REVIEW_ACCOUNT / FM_NM_FIX_ACCOUNT
+# override the target pool account when set. Then hands off to fm-agy-pool.sh.
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+FM_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+FM_HOME="${FM_HOME:-$FM_ROOT}"
 REVIEW_MODEL=${FM_NM_REVIEW_MODEL:-gemini-4-neon-medium}
 FIX_MODEL=${FM_NM_FIX_MODEL:-gemini-4-hydrogen-high}
+REVIEW_ACCOUNT=${FM_NM_REVIEW_ACCOUNT:-}
+FIX_ACCOUNT=${FM_NM_FIX_ACCOUNT:-}
 is_review=0
 for a in "$@"; do
   case "$a" in *"Focus findings on risks introduced by changed code"*) is_review=1 ;; esac
 done
-model=$FIX_MODEL
-[[ $is_review -eq 1 ]] && model=$REVIEW_MODEL
+if [[ $is_review -eq 1 ]]; then
+  model=$REVIEW_MODEL
+  account=$REVIEW_ACCOUNT
+  from_config=${FM_NM_REVIEW_FROM_CONFIG:-0}
+else
+  model=$FIX_MODEL
+  account=$FIX_ACCOUNT
+  from_config=${FM_NM_FIX_FROM_CONFIG:-0}
+fi
 args=()
-skip=0
+skip_next=""
+seen_model=0
 for a in "$@"; do
-  if [[ $skip -eq 1 ]]; then args+=("$model"); skip=0; continue; fi
+  if [[ -n "$skip_next" ]]; then
+    if [[ "$skip_next" == "model" ]]; then
+      args+=("$model")
+      seen_model=1
+    fi
+    skip_next=""
+    continue
+  fi
   case "$a" in
-    --model) args+=("$a"); skip=1 ;;
-    --model=*) args+=("--model=$model") ;;
+    --model) args+=("$a"); skip_next="model" ;;
+    --model=*) args+=("--model=$model"); seen_model=1 ;;
+    --account|--user)
+      if [[ -n "$account" || "$from_config" == "1" ]]; then
+        skip_next="account"
+      else
+        args+=("$a")
+      fi
+      ;;
+    --account=*|--user=*)
+      if [[ -n "$account" || "$from_config" == "1" ]]; then
+        :
+      else
+        args+=("$a")
+      fi
+      ;;
     *) args+=("$a") ;;
   esac
 done
-line="[nm-agy] $(date -u +%FT%TZ) cwd=$PWD role=$([[ $is_review -eq 1 ]] && echo review || echo fix) model=$model"
+if [[ $seen_model -eq 0 ]]; then
+  args+=(--model "$model")
+fi
+if [[ -n "$account" ]]; then
+  args+=(--account "$account")
+fi
+line="[nm-agy] $(date -u +%FT%TZ) cwd=$PWD role=$([[ $is_review -eq 1 ]] && echo review || echo fix) model=$model${account:+ account=$account}"
 echo "$line" >&2
-echo "$line" >> /home/agentic/firstmate/logs/nm-agy.log 2>/dev/null || true
-exec /home/agentic/firstmate/bin/fm-agy-pool.sh "${args[@]}"
+if [[ -d "$FM_HOME/logs" ]]; then
+  echo "$line" >> "$FM_HOME/logs/nm-agy.log" 2>/dev/null || true
+fi
+POOL_BIN="${FM_AGY_POOL_BIN:-$FM_ROOT/bin/fm-agy-pool.sh}"
+
+# Optional Herdr visibility: when Herdr is installed and the branch maps to a
+# task with backend=herdr and herdr_workspace_id=, open or reuse a role/model/task
+# tab, stream the live run log read-only, and report agent lifecycle.
+# Best effort only: never fails or delays the review/fix call itself.
+FM_STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+FM_DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+role_name=$([[ $is_review -eq 1 ]] && echo review || echo fix)
+
+run_herdr_bounded() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 3 "$@"
+  else
+    "$@"
+  fi
+}
+
+herdr_pane=""
+herdr_agent_label="${role_name}:${model}"
+herdr_log_file=""
+
+setup_herdr_tab() {
+  [[ "${FM_NM_HERDR_TAB:-on}" != off ]] || return 0
+  command -v herdr >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  [[ -d "$FM_STATE" ]] || return 0
+
+  local meta_file="" backend="" ws="" session="" task=""
+  if [[ -n "${FM_TASK_ID:-}" && -f "$FM_STATE/${FM_TASK_ID}.meta" ]]; then
+    meta_file="$FM_STATE/${FM_TASK_ID}.meta"
+    task="$FM_TASK_ID"
+  else
+    local branch=""
+    branch=$(git -C "$PWD" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+    [[ -n "$branch" && "$branch" != "HEAD" ]] || return 0
+    local cand cand_branch
+    for cand in "$FM_STATE"/*.meta; do
+      [[ -f "$cand" ]] || continue
+      cand_branch=$(grep -E '^branch=' "$cand" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+      if [[ "$cand_branch" == "$branch" ]]; then
+        meta_file="$cand"
+        task=$(basename "$cand" .meta)
+        break
+      fi
+    done
+  fi
+  [[ -n "$meta_file" && -n "$task" ]] || return 0
+
+  backend=$(grep -E '^backend=' "$meta_file" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+  [[ "$backend" == "herdr" ]] || return 0
+  ws=$(grep -E '^herdr_workspace_id=' "$meta_file" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+  [[ -n "$ws" ]] || return 0
+  session=$(grep -E '^herdr_session=' "$meta_file" 2>/dev/null | head -n 1 | cut -d= -f2- || true)
+  if [[ -n "$session" && -z "${HERDR_SESSION:-}" ]]; then
+    export HERDR_SESSION="$session"
+  fi
+
+  mkdir -p "$FM_DATA/$task" 2>/dev/null || return 0
+  herdr_log_file="$FM_DATA/$task/nm-${role_name}.log"
+  : >> "$herdr_log_file" 2>/dev/null || return 0
+  chmod 0644 "$herdr_log_file" 2>/dev/null || true
+  printf '%s\n' "$line" >> "$herdr_log_file" 2>/dev/null || true
+
+  local tab_file="$FM_DATA/$task/nm-${role_name}-tab"
+  local tab_label="${role_name}: ${task} (${model})"
+  local pane="" tab_id=""
+  if [[ -s "$tab_file" ]]; then
+    IFS=$'\t' read -r pane tab_id < "$tab_file" || true
+    if [[ -n "$pane" ]] && run_herdr_bounded herdr pane get "$pane" >/dev/null 2>&1; then
+      if [[ -n "$tab_id" ]]; then
+        run_herdr_bounded herdr tab rename "$tab_id" "$tab_label" >/dev/null 2>&1 || true
+      fi
+      herdr_pane="$pane"
+    else
+      pane=""
+    fi
+  fi
+
+  if [[ -z "$pane" ]]; then
+    local out
+    out=$(run_herdr_bounded herdr tab create --workspace "$ws" --label "$tab_label" --cwd "$FM_DATA/$task" --no-focus 2>/dev/null || true)
+    pane=$(jq -r '.result.root_pane.pane_id // empty' <<<"$out" 2>/dev/null || true)
+    tab_id=$(jq -r '.result.tab.tab_id // .result.tab_id // empty' <<<"$out" 2>/dev/null || true)
+    [[ -n "$pane" ]] || return 0
+    printf '%s\t%s\n' "$pane" "$tab_id" > "$tab_file" 2>/dev/null || true
+    local cmd
+    # shellcheck disable=SC2016  # $! and $tp expand in the tab shell, not here
+    printf -v cmd 'clear; echo %q; tail -n 60 -F %q & tp=$!; while [ -e %q ]; do sleep 5; done; kill $tp 2>/dev/null; exit' \
+      "${role_name} (${model}) for ${task} (read-only view; closes at cleanup)" "$herdr_log_file" "$meta_file"
+    run_herdr_bounded herdr pane run "$pane" "$cmd" >/dev/null 2>&1 || true
+    herdr_pane="$pane"
+  fi
+
+  printf '%s\t%s\n' "$herdr_pane" "$herdr_agent_label" > "$FM_DATA/$task/nm-active-tab" 2>/dev/null || true
+  run_herdr_bounded herdr pane report-agent "$herdr_pane" \
+    --source "firstmate:nm-agy" --agent "$herdr_agent_label" --state working >/dev/null 2>&1 || true
+}
+
+setup_herdr_tab || true
+
+if [[ -n "$herdr_pane" ]]; then
+  log_offset=$(wc -c < "$herdr_log_file" 2>/dev/null || echo 0)
+  set +e
+  FM_AGY_RUN_LOG="$herdr_log_file" "$POOL_BIN" "${args[@]}"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]]; then
+    run_herdr_bounded herdr pane report-agent "$herdr_pane" \
+      --source "firstmate:nm-agy" --agent "$herdr_agent_label" --state idle >/dev/null 2>&1 || true
+  else
+    msg="failed (exit $rc)"
+    tail_slice=""
+    if [[ -f "$herdr_log_file" ]]; then
+      tail_slice=$(tail -c +"$((log_offset + 1))" "$herdr_log_file" 2>/dev/null | tail -n 50 || true)
+    fi
+    if [[ "$rc" -eq 75 ]] || grep -Eiq '(Individual quota reached|All eligible accounts|No eligible account|429|RESOURCE_EXHAUSTED|quota exceeded|rate[ -]?limit exceeded)' <<<"$tail_slice"; then
+      msg="quota exhausted ($model)"
+    fi
+    run_herdr_bounded herdr pane report-agent "$herdr_pane" \
+      --source "firstmate:nm-agy" --agent "$herdr_agent_label" --state blocked --message "$msg" >/dev/null 2>&1 || true
+  fi
+  exit "$rc"
+fi
+
+exec "$POOL_BIN" "${args[@]}"

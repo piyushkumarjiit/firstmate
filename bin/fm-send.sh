@@ -394,6 +394,7 @@ fm_send_resolve_target() { # <raw-target>
   TARGET_SELECTOR=""
   TARGET_REMOTE_ID=""
   TARGET_REMOTE_HOST=""
+  TARGET_MISSING_ENDPOINT=0
   RESOLUTION_TRIED=""
 
   meta=$(fm_backend_meta_for_selector "$raw" "$STATE" 2>/dev/null || true)
@@ -414,6 +415,13 @@ fm_send_resolve_target() { # <raw-target>
     RESOLUTION_TRIED="meta=$meta; backend=from-meta"
     target=$(fm_backend_target_of_meta "$meta")
     if [ -z "$target" ]; then
+      if [ "$(fm_meta_get "$meta" builder)" = pool ]; then
+        TARGET_MISSING_ENDPOINT=1
+        TARGET_META=$meta
+        TARGET_HARNESS=$(fm_meta_get "$meta" harness)
+        TARGET_SELECTOR=1
+        return 0
+      fi
       echo "error: no backend target recorded in $meta (tried $RESOLUTION_TRIED)" >&2
       return 1
     fi
@@ -571,7 +579,7 @@ while :; do
   esac
 done
 
-if [ "$TARGET_BACKEND" != remote ]; then
+if [ "${TARGET_MISSING_ENDPOINT:-0}" != 1 ] && [ "$TARGET_BACKEND" != remote ]; then
   fm_backend_validate "$TARGET_BACKEND" || exit 1
 fi
 
@@ -815,6 +823,37 @@ if [ -n "$RESOLVE_KEYS" ]; then
       exit 1
     fi
   done
+
+  if [ -n "$TARGET_META" ] && [ "$(fm_meta_get "$TARGET_META" builder)" = pool ]; then
+    pool_has_gate=0
+    pool_has_nongate=0
+    for k in $RESOLVE_KEYS; do
+      case "$k" in
+        gate-*) pool_has_gate=1 ;;
+        *) pool_has_nongate=1 ;;
+      esac
+    done
+    if [ "$pool_has_gate" -eq 1 ] && [ "$pool_has_nongate" -eq 1 ]; then
+      echo "error: cannot mix gate-* and non-gate --resolve-key values in one send for builder=pool task $RESOLVE_TASK_ID" >&2
+      exit 1
+    fi
+    if [ "$pool_has_gate" -eq 1 ]; then
+      if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DELIVER_SELF_ANNOUNCED=1 \
+        FM_DELIVER_GATE_KEYS="$RESOLVE_KEYS" \
+        "$SCRIPT_DIR/fm-deliver.sh" "$RESOLVE_TASK_ID" respond "$@"; then
+        exit 1
+      fi
+      if [ -n "$RESOLVE_HOLD_KEYS" ]; then
+        fm_send_feed_resolved_holds "$*" || exit 1
+      fi
+      exit 0
+    fi
+  fi
+fi
+
+if [ "${TARGET_MISSING_ENDPOINT:-0}" = 1 ]; then
+  echo "error: no backend target recorded in $TARGET_META (tried $RESOLUTION_TRIED)" >&2
+  exit 1
 fi
 
 # Close each answered decision in this home's ledger, only after the answer is

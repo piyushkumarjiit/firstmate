@@ -447,11 +447,13 @@ family_for_basename() {
       printf '%s\n' hc
       ;;
     fm-argon-pack.test.sh|\
+    fm-agy-pool.test.sh|\
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
     fm-busy-state.test.sh|fm-capacity.test.sh|fm-capacity-auto.test.sh|fm-lane-vitals.test.sh|\
     fm-classify-corr-token.test.sh|\
     fm-claude-account-quota.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
+    fm-deliver.test.sh|\
     fm-dispatch-resolve.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|\
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
@@ -735,6 +737,7 @@ tests/fm-afk-inject-e2e.test.sh 41958
 tests/fm-afk-pi-herdr-return-e2e.test.sh 52
 tests/fm-afk-return.test.sh 47380
 tests/fm-agy-harness.test.sh 50959
+tests/fm-agy-pool.test.sh 4000
 tests/fm-agy-primary-live-e2e.test.sh 75
 tests/fm-agy-primary.test.sh 45000
 tests/fm-agy-signals-live-e2e.test.sh 53
@@ -801,6 +804,7 @@ tests/fm-cursor-harness.test.sh 30088
 tests/fm-cursor-primary-live-e2e.test.sh 75
 tests/fm-cursor-primary.test.sh 69845
 tests/fm-daemon.test.sh 33606
+tests/fm-deliver.test.sh 8000
 tests/fm-devin-harness.test.sh 3725
 tests/fm-devin-signals-live-e2e.test.sh 49
 tests/fm-dispatch-resolve.test.sh 10051
@@ -1675,6 +1679,14 @@ families_for_changed_path() {
       ;;
     bin/fm-dispatch-resolve.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
+      ;;
+    bin/fm-agy-pool.sh|bin/agy-pool/*)
+      printf '%s\n' "__script__:fm-agy-pool.test.sh"
+      printf '%s\n' "__script__:fm-deliver.test.sh"
+      ;;
+    bin/fm-deliver.sh)
+      printf '%s\n' "__script__:fm-deliver.test.sh"
+      printf '%s\n' "__script__:fm-send-resolve-key.test.sh"
       ;;
     bin/fm-capacity.sh)
       printf '%s\n' "__script__:fm-capacity.test.sh"

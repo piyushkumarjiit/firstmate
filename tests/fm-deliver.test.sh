@@ -431,6 +431,391 @@ EOF2
   pass "ready fires only on a fresh committed report without a run for that head"
 }
 
+test_respond_normalizes_supervisor_forms() {
+  local sha
+  sha=$(setup_fixture task_norm)
+  local tdir="$TMP_ROOT/task_norm"
+  mkdir -p "$tdir/bin"
+
+  local nm_log="$tdir/nm.log"
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$nm_log"
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+
+  # 1. Single-string supervisor form: "fix findings=a,b ignore=c"
+  echo "needs-decision [at=100] [key=gate-review]: a, b, c" >> "$tdir/state/task_norm.status"
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" \
+    "$DELIVER" task_norm respond "fix findings=a,b ignore=c" >/dev/null 2>&1
+  assert_contains "$(cat "$nm_log")" "axi respond --action fix --findings a,b --ignore c" \
+    "supervisor string must normalize to axi respond flags"
+  assert_contains "$(grep 'resolved.*\[key=gate-review\]' "$tdir/state/task_norm.status")" \
+    "firstmate responded fix findings=a,b ignore=c" \
+    "resolved line must record normalized action and ids"
+
+  # 2. Separate token args: approve reason=looks good
+  : > "$nm_log"
+  echo "needs-decision [at=101] [key=gate-approval]: confirm" >> "$tdir/state/task_norm.status"
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" \
+    "$DELIVER" task_norm respond approve reason="all checks green" >/dev/null 2>&1
+  assert_contains "$(cat "$nm_log")" "axi respond --action approve --reason all checks green" \
+    "approve with reason must normalize to --action approve --reason"
+
+  # 3. Unrecognized or banned answer refuses before writing resolved
+  : > "$nm_log"
+  echo "needs-decision [at=102] [key=gate-final]: pick" >> "$tdir/state/task_norm.status"
+  local rc=0
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" \
+    "$DELIVER" task_norm respond "maybe later" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || fail "unrecognized answer must exit 1, got $rc"
+  [ ! -s "$nm_log" ] || fail "unrecognized answer must not invoke no-mistakes"
+  ! grep -q 'resolved.*\[key=gate-final\]' "$tdir/state/task_norm.status" \
+    || fail "unrecognized answer must not write resolved line"
+
+  rc=0
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" \
+    "$DELIVER" task_norm respond "yes" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || fail "banned yes answer must exit 1, got $rc"
+
+  pass "respond normalizes supervisor forms and refuses invalid/banned answers before writing resolved"
+}
+
+test_run_resolves_roles_and_nm_agy_consumes_them() {
+  local sha
+  sha=$(setup_fixture task_roles)
+  local tdir="$TMP_ROOT/task_roles"
+  mkdir -p "$tdir/bin" "$tdir/config" "$tdir/logs"
+
+  cat > "$tdir/config/crew-dispatch.json" <<'JSON'
+{
+  "roles": {
+    "review": [
+      { "harness": "agy", "model": "gemini-4-neon-high", "account": "neon_acct" },
+      { "harness": "agy", "model": "gemini-3.8-flash-high" }
+    ],
+    "fix": [
+      { "harness": "agy", "model": "gemini-4-hydrogen-high" }
+    ]
+  },
+  "default": { "harness": "agy", "model": "gemini-3.8-flash-high" }
+}
+JSON
+
+  # Fake pool wrapper called by nm-agy
+  cat > "$tdir/bin/fake-pool" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$tdir/pool-args.log"
+exit 0
+EOF
+  chmod +x "$tdir/bin/fake-pool"
+
+  # Stub no-mistakes that invokes the real bin/agy-pool/nm-agy for review and fix
+  local nm_agy="$ROOT/bin/agy-pool/nm-agy"
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-} \${2:-}" == "axi run" ]]; then
+  printf 'REVIEW_MODEL=%s REVIEW_ACCT=%s FIX_MODEL=%s FIX_ACCT=%s\n' \
+    "\${FM_NM_REVIEW_MODEL:-}" "\${FM_NM_REVIEW_ACCOUNT:-}" \
+    "\${FM_NM_FIX_MODEL:-}" "\${FM_NM_FIX_ACCOUNT:-}" > "$tdir/env.log"
+  FM_HOME="$tdir" FM_AGY_POOL_BIN="$tdir/bin/fake-pool" \
+    "$nm_agy" --account piyushk --model gemini-4-neon-medium -p "Focus findings on risks introduced by changed code"
+  FM_HOME="$tdir" FM_AGY_POOL_BIN="$tdir/bin/fake-pool" \
+    "$nm_agy" --account piyushk --model gemini-4-neon-medium -p "Fix finding f1"
+  exit 0
+elif [[ "\${1:-} \${2:-}" == "axi status" ]]; then
+  printf 'run:\n  id: "01ROLES"\n  status: completed\noutcome: passed\nbranch_sync:\n  next_action:\n    command: "no-mistakes axi sync"\n'
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_CONFIG_OVERRIDE="$tdir/config" FM_AGY_STATE_DIR="$tdir/agy-state" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 \
+    "$DELIVER" task_roles run >/dev/null 2>&1 || true
+
+  local env_out pool_out
+  env_out=$(cat "$tdir/env.log")
+  assert_contains "$env_out" "REVIEW_MODEL=gemini-4-neon-high" "fm-deliver must export FM_NM_REVIEW_MODEL from roles.review"
+  assert_contains "$env_out" "REVIEW_ACCT=neon_acct" "fm-deliver must export FM_NM_REVIEW_ACCOUNT from roles.review"
+  assert_contains "$env_out" "FIX_MODEL=gemini-4-hydrogen-high" "fm-deliver must export FM_NM_FIX_MODEL from roles.fix"
+  assert_contains "$env_out" "FIX_ACCT=" "omitted account must leave FM_NM_FIX_ACCOUNT empty"
+
+  pool_out=$(cat "$tdir/pool-args.log")
+  assert_contains "$pool_out" "--model gemini-4-neon-high" "nm-agy must use FM_NM_REVIEW_MODEL"
+  assert_contains "$pool_out" "--account neon_acct" "nm-agy must pass configured review account"
+  assert_contains "$pool_out" "--model gemini-4-hydrogen-high" "nm-agy must use FM_NM_FIX_MODEL"
+  # For fix (account omitted in role config), hardcoded --account piyushk must be stripped
+  local fix_line
+  fix_line=$(grep 'Fix finding f1' <<<"$pool_out" || true)
+  [ -n "$fix_line" ] || fail "missing fix call in pool args: $pool_out"
+  assert_not_contains "$fix_line" "piyushk" "omitted role account must strip hardcoded --account so pool can rotate"
+
+  # Absent roles preserves legacy defaults and incoming --account
+  rm -f "$tdir/config/crew-dispatch.json" "$tdir/pool-args.log" "$tdir/env.log"
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_CONFIG_OVERRIDE="$tdir/config" FM_AGY_STATE_DIR="$tdir/agy-state" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 \
+    "$DELIVER" task_roles run >/dev/null 2>&1 || true
+  assert_contains "$(cat "$tdir/env.log")" "REVIEW_MODEL= REVIEW_ACCT= FIX_MODEL= FIX_ACCT=" \
+    "absent roles must not export FM_NM_* overrides"
+  pool_out=$(cat "$tdir/pool-args.log")
+  assert_contains "$pool_out" "--account piyushk --model gemini-4-neon-medium" \
+    "absent roles must preserve nm-agy legacy model and incoming account"
+
+  pass "fm-deliver run resolves roles.review/roles.fix for nm-agy and preserves defaults when absent"
+}
+
+test_quota_failover_restarts_with_next_role_model() {
+  local sha
+  sha=$(setup_fixture task_failover)
+  local tdir="$TMP_ROOT/task_failover"
+  mkdir -p "$tdir/bin" "$tdir/config" "$tdir/agy-state"
+
+  cat > "$tdir/config/crew-dispatch.json" <<'JSON'
+{
+  "roles": {
+    "review": [
+      { "harness": "agy", "model": "gemini-4-neon-high" },
+      { "harness": "agy", "model": "gemini-3.8-flash-high" }
+    ],
+    "fix": [
+      { "harness": "agy", "model": "gemini-4-hydrogen-high" },
+      { "harness": "agy", "model": "gemini-3.8-flash-high" }
+    ]
+  }
+}
+JSON
+
+  cat > "$tdir/pool.conf" <<'EOF'
+acct1
+EOF
+  cat > "$tdir/models.conf" <<'EOF'
+*neon* acct1
+EOF
+
+  # Attempt 1: review fails with Individual quota reached + all accounts exhausted -> outcome failed, branch_sync=pipeline_owned
+  # Attempt 2: after axi abort + axi sync --recover, runs on same head with gemini-3.8-flash-high and passes
+  cat > "$tdir/bin/no-mistakes" <<EOF
+#!/usr/bin/env bash
+cmd="\${1:-} \${2:-}"
+printf '%s|model=%s|head=%s\n' "\$cmd" "\${FM_NM_REVIEW_MODEL:-}" "\$(git rev-parse HEAD)" >> "$tdir/nm-calls.log"
+if [[ "\$cmd" == "axi run" ]]; then
+  if [[ "\${FM_NM_REVIEW_MODEL:-}" == "gemini-4-neon-high" ]]; then
+    echo "antigravity reported error: Individual quota reached. Resets in 2h0m0s." >&2
+    cat > "$tdir/agy-state/acct1.state.json" <<'JSON'
+{"user":"acct1","window_start":1000,"reset_at":9999999999,"used_sec":10,"budget_sec":5400,"exhausted":true}
+JSON
+    echo "1" > "$tdir/failed_once"
+    exit 1
+  fi
+  rm -f "$tdir/failed_once"
+  exit 0
+elif [[ "\$cmd" == "axi abort" ]]; then
+  rm -f "$tdir/failed_once"
+  echo "aborted" > "$tdir/aborted"
+  exit 0
+elif [[ "\$cmd" == "axi sync" ]]; then
+  echo "recovered" > "$tdir/recovered"
+  exit 0
+elif [[ "\$cmd" == "axi status" ]]; then
+  if [[ -f "$tdir/failed_once" ]]; then
+    cat <<'TOON'
+run:
+  id: "01FAIL"
+  status: failed
+outcome: failed
+branch_sync:
+  state: pipeline_owned
+  next_action:
+    command: "no-mistakes axi sync --recover"
+TOON
+  elif [[ -f "$tdir/aborted" && ! -f "$tdir/recovered" ]]; then
+    cat <<'TOON'
+branch_sync:
+  state: pipeline_owned
+  next_action:
+    command: "no-mistakes axi sync --recover"
+TOON
+  else
+    cat <<'TOON'
+run:
+  id: "01PASS"
+  status: completed
+outcome: passed
+branch_sync:
+  next_action:
+    command: "no-mistakes axi sync"
+TOON
+  fi
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_CONFIG_OVERRIDE="$tdir/config" FM_AGY_STATE_DIR="$tdir/agy-state" \
+    POOL_CONF="$tdir/pool.conf" MODELS_CONF="$tdir/models.conf" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 \
+    "$DELIVER" task_failover run >/dev/null 2>&1
+
+  local calls last_status
+  calls=$(cat "$tdir/nm-calls.log")
+  assert_contains "$calls" "axi run|model=gemini-4-neon-high|head=$sha" "first attempt must use primary model on submitted head"
+  assert_contains "$calls" "axi abort|" "failover must abort failed run"
+  assert_contains "$calls" "axi sync|" "failover must recover custody when pipeline_owned"
+  assert_contains "$calls" "axi run|model=gemini-3.8-flash-high|head=$sha" "second attempt must restart on same head with fallback model"
+
+  last_status=$(tail -n 1 "$tdir/state/task_failover.status")
+  assert_contains "$last_status" "done" "failover run must finish with done: $last_status"
+  assert_contains "$(cat "$tdir/state/task_failover.status")" "failing over to gemini-3.8-flash-high" \
+    "status log must record model failover notice"
+
+  pass "fm-deliver restarts on the same head with the next role fallback model when all accounts are exhausted"
+}
+
+test_herdr_visibility_for_nm_agy_and_gate_park() {
+  local sha
+  sha=$(setup_fixture task_herdr_vis)
+  local tdir="$TMP_ROOT/task_herdr_vis"
+  mkdir -p "$tdir/bin" "$tdir/nm-wt"
+  printf 'backend=herdr\nherdr_workspace_id=wH1\nherdr_session=sH1\n' >> "$tdir/state/task_herdr_vis.meta"
+
+  # Separate no-mistakes checkout on the same branch (simulates ~/.no-mistakes/worktrees/...)
+  git -C "$tdir/nm-wt" init -q -b "fm/task_herdr_vis"
+  git -C "$tdir/nm-wt" config user.email "test@example.com"
+  git -C "$tdir/nm-wt" config user.name "Test"
+  echo "x" > "$tdir/nm-wt/f.txt"
+  git -C "$tdir/nm-wt" add f.txt
+  git -C "$tdir/nm-wt" commit -q -m "nm mirror commit"
+
+  local herdr_log="$tdir/herdr.calls"
+  cat > "$tdir/bin/herdr" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$herdr_log"
+case "\${1:-} \${2:-}" in
+  "tab create")
+    echo '{"result":{"tab":{"tab_id":"tH1"},"root_pane":{"pane_id":"wH1:pH1"}}}'
+    exit 0
+    ;;
+  "pane get")
+    [[ -f "$tdir/pane_alive" ]] && exit 0
+    exit 1
+    ;;
+esac
+exit 0
+EOF
+  chmod +x "$tdir/bin/herdr"
+
+  cat > "$tdir/bin/fake-pool" <<'EOF'
+#!/usr/bin/env bash
+if [[ -n "${FM_AGY_RUN_LOG:-}" ]]; then
+  echo "live pool output line" >> "$FM_AGY_RUN_LOG"
+fi
+if [[ "${FAKE_POOL_MODE:-ok}" == "quota" ]]; then
+  echo "Individual quota reached. Resets in 1h0m0s." >> "${FM_AGY_RUN_LOG:-/dev/null}"
+  exit 75
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/fake-pool"
+
+  local nm_agy="$ROOT/bin/agy-pool/nm-agy"
+
+  # 1. First nm-agy review call from separate no-mistakes worktree opens tab, streams log, reports working -> idle
+  ( cd "$tdir/nm-wt" && env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_AGY_POOL_BIN="$tdir/bin/fake-pool" \
+    FM_NM_REVIEW_MODEL="gemini-4-neon-high" \
+    "$nm_agy" --model x -p "Focus findings on risks introduced by changed code" >/dev/null 2>&1 )
+
+  local hlog
+  hlog=$(cat "$herdr_log")
+  assert_contains "$hlog" "tab create --workspace wH1 --label review: task_herdr_vis (gemini-4-neon-high)" \
+    "nm-agy must open a tab labelled with role, model, and task"
+  assert_contains "$hlog" "pane run wH1:pH1" "nm-agy must stream live run output into the tab"
+  assert_contains "$hlog" "tail -n 60 -F" "tab command must stream run log read-only via tail"
+  assert_contains "$hlog" "pane report-agent wH1:pH1 --source firstmate:nm-agy --agent review:gemini-4-neon-high --state working" \
+    "nm-agy must report working while running"
+  assert_contains "$hlog" "pane report-agent wH1:pH1 --source firstmate:nm-agy --agent review:gemini-4-neon-high --state idle" \
+    "nm-agy must report idle on success"
+
+  local log_perm
+  log_perm=$(stat -c %a "$tdir/data/task_herdr_vis/nm-review.log")
+  [[ "$log_perm" == "644" || "$log_perm" == "664" ]] \
+    || fail "nm-review.log must be operator-readable (0644/0664), got $log_perm"
+  assert_contains "$(cat "$tdir/data/task_herdr_vis/nm-review.log")" "live pool output line" \
+    "run log must persist output for the Herdr tab"
+
+  # 2. Second nm-agy review call reuses the existing tab and reports blocked on quota exhaustion
+  : > "$herdr_log"
+  : > "$tdir/pane_alive"
+  local rc=0
+  ( cd "$tdir/nm-wt" && env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_AGY_POOL_BIN="$tdir/bin/fake-pool" FAKE_POOL_MODE=quota \
+    FM_NM_REVIEW_MODEL="gemini-4-neon-high" \
+    "$nm_agy" --model x -p "Focus findings on risks introduced by changed code" >/dev/null 2>&1 ) || rc=$?
+  [ "$rc" -eq 75 ] || fail "nm-agy must propagate pool exit code 75, got $rc"
+  hlog=$(cat "$herdr_log")
+  assert_not_contains "$hlog" "tab create" "second call must reuse the existing tab"
+  assert_contains "$hlog" "pane report-agent wH1:pH1 --source firstmate:nm-agy --agent review:gemini-4-neon-high --state blocked --message quota exhausted (gemini-4-neon-high)" \
+    "nm-agy must report blocked with quota message on quota exhaustion"
+
+  # 3. fm-deliver marks the task tab blocked "waiting on firstmate approval" when parked at a gate
+  : > "$herdr_log"
+  cat > "$tdir/bin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-} ${2:-}" == "axi status" ]]; then
+  cat <<'TOON'
+run:
+  id: "01GATE"
+  status: running
+gate:
+  step: review
+  findings[1]{id}:
+    f1
+TOON
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "$tdir/bin/no-mistakes"
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 \
+    "$DELIVER" task_herdr_vis run >/dev/null 2>&1 || true
+  hlog=$(cat "$herdr_log")
+  assert_contains "$hlog" "pane report-agent wH1:pH1 --source firstmate:nm-agy --agent review:gemini-4-neon-high --state blocked --message waiting on firstmate approval" \
+    "fm-deliver must mark the tab blocked waiting on firstmate approval when parked at a gate"
+
+  # 4. No-op when Herdr is absent (non-herdr backend)
+  sed -i 's/^backend=herdr/backend=tmux/' "$tdir/state/task_herdr_vis.meta"
+  : > "$herdr_log"
+  ( cd "$tdir/nm-wt" && env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_AGY_POOL_BIN="$tdir/bin/fake-pool" \
+    "$nm_agy" --model x -p "Focus findings on risks introduced by changed code" >/dev/null 2>&1 )
+  [ ! -s "$herdr_log" ] || fail "nm-agy must be a no-op for Herdr when backend != herdr, got: $(cat "$herdr_log")"
+
+  pass "nm-agy and fm-deliver project visible read-only tabs and report-agent lifecycle in Herdr"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -443,4 +828,8 @@ fm_test_run \
   test_respond_resolves_open_gate_key \
   test_run_intent_includes_firstmate_decisions \
   test_run_opens_progress_tab_on_herdr \
-  test_run_reattaches_while_run_in_progress
+  test_run_reattaches_while_run_in_progress \
+  test_respond_normalizes_supervisor_forms \
+  test_run_resolves_roles_and_nm_agy_consumes_them \
+  test_quota_failover_restarts_with_next_role_model \
+  test_herdr_visibility_for_nm_agy_and_gate_park

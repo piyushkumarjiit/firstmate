@@ -131,7 +131,7 @@ EOF
   local usage_calls="$fixture_dir/usage_calls.log"
   : > "$usage_calls"
 
-  # Refuse starting gpro2 via --user when gpro1 is active
+  # Refuse starting gpro2 via --user when gpro1 is active under cap=1
   local err rc=0
   err=$(env PATH="$fixture_dir/bin:$PATH" \
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
@@ -139,13 +139,14 @@ EOF
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
     FM_TEST_USAGE_LOG_FILE="$usage_calls" \
     FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_MAX_ACTIVE=1 \
     "$POOL" --user gpro2 -p hello 2>&1) || rc=$?
 
-  [ "$rc" -eq 75 ] || fail "starting second account when gpro1 active must exit 75, got $rc"
-  assert_contains "$err" "Another pool account ('gpro1') is currently active" "must name active account"
+  [ "$rc" -eq 75 ] || fail "starting second account when gpro1 active under cap=1 must exit 75, got $rc"
+  assert_contains "$err" "pool accounts already active (gpro1)" "must name active account"
   [ ! -s "$usage_calls" ] || fail "stub agy must NEVER be invoked with /usage on refusal path, got: $(cat "$usage_calls")"
 
-  # Refuse starting gpro2 via FM_AGY_USER when gpro1 is active
+  # Refuse starting gpro2 via FM_AGY_USER when gpro1 is active under cap=1
   rc=0
   err=$(env PATH="$fixture_dir/bin:$PATH" \
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
@@ -153,12 +154,25 @@ EOF
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
     FM_TEST_USAGE_LOG_FILE="$usage_calls" \
     FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_MAX_ACTIVE=1 \
     FM_AGY_USER=gpro2 \
     "$POOL" -p hello 2>&1) || rc=$?
 
-  [ "$rc" -eq 75 ] || fail "FM_AGY_USER for second account when gpro1 active must exit 75, got $rc"
-  assert_contains "$err" "Another pool account ('gpro1') is currently active" "FM_AGY_USER must name active account"
+  [ "$rc" -eq 75 ] || fail "FM_AGY_USER for second account when gpro1 active under cap=1 must exit 75, got $rc"
+  assert_contains "$err" "pool accounts already active (gpro1)" "FM_AGY_USER must name active account"
   [ ! -s "$usage_calls" ] || fail "stub agy must NEVER be invoked with /usage when FM_AGY_USER differs from active, got: $(cat "$usage_calls")"
+
+  # Under default cap=2, starting second account gpro2 is allowed when 1 account (gpro1) is active
+  rc=0
+  err=$(env PATH="$fixture_dir/bin:$PATH" \
+    POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
+    AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
+    FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
+    FM_TEST_USAGE_LOG_FILE="$usage_calls" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    "$POOL" --user gpro2 -p hello 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "default cap=2 must allow a second active account, got $rc: $err"
+  : > "$usage_calls"
 
   # Concurrent worker on same active account (gpro1) is allowed
   rc=0
@@ -895,6 +909,119 @@ EOF
   pass "large used_sec without exhausted never skips an account when FM_AGY_LOCAL_ESTIMATE is off"
 }
 
+test_individual_quota_exhaustion_and_model_allowlist_failover() {
+  local fixture_dir="$TMP_ROOT/individual_quota"
+  mkdir -p "$fixture_dir/bin" "$fixture_dir/state"
+
+  cat > "$fixture_dir/pool.conf" <<EOF
+gpro1
+piyushjiit
+piyushk
+EOF
+  # Space-separated allowlist for hydrogen, comma-separated for neon
+  cat > "$fixture_dir/models.conf" <<EOF
+*hydrogen* piyushjiit piyushk
+*neon* piyushjiit,piyushk
+EOF
+
+  cat > "$fixture_dir/bin/id" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "-u" ]]; then exec /usr/bin/id "$@"; fi
+exit 0
+EOF
+  chmod +x "$fixture_dir/bin/id"
+
+  cat > "$fixture_dir/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+TARGET_USER=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|-H) shift ;;
+    -u) TARGET_USER="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$TARGET_USER" exec "$@"
+EOF
+  chmod +x "$fixture_dir/bin/sudo"
+
+  cat > "$fixture_dir/bin/fake-pgrep" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+  chmod +x "$fixture_dir/bin/fake-pgrep"
+
+  # piyushjiit fails with Individual quota reached + stated reset duration; piyushk succeeds
+  local calls_log="$fixture_dir/calls.log"
+  cat > "$fixture_dir/bin/agy" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\${SUDO_TARGET_USER:-unknown}" >> "$calls_log"
+if [[ "\${SUDO_TARGET_USER:-}" == "piyushjiit" ]]; then
+  echo "antigravity reported error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h48m0s." >&2
+  exit 1
+fi
+echo "success on \$SUDO_TARGET_USER"
+exit 0
+EOF
+  chmod +x "$fixture_dir/bin/agy"
+
+  local before_ts out rc=0
+  before_ts=$(date +%s)
+  out=$(env PATH="$fixture_dir/bin:$PATH" \
+    POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
+    AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
+    FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    "$POOL" --model gemini-4-hydrogen-high -p hello 2>&1) || rc=$?
+
+  [ "$rc" -eq 0 ] || fail "pool must rotate from exhausted piyushjiit to piyushk and succeed, got $rc: $out"
+  assert_contains "$out" "success on piyushk" "second allowed account must run and succeed"
+  [ "$(cat "$calls_log")" = $'piyushjiit\npiyushk' ] || fail "expected piyushjiit then piyushk, got: $(cat "$calls_log")"
+
+  # Check piyushjiit state: exhausted=true and reset_at ~ before_ts + 10080 (2h48m0s)
+  local exh reset_at expected_min
+  exh=$(jq -r '.exhausted' "$fixture_dir/state/piyushjiit.state.json")
+  reset_at=$(jq -r '.reset_at' "$fixture_dir/state/piyushjiit.state.json")
+  [ "$exh" = "true" ] || fail "piyushjiit must be marked exhausted=true"
+  expected_min=$(( before_ts + 10070 ))
+  (( reset_at >= expected_min && reset_at <= before_ts + 10200 )) \
+    || fail "reset_at ($reset_at) should be ~2h48m from $before_ts"
+
+  # Flash (unrestricted) must not spill onto either space-separated reserved user (piyushjiit or piyushk)
+  cat > "$fixture_dir/state/gpro1.state.json" <<EOF
+{"user": "gpro1", "window_start": 1000, "reset_at": 9999999999, "used_sec": 0, "budget_sec": 5400, "exhausted": true}
+EOF
+  rc=0
+  out=$(env PATH="$fixture_dir/bin:$PATH" \
+    POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
+    AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
+    FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    "$POOL" --model gemini-3.8-flash-high -p hello 2>&1) || rc=$?
+  [ "$rc" -eq 75 ] || fail "flash must not spill onto space-separated reserved accounts, got $rc: $out"
+
+  # When all neon accounts also hit 429/RESOURCE_EXHAUSTED, pool exits 75
+  cat > "$fixture_dir/bin/agy" <<'EOF'
+#!/usr/bin/env bash
+echo "RESOURCE_EXHAUSTED: 429 quota exceeded" >&2
+exit 1
+EOF
+  chmod +x "$fixture_dir/bin/agy"
+  rc=0
+  out=$(env PATH="$fixture_dir/bin:$PATH" \
+    POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
+    AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
+    FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    "$POOL" --model gemini-4-neon-high -p hello 2>&1) || rc=$?
+  [ "$rc" -eq 75 ] || fail "exhausting all allowed accounts must exit 75, got $rc: $out"
+  assert_contains "$out" "All eligible accounts for model 'gemini-4-neon-high' are exhausted" \
+    "must report all accounts exhausted"
+
+  pass "Individual quota reached marks account until stated reset time and rotates across space/comma allowlists"
+}
+
 fm_test_run \
   test_symlink_refuses_claude_model \
   test_pool_model_env_refuses_claude \
@@ -907,4 +1034,5 @@ fm_test_run \
   test_usage_subcommand_behavior \
   test_status_subcommand_reads_log_without_network \
   test_queued_messages_setting \
-  test_large_used_sec_without_exhausted_never_skips
+  test_large_used_sec_without_exhausted_never_skips \
+  test_individual_quota_exhaustion_and_model_allowlist_failover

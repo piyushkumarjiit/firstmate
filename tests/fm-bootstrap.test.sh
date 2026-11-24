@@ -1622,6 +1622,12 @@ default array profile without harness is flagged^{"default":[{"model":"gpt-5.5"}
 default array malformed effort is flagged^{"default":[{"harness":"codex","effort":3}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - default profile model and effort must be non-empty strings, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\z when present
 default profile floor without min_percent is flagged^{"default":[{"harness":"codex","floor":{"scope":"all_models"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - default profile floor needs scope and min_percent 0..100
 default profile floor provider override is flagged^{"default":{"harness":"codex","floor":{"scope":"all_models","min_percent":50,"provider":"claude"}}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - default profile floor needs scope and min_percent 0..100
+valid roles review and fix are accepted^{"roles":{"review":[{"harness":"agy","model":"gemini-4-neon-high","account":"piyushk"},{"harness":"agy","model":"gemini-3.8-flash-high"}],"fix":[{"harness":"agy","model":"gemini-4-hydrogen-high"}]}}^empty^
+roles non-object is flagged^{"roles":[]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - roles must be an object
+unknown role name is flagged^{"roles":{"qa":[{"harness":"agy","model":"gemini-3.8-flash-high"}]}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - unknown roles: qa
+empty role array is flagged^{"roles":{"review":[]}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - each role entry in roles must be a non-empty array
+role profile missing model is flagged^{"roles":{"fix":[{"harness":"agy"}]}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - each role profile needs non-empty model
+role profile unverified harness is flagged^{"roles":{"review":[{"harness":"spaceship","model":"m1"}]}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - unverified harness: spaceship
 ROWS
 
   case_dir="$TMP_ROOT/dispatch-opt-in-gate"
