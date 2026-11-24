@@ -571,7 +571,7 @@ build_run_intent_and_args() {
       ;;
   esac
 
-  base=$(grep -E '^base=' "$META_FILE" | head -n 1 | cut -d= -f2- || true)
+  base=$(grep -E '^base_branch=' "$META_FILE" | head -n 1 | cut -d= -f2- || true)
   if [[ -n "$base" ]]; then
     RUN_EXTRA_ARGS+=(--base-branch "$base")
   fi
@@ -602,12 +602,15 @@ classify_blocker() {
   elif grep -Eiq 'argument list too long' <<<"$text"; then
     BLOCKER_KIND=prompt-too-large
     BLOCKER_TEXT="review prompt exceeds the agent command-line limit (argument list too long); use the stdin-patched no-mistakes (contrib/no-mistakes-antigravity-stdin), then retry with FM_DELIVER_RETRY=1"
-  elif grep -Eiq 'pool accounts already active|Another pool account|exit status 75|cap is [0-9]+ \(FM_AGY_MAX_ACTIVE\)' <<<"$text"; then
-    BLOCKER_KIND=pool-capacity
-    BLOCKER_TEXT="pool account capacity reached (exit 75, FM_AGY_MAX_ACTIVE); wait for a pool worker to finish, then retry with FM_DELIVER_RETRY=1"
+  elif grep -Eiq 'owns conversation .* cannot take the call' <<<"$text"; then
+    BLOCKER_KIND=conversation-owner
+    BLOCKER_TEXT="the account that owns this agent conversation cannot take the call now; wait until it is free or its quota resets, then retry with FM_DELIVER_RETRY=1"
   elif grep -Eiq "$QUOTA_EXHAUSTION_RE" <<<"$text"; then
     BLOCKER_KIND=quota
     BLOCKER_TEXT="every allowed account and fallback model is out of quota; wait for the quota reset, then retry with FM_DELIVER_RETRY=1"
+  elif grep -Eiq 'pool accounts already active|Another pool account|exit status 75|cap is [0-9]+ \(FM_AGY_MAX_ACTIVE\)' <<<"$text"; then
+    BLOCKER_KIND=pool-capacity
+    BLOCKER_TEXT="pool account capacity reached (exit 75, FM_AGY_MAX_ACTIVE); wait for a pool worker to finish, then retry with FM_DELIVER_RETRY=1"
   fi
   [[ -n "$BLOCKER_KIND" ]]
 }

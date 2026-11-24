@@ -109,9 +109,9 @@ record_run() {
 
   used=$(( used + dur ))
 
-  # The end-of-session scan logs quota_hit as suspicion in the usage log,
-  # but must not set exhausted or change budgets; the pre-session /usage result
-  # alone decides switch-and-skip.
+  # Quota exhaustion is marked by the caller (mark_account_exhausted) when a
+  # failed run's log tail matches QUOTA_EXHAUSTION_RE; this accounting only
+  # carries the existing flag and does not change budgets.
 
   jq -n \
     --arg u "$user" \
@@ -695,6 +695,9 @@ cleanup_pool_tmp() {
   if (( ${#SCHEMA_COPIES[@]} > 0 )); then
     rm -f "${SCHEMA_COPIES[@]}"
   fi
+  if [[ -n "${STDIN_BUF:-}" ]]; then
+    rm -f "$STDIN_BUF"
+  fi
 }
 trap cleanup_pool_tmp EXIT
 umask 0002
@@ -854,6 +857,16 @@ add_queued_messages_setting
 
 QUOTA_EXHAUSTION_RE='^[[:space:]]*(\[fm-agy-pool\][[:space:]]*ERROR:.*|antigravity exited .*error=.*|antigravity reported error:.*|error:.*)?[[:space:]]*(All eligible accounts|No eligible account|Individual quota reached|RESOURCE_EXHAUSTED|429([[:space:]]|$)|rate[ -]?limit exceeded|quota exceeded|out of quota)'
 RETRIED_AFTER_QUOTA=0
+STDIN_BUF=""
+if [[ ! -t 0 ]]; then
+  for a in "${AGY_ARGS[@]}"; do
+    if [[ "$a" == --input-format || "$a" == --input-format=* ]]; then
+      STDIN_BUF=$(mktemp)
+      cat > "$STDIN_BUF"
+      break
+    fi
+  done
+fi
 MAX_ATTEMPTS=$(( ${#GPRO_USERS[@]} + 2 ))
 ATTEMPT=0
 EXIT_CODE=0
@@ -917,12 +930,18 @@ while (( ATTEMPT < MAX_ATTEMPTS )); do
     fi
     EXIT_CODE=$?
   else
-    if [[ "$RUN_LOG_EPHEMERAL" -eq 0 ]]; then
-      "${RUN_CMD[@]}" 2>&1 | tee -a "$RUN_LOG"
+    if [[ -n "$STDIN_BUF" ]]; then
+      exec 3<"$STDIN_BUF"
     else
-      "${RUN_CMD[@]}" 2>&1 | tee "$RUN_LOG"
+      exec 3<&0
+    fi
+    if [[ "$RUN_LOG_EPHEMERAL" -eq 0 ]]; then
+      "${RUN_CMD[@]}" 2>&1 <&3 | tee -a "$RUN_LOG"
+    else
+      "${RUN_CMD[@]}" 2>&1 <&3 | tee "$RUN_LOG"
     fi
     EXIT_CODE=${PIPESTATUS[0]}
+    exec 3<&-
   fi
   set -e
 

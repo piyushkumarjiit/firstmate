@@ -21,9 +21,22 @@ FIX_ACCOUNT=${FM_NM_FIX_ACCOUNT:-}
 REVIEW_FROM_CONFIG=${FM_NM_REVIEW_FROM_CONFIG:-}
 FIX_FROM_CONFIG=${FM_NM_FIX_FROM_CONFIG:-}
 is_review=0
+STDIN_FILE=""
+has_stdin_input=0
 for a in "$@"; do
-  case "$a" in *"Focus findings on risks introduced by changed code"*) is_review=1 ;; esac
+  case "$a" in
+    *"Focus findings on risks introduced by changed code"*) is_review=1 ;;
+    --input-format|--input-format=*) has_stdin_input=1 ;;
+  esac
 done
+if [[ $has_stdin_input -eq 1 && ! -t 0 ]]; then
+  STDIN_FILE=$(mktemp)
+  trap 'rm -f "$STDIN_FILE"' EXIT
+  cat > "$STDIN_FILE"
+  if grep -qF "Focus findings on risks introduced by changed code" "$STDIN_FILE"; then
+    is_review=1
+  fi
+fi
 
 # Map this working tree to its firstmate task, the same way for the role file
 # and the Herdr tab. A no-mistakes run worktree is a detached checkout, so
@@ -264,7 +277,11 @@ setup_herdr_tab || true
 if [[ -n "$herdr_pane" ]]; then
   log_offset=$(wc -c < "$herdr_log_file" 2>/dev/null || echo 0)
   set +e
-  FM_AGY_RUN_LOG="$herdr_log_file" "$POOL_BIN" "${args[@]}"
+  if [[ -n "$STDIN_FILE" ]]; then
+    FM_AGY_RUN_LOG="$herdr_log_file" "$POOL_BIN" "${args[@]}" < "$STDIN_FILE"
+  else
+    FM_AGY_RUN_LOG="$herdr_log_file" "$POOL_BIN" "${args[@]}"
+  fi
   rc=$?
   set -e
   if [[ "$rc" -eq 0 ]]; then
@@ -285,4 +302,8 @@ if [[ -n "$herdr_pane" ]]; then
   exit "$rc"
 fi
 
+if [[ -n "$STDIN_FILE" ]]; then
+  "$POOL_BIN" "${args[@]}" < "$STDIN_FILE"
+  exit $?
+fi
 exec "$POOL_BIN" "${args[@]}"
