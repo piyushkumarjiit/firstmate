@@ -9,7 +9,9 @@
 # No case touches the network, and the absent-key case proves the tool makes
 # no call at all.
 set -u
-unset TYPESAFE_BASE
+# These cases prove the absent-key path is off, so an operator shell's real
+# OpenAI key must not turn them into authenticated requests.
+unset TYPESAFE_BASE OPENAI_API_KEY OPENAI_API_KEY_PRIVATE
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
