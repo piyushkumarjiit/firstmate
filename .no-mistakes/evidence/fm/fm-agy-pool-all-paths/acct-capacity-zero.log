@@ -1,0 +1,6 @@
+$ FM_AGY_MAX_ACTIVE=0 bin/fm-spawn.sh a5 <demo> --scout --harness agy --model gemini-4-hydrogen-medium
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.b55XkQ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[fm-agy-pool] ERROR: 1 pool accounts already active (piyushk); cap is 0 (FM_AGY_MAX_ACTIVE). Retry once a pool worker finishes or exits.
+error: a5 not launched: the agy account pool is at capacity; the task stays queued, retry when a pool worker finishes
+rc=75

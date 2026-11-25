@@ -1,0 +1,5 @@
+$ bin/fm-spawn.sh bin/fm-spawn.sh r2 /tmp/fm-lab.b55XkQ/projects/demo --scout --harness agy --mode no-mistakes
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.b55XkQ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --mode applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture
+rc=1

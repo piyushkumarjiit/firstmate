@@ -1,0 +1,38 @@
+=== dpr2 direct-PR pool worker: after it appended done, the armed fm-pool-exit poller stopped it
+date: 2026-11-25T09:39:00-06:00
+
+--- state/dpr2.status
+done [at=1795621105]: committed NOTES.md on fm/dpr2 without pushing or opening a PR
+
+--- state/dpr2.meta
+window=primary:fm-dpr2
+endpoint_task_id=dpr2
+worktree=~/.treehouse/demo-f7ad86/1/demo
+project=/tmp/fm-lab.q5iPES/projects/demo
+harness=agy
+kind=ship
+mode=direct-PR
+yolo=off
+branch=fm/dpr2
+tasktmp=/tmp/fm-dpr2
+model=gemini-4-hydrogen-medium
+effort=low
+account=piyushk
+spawn_gen=s1795621066.3819908.2050
+
+--- live agy process as pool account (should be none)
+none
+
+--- fm-pool-exit poller for dpr2 (should be gone)
+(end)
+
+--- worktree commit kept after the stop
+3c3a218 Add NOTES.md for direct-PR lab
+
+--- pane after the stop
+
+Resume with -c (or command below):
+agy --conversation=03ca0d02-9663-41b9-ade7-4df40d78f070
+
+demo on  fm/dpr2 took 52s
+❯

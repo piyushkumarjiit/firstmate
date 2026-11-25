@@ -1,0 +1,5 @@
+$ (pool home) bin/fm-spawn.sh sm1 <sm-home> --secondmate --harness agy --account gpro2
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.b55XkQ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --account applies to ships and scouts; secondmate sm1 launches on its own config/secondmate-accounts/<id>/claude-account pin
+rc=1

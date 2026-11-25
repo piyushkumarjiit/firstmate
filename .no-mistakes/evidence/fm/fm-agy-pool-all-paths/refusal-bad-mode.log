@@ -1,0 +1,5 @@
+$ bin/fm-spawn.sh bin/fm-spawn.sh r5 /tmp/fm-lab.b55XkQ/projects/demo --mode no-mistakes-prod-only --yolo off --harness agy
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.b55XkQ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: no-mistakes-prod-only is a registry policy, not a task mode; classify this task's surface and resolve it to no-mistakes or direct-PR at intake
+rc=1

@@ -1,0 +1,86 @@
+fm-agy-pool-setup: mode=apply operator=agentic pool=piyushjiit piyushk deepak naudhiya soniya naveen ajeet sushila vishakha
+fixed   ACL (access + default) for piyushjiit on /tmp/fm-lab.b55XkQ/nm/worktrees
+fixed   ACL (access + default) for piyushk on /tmp/fm-lab.b55XkQ/nm/worktrees
+fixed   ACL (access + default) for deepak on /tmp/fm-lab.b55XkQ/nm/worktrees
+fixed   ACL (access + default) for naudhiya on /tmp/fm-lab.b55XkQ/nm/worktrees
+fixed   ACL (access + default) for soniya on /tmp/fm-lab.b55XkQ/nm/worktrees
+fixed   ACL (access + default) for naveen on /tmp/fm-lab.b55XkQ/nm/worktrees
+fixed   ACL (access + default) for ajeet on /tmp/fm-lab.b55XkQ/nm/worktrees
+fixed   ACL (access + default) for sushila on /tmp/fm-lab.b55XkQ/nm/worktrees
+fixed   ACL (access + default) for vishakha on /tmp/fm-lab.b55XkQ/nm/worktrees
+fixed   traverse ACL for piyushjiit on /tmp/fm-lab.b55XkQ/nm
+ROOT    piyushjiit cannot traverse to worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees
+        run: sudo setfacl -m u:piyushjiit:--x '/tmp/fm-lab.b55XkQ/nm' '/tmp/fm-lab.b55XkQ'
+fixed   traverse ACL for piyushk on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by piyushk
+fixed   traverse ACL for deepak on /tmp/fm-lab.b55XkQ/nm
+ROOT    deepak cannot traverse to worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees
+        run: sudo setfacl -m u:deepak:--x '/tmp/fm-lab.b55XkQ/nm' '/tmp/fm-lab.b55XkQ'
+fixed   traverse ACL for naudhiya on /tmp/fm-lab.b55XkQ/nm
+ROOT    naudhiya cannot traverse to worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees
+        run: sudo setfacl -m u:naudhiya:--x '/tmp/fm-lab.b55XkQ/nm' '/tmp/fm-lab.b55XkQ'
+fixed   traverse ACL for soniya on /tmp/fm-lab.b55XkQ/nm
+ROOT    soniya cannot traverse to worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees
+        run: sudo setfacl -m u:soniya:--x '/tmp/fm-lab.b55XkQ/nm' '/tmp/fm-lab.b55XkQ'
+fixed   traverse ACL for naveen on /tmp/fm-lab.b55XkQ/nm
+ROOT    naveen cannot traverse to worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees
+        run: sudo setfacl -m u:naveen:--x '/tmp/fm-lab.b55XkQ/nm' '/tmp/fm-lab.b55XkQ'
+fixed   traverse ACL for ajeet on /tmp/fm-lab.b55XkQ/nm
+ROOT    ajeet cannot traverse to worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees
+        run: sudo setfacl -m u:ajeet:--x '/tmp/fm-lab.b55XkQ/nm' '/tmp/fm-lab.b55XkQ'
+fixed   traverse ACL for sushila on /tmp/fm-lab.b55XkQ/nm
+ROOT    sushila cannot traverse to worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees
+        run: sudo setfacl -m u:sushila:--x '/tmp/fm-lab.b55XkQ/nm' '/tmp/fm-lab.b55XkQ'
+fixed   traverse ACL for vishakha on /tmp/fm-lab.b55XkQ/nm
+ROOT    vishakha cannot traverse to worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees
+        run: sudo setfacl -m u:vishakha:--x '/tmp/fm-lab.b55XkQ/nm' '/tmp/fm-lab.b55XkQ'
+fixed   traverse ACL for piyushjiit on /tmp/fm-lab.b55XkQ/state
+fixed   traverse ACL for piyushjiit on /tmp/fm-lab.b55XkQ/data
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by piyushk
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by piyushk
+fixed   traverse ACL for deepak on /tmp/fm-lab.b55XkQ/state
+fixed   traverse ACL for deepak on /tmp/fm-lab.b55XkQ/data
+fixed   traverse ACL for naudhiya on /tmp/fm-lab.b55XkQ/state
+fixed   traverse ACL for naudhiya on /tmp/fm-lab.b55XkQ/data
+fixed   traverse ACL for soniya on /tmp/fm-lab.b55XkQ/state
+fixed   traverse ACL for soniya on /tmp/fm-lab.b55XkQ/data
+fixed   traverse ACL for naveen on /tmp/fm-lab.b55XkQ/state
+fixed   traverse ACL for naveen on /tmp/fm-lab.b55XkQ/data
+fixed   traverse ACL for ajeet on /tmp/fm-lab.b55XkQ/state
+fixed   traverse ACL for ajeet on /tmp/fm-lab.b55XkQ/data
+fixed   traverse ACL for sushila on /tmp/fm-lab.b55XkQ/state
+fixed   traverse ACL for sushila on /tmp/fm-lab.b55XkQ/data
+fixed   traverse ACL for vishakha on /tmp/fm-lab.b55XkQ/state
+fixed   traverse ACL for vishakha on /tmp/fm-lab.b55XkQ/data
+fixed   traverse ACL for piyushjiit on /tmp/fm-lab.b55XkQ/projects
+fixed   ACL (access + default) for piyushjiit on /tmp/fm-lab.b55XkQ/projects/demo
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by piyushk
+fixed   ACL (access + default) for piyushk on /tmp/fm-lab.b55XkQ/projects/demo
+fixed   traverse ACL for deepak on /tmp/fm-lab.b55XkQ/projects
+fixed   ACL (access + default) for deepak on /tmp/fm-lab.b55XkQ/projects/demo
+fixed   traverse ACL for naudhiya on /tmp/fm-lab.b55XkQ/projects
+fixed   ACL (access + default) for naudhiya on /tmp/fm-lab.b55XkQ/projects/demo
+fixed   traverse ACL for soniya on /tmp/fm-lab.b55XkQ/projects
+fixed   ACL (access + default) for soniya on /tmp/fm-lab.b55XkQ/projects/demo
+fixed   traverse ACL for naveen on /tmp/fm-lab.b55XkQ/projects
+fixed   ACL (access + default) for naveen on /tmp/fm-lab.b55XkQ/projects/demo
+fixed   traverse ACL for ajeet on /tmp/fm-lab.b55XkQ/projects
+fixed   ACL (access + default) for ajeet on /tmp/fm-lab.b55XkQ/projects/demo
+fixed   traverse ACL for sushila on /tmp/fm-lab.b55XkQ/projects
+fixed   ACL (access + default) for sushila on /tmp/fm-lab.b55XkQ/projects/demo
+fixed   traverse ACL for vishakha on /tmp/fm-lab.b55XkQ/projects
+fixed   ACL (access + default) for vishakha on /tmp/fm-lab.b55XkQ/projects/demo
+MISSING operator gh config dir /tmp/fm-lab.b55XkQ/no-gh not found (run: gh auth login)
+MISSING operator push credentials: no working gh login for agentic in /tmp/fm-lab.b55XkQ/no-gh (run: gh auth login)
+MISSING operator push credentials: no git credential for github.com served to agentic (run: git config --global --replace-all 'credential.https://github.com.helper' '!GH_CONFIG_DIR=/tmp/fm-lab.b55XkQ/no-gh /usr/bin/gh auth git-credential')
+ok      '*neon*' -> piyushjiit piyushk (order is the quota failover order)
+ok      '*hydrogen*' -> piyushjiit piyushk (order is the quota failover order)
+ok      usage log readable: /var/log/firstmate/agy-usage.jsonl
+fixed   created /tmp/fm-lab.b55XkQ/pool-state
+ok      pool run logs readable
+ok      antigravity launcher points at nm-agy
+ok      review_agents use antigravity
+        note: nm-agy picks review/fix models from the per-task role record, not from this file
+info    agent_args_override.antigravity pins --model/--account; nm-agy replaces them from firstmate roles when a role record exists
+info    firstmate's own repo sets disable_project_settings, which no-mistakes refuses for antigravity gate agents: keep Gemini gates off the firstmate repo
+result: 11 item(s) need attention

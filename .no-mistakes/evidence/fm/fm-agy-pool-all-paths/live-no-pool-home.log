@@ -1,0 +1,29 @@
+=== np1.meta (home with no pool config)
+window=primary:fm-np1
+endpoint_task_id=np1
+worktree=~/.treehouse/demo-0b92e9/5/demo
+project=/tmp/fm-lab.b55XkQ/projects/demo
+harness=agy
+kind=scout
+tasktmp=/tmp/fm-np1
+model=gemini-4-hydrogen-medium
+effort=low
+spawn_gen=s1795620289.3677311.5350
+decisions_reviewed=1
+decision_keys=
+
+=== np1 worker process (plain operator agy, no pool route)
+agentic 3681440 /usr/local/bin/agy --prompt-interactive ⁣FIRSTMATE_OP: v1 launch-brief: # Current worker role contract You are a crewmat
+
+=== any agy-pool launcher running for np1
+none
+
+=== np1 pane
+  the fix is clear), say so in the report; firstmate may promote this task in
+  place, and you would then receive mode-specific ship instructions as a
+  follow-up message.
+
+○ Thought for 6.0s (Initial inventory scan confirms an empty inbox and a ta...)
+● Explored 2 files (README.md, SKILL.md)
+● Ran (find '/tmp/fm-lab.b55XkQ/state/np1.inbox' -maxdepth 1 -name '*.msg'...)
+● Edited 1 file (report.md)

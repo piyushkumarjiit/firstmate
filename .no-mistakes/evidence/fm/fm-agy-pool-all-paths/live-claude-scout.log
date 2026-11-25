@@ -1,0 +1,36 @@
+=== cl1.meta
+window=primary:fm-cl1
+endpoint_task_id=cl1
+worktree=~/.treehouse/demo-0b92e9/4/demo
+project=/tmp/fm-lab.b55XkQ/projects/demo
+harness=claude
+approval_mode=bypass
+kind=scout
+tasktmp=/tmp/fm-cl1
+model=default
+effort=low
+busy_gen=g1795619940.3641034.6868
+spawn_gen=s1795619940.3639015.1314
+
+=== claude worker process (command, sanitized first 240 chars)
+agentic 2775386 claude --dangerously-skip-permissions --add-dir ~/firstmate/state/operational-inbox --add-dir ~/firstmate/state/fm-agy-pool-all-paths.inbox --add-dir ~/firstmate/data/fm-agy-pool-all-paths --add-dir /home
+agentic 3642825 claude --dangerously-skip-permissions --add-dir /tmp/fm-lab.b55XkQ/state/operational-inbox --add-dir /tmp/fm-lab.b55XkQ/state/cl1.inbox --add-dir /tmp/fm-lab.b55XkQ/data/cl1 --add-dir ~/.no-mistakes/worktrees/406d2d249c60/01M88Q
+
+=== any agy-pool route on cl1 window?
+none
+
+=== cl1 pane
+
+demo on  HEAD (d5ea641)
+❯ export COMPACT_ADVISER_DISABLE=1
+
+demo on  HEAD (d5ea641)
+❯ export FM_TASK_ID=cl1
+
+demo on  HEAD (d5ea641)
+❯ . '/tmp/fm-cl1+df8ac8c3e8cc23b40264b68f27532df25e70af28d3f5b453b0fabaca92b8d9f
+2/launch.s1795619940.3639015.1314.sh'
+
+────────────────────────────────────────────────────────────────────────────────
+ Adding a new directory:
+ /tmp/fm-lab.b55XkQ/state/operational-inbox

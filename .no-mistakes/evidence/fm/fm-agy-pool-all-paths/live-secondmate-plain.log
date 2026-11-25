@@ -1,0 +1,36 @@
+=== sm1.meta
+window=primary:fm-sm1
+endpoint_task_id=sm1
+worktree=/tmp/fm-sm-lab.nCS06b
+project=/tmp/fm-sm-lab.nCS06b
+harness=agy
+kind=secondmate
+mode=secondmate
+yolo=off
+tasktmp=/tmp/fm-sm1
+model=gemini-4-hydrogen-medium
+effort=low
+spawn_gen=s1795620032.3651079.22033
+home=/tmp/fm-sm-lab.nCS06b
+projects=
+
+=== secondmate worker process: user + binary (excerpt)
+
+=== plain vs pool launcher in the pane command line
+agentic  /usr/local/bin/agy --prompt-interactive ⁣FIRSTMATE_OP: v1 launch-brief: # Charter  Secondmate charter for sm1. --model gemini-4-hydrogen-medium --eff
+
+=== agy-pool/agy processes
+none
+
+=== FM_AGY_USER present in worker env?
+no FM_AGY_USER in env
+
+=== sm1 pane head
+    ▀▀▀▀▀▀▀▀      Gemini 4 Hydrogen (High)
+   ▄▀▀    ▀▀▄     /tmp/fm-sm-lab.nCS06b
+  ▄▀▀      ▀▀▄
+
+────────────────────────────────────────────────────────────
+> ⁣FIRSTMATE_OP: v1 launch-brief: # Charter
+
+  Secondmate charter for sm1.

@@ -1,0 +1,5 @@
+$ POOL_CONF=/tmp/does-not-exist bin/fm-spawn.sh a4 ... --account piyushk
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.b55XkQ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: --account 'piyushk' names an agy account-pool account, which needs a configured pool (POOL_CONF) and a plain agy launch, not a raw launch command
+rc=1

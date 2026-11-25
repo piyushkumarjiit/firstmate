@@ -1,0 +1,78 @@
+fm-agy-pool-setup: mode=check operator=agentic pool=piyushjiit piyushk deepak naudhiya soniya naveen ajeet sushila vishakha
+ok      ACL (access + default) for piyushjiit on /tmp/fm-lab.b55XkQ/nm/worktrees
+ok      ACL (access + default) for piyushk on /tmp/fm-lab.b55XkQ/nm/worktrees
+ok      ACL (access + default) for deepak on /tmp/fm-lab.b55XkQ/nm/worktrees
+ok      ACL (access + default) for naudhiya on /tmp/fm-lab.b55XkQ/nm/worktrees
+ok      ACL (access + default) for soniya on /tmp/fm-lab.b55XkQ/nm/worktrees
+ok      ACL (access + default) for naveen on /tmp/fm-lab.b55XkQ/nm/worktrees
+ok      ACL (access + default) for ajeet on /tmp/fm-lab.b55XkQ/nm/worktrees
+ok      ACL (access + default) for sushila on /tmp/fm-lab.b55XkQ/nm/worktrees
+ok      ACL (access + default) for vishakha on /tmp/fm-lab.b55XkQ/nm/worktrees
+ok      traverse ACL for piyushjiit on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by piyushjiit
+ok      traverse ACL for piyushk on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by piyushk
+ok      traverse ACL for deepak on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by deepak
+ok      traverse ACL for naudhiya on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by naudhiya
+ok      traverse ACL for soniya on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by soniya
+ok      traverse ACL for naveen on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by naveen
+ok      traverse ACL for ajeet on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by ajeet
+ok      traverse ACL for sushila on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by sushila
+ok      traverse ACL for vishakha on /tmp/fm-lab.b55XkQ/nm
+ok      worktrees directory /tmp/fm-lab.b55XkQ/nm/worktrees reachable by vishakha
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by piyushjiit
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by piyushjiit
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by piyushk
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by piyushk
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by deepak
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by deepak
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by naudhiya
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by naudhiya
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by soniya
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by soniya
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by naveen
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by naveen
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by ajeet
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by ajeet
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by sushila
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by sushila
+ok      task directory /tmp/fm-lab.b55XkQ/state reachable by vishakha
+ok      task directory /tmp/fm-lab.b55XkQ/data reachable by vishakha
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by piyushjiit
+ok      project clone /tmp/fm-lab.b55XkQ/projects/demo writable by piyushjiit
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by piyushk
+ok      project clone /tmp/fm-lab.b55XkQ/projects/demo writable by piyushk
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by deepak
+ok      project clone /tmp/fm-lab.b55XkQ/projects/demo writable by deepak
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by naudhiya
+ok      project clone /tmp/fm-lab.b55XkQ/projects/demo writable by naudhiya
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by soniya
+ok      project clone /tmp/fm-lab.b55XkQ/projects/demo writable by soniya
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by naveen
+ok      project clone /tmp/fm-lab.b55XkQ/projects/demo writable by naveen
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by ajeet
+ok      project clone /tmp/fm-lab.b55XkQ/projects/demo writable by ajeet
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by sushila
+ok      project clone /tmp/fm-lab.b55XkQ/projects/demo writable by sushila
+ok      projects directory /tmp/fm-lab.b55XkQ/projects reachable by vishakha
+ok      project clone /tmp/fm-lab.b55XkQ/projects/demo writable by vishakha
+MISSING operator gh config dir /tmp/fm-lab.b55XkQ/no-gh not found (run: gh auth login)
+MISSING operator push credentials: no working gh login for agentic in /tmp/fm-lab.b55XkQ/no-gh (run: gh auth login)
+MISSING operator push credentials: no git credential for github.com served to agentic (run: git config --global --replace-all 'credential.https://github.com.helper' '!GH_CONFIG_DIR=/tmp/fm-lab.b55XkQ/no-gh /usr/bin/gh auth git-credential')
+ok      '*neon*' -> piyushjiit piyushk (order is the quota failover order)
+ok      '*hydrogen*' -> piyushjiit piyushk (order is the quota failover order)
+ok      usage log readable: /var/log/firstmate/agy-usage.jsonl
+ok      pool state readable: /tmp/fm-lab.b55XkQ/pool-state
+ok      pool run logs readable
+ok      antigravity launcher points at nm-agy
+ok      review_agents use antigravity
+        note: nm-agy picks review/fix models from the per-task role record, not from this file
+info    agent_args_override.antigravity pins --model/--account; nm-agy replaces them from firstmate roles when a role record exists
+info    firstmate's own repo sets disable_project_settings, which no-mistakes refuses for antigravity gate agents: keep Gemini gates off the firstmate repo
+result: 3 item(s) need attention

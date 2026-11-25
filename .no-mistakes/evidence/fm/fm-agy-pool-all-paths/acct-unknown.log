@@ -1,0 +1,6 @@
+$ bin/fm-spawn.sh a1 /tmp/fm-lab.b55XkQ/projects/demo --scout --harness agy --model gemini-4-hydrogen-medium --account nobody
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.b55XkQ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[fm-agy-pool] ERROR: 'nobody' is not an account in /etc/firstmate/gpro-pool.conf (pool accounts: piyushjiit piyushk deepak naudhiya soniya naveen ajeet sushila vishakha).
+error: a1 cannot launch on agy pool account 'nobody'; choose another with --account, or omit it for the automatic choice
+rc=1

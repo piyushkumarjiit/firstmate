@@ -1,0 +1,25 @@
+=== relaunch transcript (lab primary pane)
+ reused.' 2>&1; echo RELAUNCH_RC=$?
+.b55XkQ
+.b55XkQ
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) -
+ full banner already printed this episode.
+relaunched scout1 harness=agy from=agy model=gemini-4-hydrogen-medium effort=low
+ backend=tmux endpoint=primary:fm-scout1 worktree=~/.treehouse/demo-
+0b92e9/1/demo
+RELAUNCH_RC=0
+
+01M88QJX575R9ZXFMWN6AR792F on  HEAD (fcda988) took 17s
+❯
+
+=== relaunched scout pane (resumed agent, then done)
+
+────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────
+
+Resume with -c (or command below):
+agy --conversation=0d02a53c-c8eb-4546-bbf0-1590ef3bdddc
+
+demo on  HEAD (d5ea641) took 53s
+❯

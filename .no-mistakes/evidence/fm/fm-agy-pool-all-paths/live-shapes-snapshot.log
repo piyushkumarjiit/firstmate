@@ -1,0 +1,69 @@
+=== tmux windows (lab socket /tmp/fm-lab.b55XkQ/tmux) 2026-11-25T09:18:23-06:00
+primary:0: zsh* (1 panes) [80x24] 
+primary:1: fm-scout1 (1 panes) [80x24] 
+primary:2: fm-dpr1 (1 panes) [80x24] 
+primary:3: fm-loc1 (1 panes) [80x24] 
+
+=== task records
+--- scout1.meta
+window=primary:fm-scout1
+endpoint_task_id=scout1
+worktree=~/.treehouse/demo-0b92e9/1/demo
+project=/tmp/fm-lab.b55XkQ/projects/demo
+harness=agy
+kind=scout
+tasktmp=/tmp/fm-scout1
+model=gemini-4-hydrogen-medium
+effort=low
+account=piyushk
+spawn_gen=s1795618966.3520722.26988
+--- dpr1.meta
+window=primary:fm-dpr1
+endpoint_task_id=dpr1
+worktree=~/.treehouse/demo-0b92e9/2/demo
+project=/tmp/fm-lab.b55XkQ/projects/demo
+harness=agy
+kind=ship
+mode=direct-PR
+yolo=off
+branch=fm/dpr1
+tasktmp=/tmp/fm-dpr1
+model=gemini-4-hydrogen-medium
+effort=low
+spawn_gen=s1795619524.3588839.29273
+--- loc1.meta
+window=primary:fm-loc1
+endpoint_task_id=loc1
+worktree=~/.treehouse/demo-0b92e9/3/demo
+project=/tmp/fm-lab.b55XkQ/projects/demo
+harness=agy
+kind=ship
+mode=local-only
+yolo=off
+branch=fm/loc1
+tasktmp=/tmp/fm-loc1
+model=gemini-4-hydrogen-medium
+effort=low
+account=piyushk
+spawn_gen=s1795619865.3629992.16436
+
+=== pool worker processes (user pid args truncated)
+agentic 3633615 33 /bin/bash
+agentic 3633755 32 script
+root 3633756 32 sudo
+root 3633766 32 sudo
+piyushk 3633767 32 /usr/local/bin/agy
+
+=== loc1 pane (first 12 rows)
+  Ship branch: fm/loc1
+  This task ships **local-only**: no remote, no PR, no pipeline.
+  The task is complete only when committed on your branch `fm/loc1`. Do NOT
+  push, do NOT open a PR, do NOT merge.
+  A `done:` is accepted when the named head is on this project's shared local
+  branch, not only on a detached copy; the check tests that head, not merely
+  that a branch moved.
+  Keep your branch a clean fast-forward onto the current default branch - if
+  `main` has advanced, rebase onto it so the eventual merge stays a
+  fast-forward.
+  When it is implemented and committed, append `done [at=<epoch>]: ready in
+  branch fm/loc1` to the status file and stop.
