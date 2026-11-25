@@ -1221,6 +1221,127 @@ fi
   echo "error: --account requires a non-empty value" >&2
   exit 1
 }
+# A parent-delivered carrier replaces this home's own resolution, so it is
+# refused unless it is a secondmate spawn carrying a strictly valid W3C value.
+# Nothing else may reach the pane's TRACEPARENT export.
+if [ "$TRACEPARENT_SET" -eq 1 ]; then
+  [ "$KIND" = secondmate ] || {
+    echo "error: --traceparent applies only to --secondmate spawns; every other spawn resolves its own carrier from this home's frozen trace-context decision" >&2
+    exit 1
+  }
+  fm_trace_context_valid "$TRACEPARENT_ARG" || {
+    echo "error: --traceparent is not a valid W3C traceparent" >&2
+    exit 1
+  }
+fi
+case "$EFFORT" in
+'' | low | medium | high | xhigh | max | ultra) ;;
+*)
+  echo "error: --effort must be one of low, medium, high, xhigh, max, ultra" >&2
+  exit 1
+  ;;
+esac
+
+# --relaunch reuses an existing task's endpoint, worktree, project, and kind,
+# so every axis this block resolves for a fresh spawn instead comes from that
+# task's own durable record below. Contradicting it on the command line is a
+# refusal rather than a silently-ignored flag.
+if [ "$RELAUNCH" -eq 1 ]; then
+  [ "$BACKEND_SET" -eq 0 ] || {
+    echo "error: --relaunch reuses the task's recorded backend; --backend cannot override it" >&2
+    exit 1
+  }
+  [ "$KIND_SET" -eq 0 ] || {
+    echo "error: --relaunch reuses the task's recorded kind; --scout/--secondmate cannot override it" >&2
+    exit 1
+  }
+  [ "$MODE_SET" -eq 0 ] || {
+    echo "error: --relaunch reuses the task's recorded delivery mode; --mode cannot override it" >&2
+    exit 1
+  }
+  [ "$YOLO_SET" -eq 0 ] || {
+    echo "error: --relaunch reuses the task's recorded yolo posture; --yolo cannot override it" >&2
+    exit 1
+  }
+  [ "$BRANCH_PREFIX_SET" -eq 0 ] || {
+    echo "error: --relaunch reuses the task's recorded ship branch; --branch-prefix cannot override it" >&2
+    exit 1
+  }
+  [ "$BASE_BRANCH_SET" -eq 0 ] || {
+    echo "error: --relaunch reuses the task's recorded base branch; --base-branch cannot override it" >&2
+    exit 1
+  }
+  [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || {
+    echo "error: --relaunch reuses the task's recorded upstream consent; --upstream-consent cannot override it" >&2
+    exit 1
+  }
+else
+  # Delivery contract (AGENTS.md section 7). A ship task's mode and yolo are
+  # firstmate's per-task decision, so they are required and closed-set validated
+  # here rather than resolved from the project registry. Scouts deliver a report
+  # and record no delivery posture; secondmate spawns hardcode theirs.
+  if [ "$KIND" = ship ]; then
+    [ "$MODE_SET" -eq 1 ] || {
+      echo "error: ship spawns require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the captain's instruction and the project's registered posture in data/projects.md" >&2
+      exit 1
+    }
+    [ "$YOLO_SET" -eq 1 ] || {
+      echo "error: ship spawns require --yolo <on|off>; it is this task's merge authority, not a project lookup" >&2
+      exit 1
+    }
+    case "$MODE" in
+    no-mistakes | direct-PR | local-only) ;;
+    no-mistakes-prod-only)
+      echo "error: no-mistakes-prod-only is a registry policy, not a task mode; classify this task's surface and resolve it to no-mistakes or direct-PR at intake" >&2
+      exit 1
+      ;;
+    *)
+      echo "error: --mode must be one of no-mistakes, direct-PR, local-only (got '$MODE')" >&2
+      exit 1
+      ;;
+    esac
+    case "$YOLO" in
+    on | off) ;;
+    *)
+      echo "error: --yolo must be on or off (got '$YOLO')" >&2
+      exit 1
+      ;;
+    esac
+    if [ "$UPSTREAM_CONSENT_SET" -eq 1 ]; then
+      if [ "$MODE" = local-only ]; then
+        echo "error: --upstream-consent is meaningless on local-only, which publishes nothing; drop it" >&2
+        exit 1
+      fi
+      fm_role_scope_valid "$UPSTREAM_CONSENT" || {
+        echo "error: --upstream-consent must be <host>/<owner>/<repo> (got '$UPSTREAM_CONSENT')" >&2
+        exit 1
+      }
+      UPSTREAM_CONSENT=$(fm_role_scope_norm "$UPSTREAM_CONSENT")
+    fi
+  else
+    [ "$MODE_SET" -eq 0 ] || {
+      echo "error: --mode applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
+      exit 1
+    }
+    [ "$YOLO_SET" -eq 0 ] || {
+      echo "error: --yolo applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
+      exit 1
+    }
+    [ "$BRANCH_PREFIX_SET" -eq 0 ] || {
+      echo "error: --branch-prefix applies only to ship spawns; a scout makes no branch and a secondmate records no ship branch" >&2
+      exit 1
+    }
+    [ "$KIND" != secondmate ] || [ "$BASE_BRANCH_SET" -eq 0 ] || {
+      echo "error: --base-branch applies only to ship and scout spawns; a secondmate charter has no task base" >&2
+      exit 1
+    }
+    [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || {
+      echo "error: --upstream-consent applies only to ship spawns; a scout publishes nothing and a secondmate records no delivery contract" >&2
+      exit 1
+    }
+  fi
+fi
+
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
