@@ -1,7 +1,12 @@
 # Gemini (agy) account pool setup
 
-Gemini work runs from separate Linux accounts through the pool launcher, so the operator account needs a few one-time grants.
-`bin/fm-agy-pool-setup.sh` performs every one of them in a single idempotent command.
+Gemini work runs from separate Linux accounts through the pool launcher, so the host needs a few one-time grants, split between one root provisioning step and one operator command.
+
+## First-time provisioning
+
+Run `sudo bin/fm-agy-pool-provision.sh` first.
+It creates the isolated Linux pool users listed in `/etc/firstmate/gpro-pool.conf` ([example](examples/gpro-pool.conf.example)), the shared group, the system `agy` copy, the ACLs, and the sudoers rule.
+Its header owns the full setup order, the environment variables, adding or removing an account, and how to undo.
 
 ## Commands
 
@@ -33,11 +38,11 @@ The pool takes over only on a home whose pool config lists at least one account,
 ## Limits
 
 - Gemini cannot be a gate agent on the firstmate repository itself, because agy cannot ignore the repository's `AGENTS.md` and no-mistakes refuses it there.
-- The setup script does not install or log in the pool accounts, and it does not write anything under `/etc`.
+- The setup script does not install or log in the pool accounts, and it does not write anything under `/etc`; the provisioner creates the accounts, and each one still needs its own interactive `agy` sign-in.
 
 ## Overrides
 
 Paths and accounts can be redirected with `POOL_CONF`, `MODELS_CONF`, `FM_NM_WORKTREES`, `FM_NM_CONFIG`, `FM_AGY_USAGE_LOG`, `FM_AGY_STATE_DIR`, `FM_GH_CONFIG_DIR`, `FM_GH_BIN`, and `FM_SETUP_SUDO` (set to `none` to print per-account commands instead of running them).
 The script header owns the exact list.
-Verification lives in `tests/fm-agy-pool-setup.test.sh`.
+Verification lives in `tests/fm-agy-pool-setup.test.sh` and `tests/fm-agy-pool-provision.test.sh`.
 For large review prompts see [`contrib/no-mistakes-antigravity-stdin/README.md`](../contrib/no-mistakes-antigravity-stdin/README.md).

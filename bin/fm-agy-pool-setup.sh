@@ -2,6 +2,8 @@
 # One idempotent setup for running Gemini (agy) work through the account pool.
 #
 # Usage: bin/fm-agy-pool-setup.sh [apply|check] [--help]
+#   Run `sudo bin/fm-agy-pool-provision.sh` first: it creates the pool Linux users,
+#   the shared group, and the sudoers rule that this script's steps rely on.
 #   check  (default) read-only: report every missing or wrong item, exit 1 if any.
 #   apply  perform every step that needs no root, and print the exact command
 #          for each step that does. Re-running changes nothing already correct.
