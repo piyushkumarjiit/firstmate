@@ -263,15 +263,16 @@ EOF
   local SUDOERS_FILE="/etc/sudoers.d/firstmate-gpro" USER_LIST_CSV
   USER_LIST_CSV=$(IFS=,; echo "${GPRO_USERS[*]}")
 
-  # sudo ignores names containing '.', so the temp file is never read while unvalidated.
-  local sudoers_tmp
-  sudoers_tmp=$(mktemp /etc/sudoers.d/.firstmate-gpro.XXXXXX)
-  local helper_paths
-  if ! mapfile -t helper_paths < <(fm_agy_pool_resolve_helpers test find git); then
-    rm -f "$sudoers_tmp"
+  local helper_out helper_paths
+  if ! helper_out=$(fm_agy_pool_resolve_helpers test find git); then
     echo "ERROR: cannot resolve test, find and git to absolute paths" >&2
     exit 1
   fi
+  mapfile -t helper_paths <<<"$helper_out"
+
+  # sudo ignores names containing '.', so the temp file is never read while unvalidated.
+  local sudoers_tmp
+  sudoers_tmp=$(mktemp /etc/sudoers.d/.firstmate-gpro.XXXXXX)
   fm_agy_pool_sudoers_rule "$POOL_CONF" "$PRIMARY_USER" "$USER_LIST_CSV" \
     /usr/bin/env "$AGY_BIN" "${helper_paths[@]}" > "$sudoers_tmp"
 

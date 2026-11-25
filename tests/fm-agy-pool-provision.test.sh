@@ -87,6 +87,8 @@ test_helper_resolution_returns_absolute_paths() {
     [[ "$p" == /* && -x "$p" ]] || { fail "not an absolute executable: $p"; return; }
   done <<<"$out"
   bash -c '. "$1"; fm_agy_pool_resolve_helpers fm-no-such-command-xyz' _ "$PROVISION" >/dev/null && { fail "missing command should fail"; return; }
+  out=$(bash -c '. "$1"; fm_agy_pool_resolve_helpers test fm-no-such-command-xyz find' _ "$PROVISION"); local rc=$?
+  [[ $rc -ne 0 ]] || { fail "a missing helper must make resolution fail (rc=$rc, out: $out)"; return; }
   pass "helpers (including the test builtin) resolve to absolute executables"
 }
 
