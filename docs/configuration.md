@@ -2054,13 +2054,13 @@ This section is the single owner of the canonical schema and its per-field seman
 
 **agy pool accounts**
 
-On a home whose pool config (`/etc/firstmate/gpro-pool.conf`) lists at least one account, every `agy` ship or scout launches through `bin/agy-pool/agy`; only a `no-mistakes` ship also needs the pool-builder brief (`fm-brief.sh --pool-build`), while `direct-PR`, `local-only`, and scout tasks keep their ordinary brief.
+On a home whose pool config (`/etc/firstmate/gpro-pool.conf`) lists at least one account, every `agy` ship, scout, or secondmate launches through `bin/agy-pool/agy`; only a `no-mistakes` ship also needs the pool-builder brief (`fm-brief.sh --pool-build`), while `direct-PR`, `local-only`, and scout tasks keep their ordinary brief.
 Homes without a pool config and every non-agy harness launch exactly as before.
 `--account <pool account>` on `bin/fm-spawn.sh` (and `bin/fm-control.sh <id> relaunch --account`) runs an agy task on that Linux pool account.
 The account must be listed in the pool config, exist, be signed in, be allowed for the task's model by `/etc/firstmate/gpro-models.conf`, and not be marked exhausted; otherwise the spawn refuses with the reason and never uses another account.
 The spawn records it as `account=` in `state/<id>.meta`, passes it to the launcher as `FM_AGY_USER`, and a relaunch reuses it unless a new `--account` moves it; without `--account` the launcher picks an account as before.
 A spawn beyond `FM_AGY_MAX_ACTIVE` pool accounts exits 75 before any pane exists, and `bin/fm-pool-exit.sh` frees each finished pool worker's slot.
-Run `bin/fm-agy-pool-setup.sh check` after adding a project ([setup](agy-pool-setup.md)).
+Run `bin/fm-agy-pool-setup.sh apply` after adding a project or a secondmate: its `projects` step grants the pool accounts access to the new clone or home ([setup](agy-pool-setup.md)).
 
 **Pipeline roles (`roles.review`, `roles.fix`)**
 

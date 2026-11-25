@@ -1157,9 +1157,63 @@ test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_pool_route_requires_real_pool_config
 test_agy_direct_pr_routes_through_launcher_with_pool_config
+test_agy_pool_secondmate_takes_a_named_account_and_marks_its_home() {
+  local id rec sm_home out rc meta
+  id="agy-secondmate-p7-$$"
+  rec=$(make_pool_spawn_case secondmate-pool "$id")
+  read_agy_spawn_record "$rec"
+  sm_home="$CASE_DIR/sm-home"
+  mkdir -p "$sm_home/bin" "$sm_home/data" "$sm_home/state" "$sm_home/config" "$sm_home/projects"
+  : > "$sm_home/AGENTS.md"
+  printf '%s\n' "$id" > "$sm_home/.fm-secondmate-home"
+  printf '# Charter\n\nSecondmate charter for %s.\n' "$id" > "$sm_home/data/charter.md"
+  printf 'projects/\nstate/\ndata/\nconfig/\n.no-mistakes/\n' > "$sm_home/.gitignore"
+  git -C "$sm_home" init -q -b main
+  rc=0
+  out=$(HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    POOL_CONF="$CASE_DIR/gpro-pool.conf" MODELS_CONF="$CASE_DIR/models.conf" \
+    FM_AGY_STATE_DIR="$CASE_DIR/pool-state" FM_AGY_USAGE_LOG="$CASE_DIR/usage.jsonl" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$sm_home" TMUX="fake,1,0" \
+    FM_FAKE_LAUNCH_LOG="$CASE_DIR/launch.log" \
+    FM_FAKE_TMUX_CALL_LOG="$CASE_DIR/tmux-calls.log" \
+    FM_FAKE_AGY_STATE="$CASE_DIR/agy.state" \
+    FM_FAKE_AGY_SETTINGS="$HOME_DIR/.gemini/antigravity-cli/settings.json" \
+    FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=1 \
+    PATH="$FAKEBIN_DIR:$BASE_PATH" \
+    "$SPAWN" "$id" "$sm_home" --secondmate agy --model gemini-4-neon-medium --account gpro2 2>&1) || rc=$?
+  expect_code 0 "$rc" "a pool agy secondmate must launch on a named account ($out)"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "secondmate must take the pool launcher"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "FM_AGY_USER=" "secondmate hands its account to the launcher"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "FM_AGY_MATE_HOME=" "secondmate names its home for the launcher grant"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_grep 'account=gpro2' "$meta" "meta records the secondmate's pool account"
+  assert_grep 'kind=secondmate' "$meta" "secondmate kind recorded"
+
+  id="agy-secondmate-p8-$$"
+  rec=$(make_pool_spawn_case secondmate-pool-bad "$id")
+  read_agy_spawn_record "$rec"
+  rc=0
+  out=$(HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    POOL_CONF="$CASE_DIR/gpro-pool.conf" MODELS_CONF="$CASE_DIR/models.conf" \
+    FM_AGY_STATE_DIR="$CASE_DIR/pool-state" FM_AGY_USAGE_LOG="$CASE_DIR/usage.jsonl" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$sm_home" TMUX="fake,1,0" \
+    FM_FAKE_LAUNCH_LOG="$CASE_DIR/launch.log" FM_FAKE_TMUX_CALL_LOG="$CASE_DIR/tmux-calls.log" \
+    PATH="$FAKEBIN_DIR:$BASE_PATH" \
+    "$SPAWN" "$id" "$sm_home" --secondmate agy --model gemini-4-neon-medium --account nobody 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an unknown pool account must refuse for a secondmate"
+  assert_contains "$out" "not an account in" "secondmate refusal names the pool config"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused secondmate account must leave no task record"
+  pass "fm-spawn: a pool agy secondmate validates and records --account and names its home for the launcher"
+}
+
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
 test_agy_spawn_arms_no_busy_wiring
 test_agy_pool_routes_scout_and_local_only_through_the_launcher
 test_agy_account_flag_names_validates_and_records_a_pool_account
 test_agy_account_flag_refuses_bad_accounts_without_fallback
 test_agy_spawn_beyond_pool_capacity_exits_75_before_any_pane
+test_agy_pool_secondmate_takes_a_named_account_and_marks_its_home

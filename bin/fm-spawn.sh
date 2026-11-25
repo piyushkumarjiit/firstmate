@@ -1221,133 +1221,6 @@ fi
   echo "error: --account requires a non-empty value" >&2
   exit 1
 }
-# A secondmate, local or remote, launches on its own per-mate pin, so --account
-# is refused here, before the remote route could ignore it.
-[ "$ACCOUNT_SET" -eq 0 ] || [ "$KIND" != secondmate ] || {
-  echo "error: --account applies to ships and scouts; secondmate ${POS[0]:-} launches on its own config/secondmate-accounts/<id>/claude-account pin" >&2
-  exit 1
-}
-# A parent-delivered carrier replaces this home's own resolution, so it is
-# refused unless it is a secondmate spawn carrying a strictly valid W3C value.
-# Nothing else may reach the pane's TRACEPARENT export.
-if [ "$TRACEPARENT_SET" -eq 1 ]; then
-  [ "$KIND" = secondmate ] || {
-    echo "error: --traceparent applies only to --secondmate spawns; every other spawn resolves its own carrier from this home's frozen trace-context decision" >&2
-    exit 1
-  }
-  fm_trace_context_valid "$TRACEPARENT_ARG" || {
-    echo "error: --traceparent is not a valid W3C traceparent" >&2
-    exit 1
-  }
-fi
-case "$EFFORT" in
-'' | low | medium | high | xhigh | max | ultra) ;;
-*)
-  echo "error: --effort must be one of low, medium, high, xhigh, max, ultra" >&2
-  exit 1
-  ;;
-esac
-
-# --relaunch reuses an existing task's endpoint, worktree, project, and kind,
-# so every axis this block resolves for a fresh spawn instead comes from that
-# task's own durable record below. Contradicting it on the command line is a
-# refusal rather than a silently-ignored flag.
-if [ "$RELAUNCH" -eq 1 ]; then
-  [ "$BACKEND_SET" -eq 0 ] || {
-    echo "error: --relaunch reuses the task's recorded backend; --backend cannot override it" >&2
-    exit 1
-  }
-  [ "$KIND_SET" -eq 0 ] || {
-    echo "error: --relaunch reuses the task's recorded kind; --scout/--secondmate cannot override it" >&2
-    exit 1
-  }
-  [ "$MODE_SET" -eq 0 ] || {
-    echo "error: --relaunch reuses the task's recorded delivery mode; --mode cannot override it" >&2
-    exit 1
-  }
-  [ "$YOLO_SET" -eq 0 ] || {
-    echo "error: --relaunch reuses the task's recorded yolo posture; --yolo cannot override it" >&2
-    exit 1
-  }
-  [ "$BRANCH_PREFIX_SET" -eq 0 ] || {
-    echo "error: --relaunch reuses the task's recorded ship branch; --branch-prefix cannot override it" >&2
-    exit 1
-  }
-  [ "$BASE_BRANCH_SET" -eq 0 ] || {
-    echo "error: --relaunch reuses the task's recorded base branch; --base-branch cannot override it" >&2
-    exit 1
-  }
-  [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || {
-    echo "error: --relaunch reuses the task's recorded upstream consent; --upstream-consent cannot override it" >&2
-    exit 1
-  }
-else
-  # Delivery contract (AGENTS.md section 7). A ship task's mode and yolo are
-  # firstmate's per-task decision, so they are required and closed-set validated
-  # here rather than resolved from the project registry. Scouts deliver a report
-  # and record no delivery posture; secondmate spawns hardcode theirs.
-  if [ "$KIND" = ship ]; then
-    [ "$MODE_SET" -eq 1 ] || {
-      echo "error: ship spawns require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the captain's instruction and the project's registered posture in data/projects.md" >&2
-      exit 1
-    }
-    [ "$YOLO_SET" -eq 1 ] || {
-      echo "error: ship spawns require --yolo <on|off>; it is this task's merge authority, not a project lookup" >&2
-      exit 1
-    }
-    case "$MODE" in
-    no-mistakes | direct-PR | local-only) ;;
-    no-mistakes-prod-only)
-      echo "error: no-mistakes-prod-only is a registry policy, not a task mode; classify this task's surface and resolve it to no-mistakes or direct-PR at intake" >&2
-      exit 1
-      ;;
-    *)
-      echo "error: --mode must be one of no-mistakes, direct-PR, local-only (got '$MODE')" >&2
-      exit 1
-      ;;
-    esac
-    case "$YOLO" in
-    on | off) ;;
-    *)
-      echo "error: --yolo must be on or off (got '$YOLO')" >&2
-      exit 1
-      ;;
-    esac
-    if [ "$UPSTREAM_CONSENT_SET" -eq 1 ]; then
-      if [ "$MODE" = local-only ]; then
-        echo "error: --upstream-consent is meaningless on local-only, which publishes nothing; drop it" >&2
-        exit 1
-      fi
-      fm_role_scope_valid "$UPSTREAM_CONSENT" || {
-        echo "error: --upstream-consent must be <host>/<owner>/<repo> (got '$UPSTREAM_CONSENT')" >&2
-        exit 1
-      }
-      UPSTREAM_CONSENT=$(fm_role_scope_norm "$UPSTREAM_CONSENT")
-    fi
-  else
-    [ "$MODE_SET" -eq 0 ] || {
-      echo "error: --mode applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
-      exit 1
-    }
-    [ "$YOLO_SET" -eq 0 ] || {
-      echo "error: --yolo applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
-      exit 1
-    }
-    [ "$BRANCH_PREFIX_SET" -eq 0 ] || {
-      echo "error: --branch-prefix applies only to ship spawns; a scout makes no branch and a secondmate records no ship branch" >&2
-      exit 1
-    }
-    [ "$KIND" != secondmate ] || [ "$BASE_BRANCH_SET" -eq 0 ] || {
-      echo "error: --base-branch applies only to ship and scout spawns; a secondmate charter has no task base" >&2
-      exit 1
-    }
-    [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || {
-      echo "error: --upstream-consent applies only to ship spawns; a scout publishes nothing and a secondmate records no delivery contract" >&2
-      exit 1
-    }
-  fi
-fi
-
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
@@ -1359,6 +1232,10 @@ spawn_remote_secondmate() {
     echo "error: invalid task id" >&2
     return 2
   }
+  if [ "$ACCOUNT_SET" -eq 1 ] && [ "$(secondmate_registry_field "$DATA/secondmates.md" "$id" remote 2>/dev/null)" = 1 ]; then
+    echo "error: --account applies to ships and scouts; remote secondmate $id launches on its own config/secondmate-accounts/<id>/claude-account pin" >&2
+    return 1
+  fi
   mkdir -p "$STATE" || {
     echo "error: could not create parent state directory" >&2
     return 1
@@ -3456,9 +3333,9 @@ omp)
 agy)
   # The account-pool launcher is reached through bin/agy-pool/agy so the live
   # process is named agy; bin/fm-agy-pool.sh's header owns why.
-  # Every agy ship or scout takes the pool launcher when the home configures a
-  # pool; only the no-mistakes ship also needs the pool-builder brief.
-  if agy_pool_configured && [ "$KIND" != secondmate ]; then
+  # Every agy ship, scout, or secondmate takes the pool launcher when the home
+  # configures a pool; only the no-mistakes ship also needs the pool-builder brief.
+  if agy_pool_configured; then
     AGY_BIN="$SCRIPT_DIR/agy-pool/agy"
   else
     AGY_BIN=$(resolve_pi_executable agy) || {
@@ -3590,8 +3467,8 @@ if [ "$HARNESS" = agy ]; then
   fi
   # Capacity gate (read-only): a spawn beyond FM_AGY_MAX_ACTIVE exits 75 here,
   # before any pane exists, rather than failing in the pane 30 seconds later.
-  # A relaunch's own old agent is already stopped, so it counts no slot.
-  if [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$KIND" != secondmate ] && [ "$RAW_LAUNCH" = 0 ] && [ "$RELAUNCH" -eq 0 ]; then
+  # A relaunch is checked by fm-control before it stops the old agent, never here.
+  if [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$RAW_LAUNCH" = 0 ] && [ "$RELAUNCH" -eq 0 ]; then
     "$AGY_BIN" --check-capacity "$AGY_POOL_ACCOUNT" || {
       echo "error: $ID not launched: the agy account pool is at capacity; the task stays queued, retry when a pool worker finishes" >&2
       exit 75
@@ -7829,6 +7706,9 @@ if [ "$KIND" = secondmate ]; then
   # not enable them across the launch boundary (bin/fm-trace-context-lib.sh header).
   # Reuse the single frozen decision from the carrier resolution above so the
   # injected carrier and this on/off snapshot are guaranteed to agree.
+  if [ "$HARNESS" = agy ] && [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ]; then
+    LAUNCH="FM_AGY_MATE_HOME=$sq_home $LAUNCH"
+  fi
   LAUNCH="FM_ROOT_OVERRIDE= FM_STATE_OVERRIDE= FM_DATA_OVERRIDE= FM_PROJECTS_OVERRIDE= FM_CONFIG_OVERRIDE= FM_PUBLIC_FOLLOWUP_PRIMARY_HOME=$sq_primary_home FM_HOME=$sq_home FM_TRACE_CONTEXT=$SPAWN_TRACE_EFFECTIVE FM_SUPERVISION_MODEL=$supervision_model $LAUNCH"
 else
   # A ship or scout works for the active home itself.

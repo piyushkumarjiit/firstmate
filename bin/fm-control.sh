@@ -1121,12 +1121,16 @@ resolve_relaunch_profile() {
     "$account_model" "$TARGET_HARNESS" "" "$account_mate" "$TARGET_ACCOUNT" >/dev/null || return 1
   # A named agy pool account (explicit, else the one this task records) is
   # checked before the old agent stops, so a refused account changes nothing.
-  if [ "$TARGET_HARNESS" = agy ] && [ "$KIND" != secondmate ]; then
+  if [ "$TARGET_HARNESS" = agy ]; then
     local pool_account=$TARGET_ACCOUNT
     [ -n "$pool_account" ] || [ "$PRIOR_HARNESS" != agy ] || pool_account=$(fm_meta_get "$META" account)
     if [ -n "$pool_account" ]; then
       "$FM_ROOT/bin/agy-pool/agy" --check-account "$pool_account" "$account_model" >/dev/null ||
         die "agy pool account '$pool_account' cannot take this relaunch; the old agent is untouched"
+    fi
+    if [ "$PRIOR_HARNESS" != agy ]; then
+      "$FM_ROOT/bin/agy-pool/agy" --check-capacity "$pool_account" >/dev/null 2>&1 ||
+        die 'the agy account pool is at capacity; the old agent is untouched, retry when a pool worker finishes'
     fi
   fi
   fm_omp_profile_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \

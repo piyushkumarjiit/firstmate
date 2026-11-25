@@ -23,6 +23,11 @@
 #                directories, so any task shape can append status, read its
 #                steering inbox, and write data/<task>/ (the launcher adds the
 #                per-task data ACL when the worker starts).
+#   2c. projects pool accounts can write each project clone under projects/
+#                (access + default ACL) and reach every local secondmate home
+#                registered in data/secondmates.md, so a direct-PR, local-only,
+#                or secondmate pool worker can commit and run there. Re-run
+#                `apply` after adding a project or a secondmate.
 #   3. models    the models allowlist maps Neon and Hydrogen models to accounts;
 #                its account order is the quota failover order.
 #   4. run-log   the operator can read the pool usage log and per-run logs.
@@ -156,25 +161,80 @@ step_acl() {
 # worker append to state/<task>.status, read its steering inbox, and write
 # data/<task>/. The pool launcher grants the per-task data ACL at launch; what
 # setup owns is that the account can reach those directories at all.
+ensure_traverse() { # <user> <dir> <label>: the pool account can reach <dir>
+  local u=$1 dir=$2 label=$3
+  if has_acl "$dir" "^user:${u}:..x" || run_as "$u" test -x "$dir" 2>/dev/null; then
+    check_reach "$u" "$dir" -x "$label"
+  elif [[ $MODE == apply ]]; then
+    if setfacl -m "u:${u}:--x" "$dir" 2>/dev/null; then
+      fixed "traverse ACL for $u on $dir"
+    else
+      need_root "cannot set traverse ACL for $u on $dir" "sudo setfacl -m u:${u}:--x '$dir'"
+    fi
+  else
+    miss "$label not traversable by $u"
+  fi
+}
+
 step_task_paths() {
   local u dir
   for u in "${POOL_USERS[@]}"; do
     id "$u" >/dev/null 2>&1 || continue
     for dir in "$FM_STATE_DIR" "$FM_DATA_DIR"; do
       [[ -d "$dir" ]] || { ok "task directory $dir not created yet"; continue; }
-      if has_acl "$dir" "^user:${u}:..x" || run_as "$u" test -x "$dir" 2>/dev/null; then
-        check_reach "$u" "$dir" -x "task directory $dir"
-      elif [[ $MODE == apply ]]; then
-        if setfacl -m "u:${u}:--x" "$dir" 2>/dev/null; then
-          fixed "traverse ACL for $u on $dir"
-        else
-          need_root "cannot set traverse ACL for $u on $dir" "sudo setfacl -m u:${u}:--x '$dir'"
-        fi
-      else
-        miss "task directory $dir not traversable by $u"
-      fi
+      ensure_traverse "$u" "$dir" "task directory $dir"
     done
   done
+}
+
+# --- 2a. project clones and secondmate homes ------------------------------------
+# A direct-PR or local-only pool worker commits through its task worktree into
+# the project clone's shared git directory, so each clone under projects/ needs
+# an rwX ACL (access + default) for the pool account; a secondmate pool worker
+# runs inside its registered local home, which must be reachable (the launcher
+# grants the home's own ACL when the secondmate starts).
+step_projects() {
+  local u pdir clone reg line home
+  pdir="${FM_PROJECTS_OVERRIDE:-$FM_HOME_DIR/projects}"
+  reg="$FM_DATA_DIR/secondmates.md"
+  for u in "${POOL_USERS[@]}"; do
+    id "$u" >/dev/null 2>&1 || continue
+    if [[ -d "$pdir" ]]; then
+      ensure_traverse "$u" "$pdir" "projects directory $pdir"
+      for clone in "$pdir"/*/; do
+        clone=${clone%/}
+        [[ -e "$clone/.git" ]] || continue
+        if has_acl "$clone" "^user:${u}:rwx" && has_acl "$clone" "^default:user:${u}:rwx"; then
+          ok "project clone $clone writable by $u"
+        elif [[ $MODE == apply ]]; then
+          if setfacl -R -m "u:${u}:rwX" -m "d:u:${u}:rwX" "$clone" 2>/dev/null; then
+            fixed "ACL (access + default) for $u on $clone"
+          else
+            need_root "cannot set ACL for $u on project clone $clone" "sudo setfacl -R -m u:${u}:rwX -m d:u:${u}:rwX '$clone'"
+          fi
+        else
+          miss "project clone $clone not writable by $u"
+        fi
+      done
+    else
+      ok "projects directory $pdir not created yet"
+    fi
+    [[ -f "$reg" ]] || continue
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      home=$(secondmate_local_home "$line") || continue
+      [[ -d "$home" ]] || continue
+      ensure_traverse "$u" "$home" "secondmate home $home"
+    done < "$reg"
+  done
+}
+
+secondmate_local_home() { # <registry line>: print the home of a local record
+  (
+    # shellcheck source=bin/fm-secondmate-registry-lib.sh
+    . "$SETUP_DIR/fm-secondmate-registry-lib.sh"
+    secondmate_registry_parse_line "$1" && [[ $SECONDMATE_REGISTRY_REMOTE -eq 0 ]] &&
+      printf '%s\n' "$SECONDMATE_REGISTRY_HOME"
+  )
 }
 
 # --- 2. git HTTPS credentials via the operator's gh login ----------------------
@@ -325,6 +385,7 @@ step_nm_config() {
 echo "fm-agy-pool-setup: mode=$MODE operator=$OPERATOR pool=${POOL_USERS[*]:-<none>}"
 step_acl
 step_task_paths
+step_projects
 step_git_auth
 step_operator_push_auth
 step_models
