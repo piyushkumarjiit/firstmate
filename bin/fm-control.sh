@@ -1121,7 +1121,7 @@ resolve_relaunch_profile() {
     "$account_model" "$TARGET_HARNESS" "" "$account_mate" "$TARGET_ACCOUNT" >/dev/null || return 1
   # A named agy pool account (explicit, else the one this task records) is
   # checked before the old agent stops, so a refused account changes nothing.
-  if [ "$TARGET_HARNESS" = agy ]; then
+  if [ "$TARGET_HARNESS" = agy ] && [ "$KIND" != secondmate ]; then
     local pool_account=$TARGET_ACCOUNT
     [ -n "$pool_account" ] || [ "$PRIOR_HARNESS" != agy ] || pool_account=$(fm_meta_get "$META" account)
     if [ -n "$pool_account" ]; then

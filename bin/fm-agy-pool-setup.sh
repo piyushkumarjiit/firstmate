@@ -24,10 +24,8 @@
 #                steering inbox, and write data/<task>/ (the launcher adds the
 #                per-task data ACL when the worker starts).
 #   2c. projects pool accounts can write each project clone under projects/
-#                (access + default ACL) and reach every local secondmate home
-#                registered in data/secondmates.md, so a direct-PR, local-only,
-#                or secondmate pool worker can commit and run there. Re-run
-#                `apply` after adding a project or a secondmate.
+#                (access + default ACL), so a direct-PR or local-only pool
+#                worker can commit there. Re-run `apply` after adding a project.
 #   3. models    the models allowlist maps Neon and Hydrogen models to accounts;
 #                its account order is the quota failover order.
 #   4. run-log   the operator can read the pool usage log and per-run logs.
@@ -187,16 +185,13 @@ step_task_paths() {
   done
 }
 
-# --- 2a. project clones and secondmate homes ------------------------------------
+# --- 2a. project clones ------------------------------------
 # A direct-PR or local-only pool worker commits through its task worktree into
 # the project clone's shared git directory, so each clone under projects/ needs
-# an rwX ACL (access + default) for the pool account; a secondmate pool worker
-# runs inside its registered local home, which must be reachable (the launcher
-# grants the home's own ACL when the secondmate starts).
+# an rwX ACL (access + default) for the pool account.
 step_projects() {
-  local u pdir clone reg line home
+  local u pdir clone
   pdir="${FM_PROJECTS_OVERRIDE:-$FM_HOME_DIR/projects}"
-  reg="$FM_DATA_DIR/secondmates.md"
   for u in "${POOL_USERS[@]}"; do
     id "$u" >/dev/null 2>&1 || continue
     if [[ -d "$pdir" ]]; then
@@ -219,22 +214,7 @@ step_projects() {
     else
       ok "projects directory $pdir not created yet"
     fi
-    [[ -f "$reg" ]] || continue
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      home=$(secondmate_local_home "$line") || continue
-      [[ -d "$home" ]] || continue
-      ensure_traverse "$u" "$home" "secondmate home $home"
-    done < "$reg"
   done
-}
-
-secondmate_local_home() { # <registry line>: print the home of a local record
-  (
-    # shellcheck source=bin/fm-secondmate-registry-lib.sh
-    . "$SETUP_DIR/fm-secondmate-registry-lib.sh"
-    secondmate_registry_parse_line "$1" && [[ $SECONDMATE_REGISTRY_REMOTE -eq 0 ]] &&
-      printf '%s\n' "$SECONDMATE_REGISTRY_HOME"
-  )
 }
 
 # --- 2. git HTTPS credentials via the operator's gh login ----------------------

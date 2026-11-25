@@ -859,16 +859,6 @@ grant_task_data() {
   setfacl -R -m "u:${user}:rwX" -m "d:u:${user}:rwX" "$home/data/$task" 2>/dev/null || true
 }
 
-# A pool secondmate runs inside its own firstmate home (FM_AGY_MATE_HOME, set
-# by fm-spawn), where it writes its state records, steering inbox, backlog, and
-# data. Grant only the selected account an ACL there, access plus default, and
-# give the operator the same default so files the worker creates stay usable.
-grant_mate_home() {
-  local user=$1 home=${FM_AGY_MATE_HOME:-}
-  [[ -n "$home" && -d "$home" && ! -L "$home" && -O "$home" ]] || return 0
-  setfacl -R -m "u:${user}:rwX" -m "d:u:${user}:rwX" -m "u:$(id -un):rwX" -m "d:u:$(id -un):rwX" "$home" 2>/dev/null || true
-}
-
 # fm-spawn pre-registers the worktree in the operator's agy trust store; mirror
 # exactly that entry into the selected pool account's store so its launch does
 # not stop on the folder-trust dialog. Nothing is mirrored for a folder the
@@ -896,22 +886,13 @@ mirror_trust() {
 # account over that account's files under the task's state and data paths, one
 # as the operator over only this task's own state records and inbox.
 keep_group_access() {
-  local home task mate=0
+  local home task
   task=${FM_TASK_ID:-}
-  if [[ -z "$task" && -n "${FM_AGY_MATE_HOME:-}" ]]; then
-    mate=1
-    home=$FM_AGY_MATE_HOME
-  else
-    [[ -n "$task" ]] || return 0
-    home=${FM_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}
-  fi
+  [[ -n "$task" ]] || return 0
+  home=${FM_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}
   [[ -d "$home/state" ]] || return 0
   local dirs=("$home/state")
-  if (( mate )); then
-    [[ -d "$home/data" ]] && dirs+=("$home/data")
-  else
-    [[ -d "$home/data/$task" ]] && dirs+=("$home/data/$task")
-  fi
+  [[ -d "$home/data/$task" ]] && dirs+=("$home/data/$task")
   # A named default entry for the operator makes the restored access effective
   # even in an operator session that predates its agents-group membership.
   local d me
@@ -942,12 +923,8 @@ keep_group_access() {
   # The doorbell rings right after fm-send writes a message, so this side
   # sweeps at the same short interval; an unread message is rung again anyway.
   # shellcheck disable=SC2016  # expanded by the helper's bash, not here
-  setsid /usr/bin/env WATCH_PID=$$ ME="$me" STATE_DIR="$home/state" TASK="$task" MATE=$mate bash -c '
+  setsid /usr/bin/env WATCH_PID=$$ ME="$me" STATE_DIR="$home/state" TASK="$task" bash -c '
     sweep() {
-      if [ "$MATE" = 1 ]; then
-        find "$STATE_DIR" -maxdepth 3 -user "$ME" ! -perm -g=rw -exec chmod g+rwX {} + 2>/dev/null
-        return
-      fi
       find "$STATE_DIR" -maxdepth 1 \( -name "$TASK.meta" -o -name "$TASK.status" \) \
         -user "$ME" ! -perm -g=rw -exec chmod g+rw {} + 2>/dev/null
       [ -d "$STATE_DIR/$TASK.inbox" ] &&
@@ -1057,7 +1034,6 @@ while (( ATTEMPT < MAX_ATTEMPTS )); do
   if [[ "${AGY_ARGS[0]:-}" != models ]]; then
     mirror_trust
     grant_task_data "$SELECTED_USER"
-    grant_mate_home "$SELECTED_USER"
     case " $KEPT_ACCESS_USERS " in
       *" $SELECTED_USER "*) ;;
       *)

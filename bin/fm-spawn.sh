@@ -1221,6 +1221,12 @@ fi
   echo "error: --account requires a non-empty value" >&2
   exit 1
 }
+# A secondmate, local or remote, launches on its own per-mate pin, so --account
+# is refused here, before the remote route could ignore it.
+[ "$ACCOUNT_SET" -eq 0 ] || [ "$KIND" != secondmate ] || {
+  echo "error: --account applies to ships and scouts; secondmate ${POS[0]:-} launches on its own config/secondmate-accounts/<id>/claude-account pin" >&2
+  exit 1
+}
 # A parent-delivered carrier replaces this home's own resolution, so it is
 # refused unless it is a secondmate spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
@@ -1353,10 +1359,6 @@ spawn_remote_secondmate() {
     echo "error: invalid task id" >&2
     return 2
   }
-  if [ "$ACCOUNT_SET" -eq 1 ] && [ "$(secondmate_registry_field "$DATA/secondmates.md" "$id" remote 2>/dev/null)" = 1 ]; then
-    echo "error: --account applies to ships and scouts; remote secondmate $id launches on its own config/secondmate-accounts/<id>/claude-account pin" >&2
-    return 1
-  fi
   mkdir -p "$STATE" || {
     echo "error: could not create parent state directory" >&2
     return 1
@@ -3454,9 +3456,10 @@ omp)
 agy)
   # The account-pool launcher is reached through bin/agy-pool/agy so the live
   # process is named agy; bin/fm-agy-pool.sh's header owns why.
-  # Every agy ship, scout, or secondmate takes the pool launcher when the home
-  # configures a pool; only the no-mistakes ship also needs the pool-builder brief.
-  if agy_pool_configured; then
+  # Every agy ship or scout takes the pool launcher when the home configures a
+  # pool; only the no-mistakes ship also needs the pool-builder brief. A
+  # secondmate keeps the plain launcher and runs as the operator.
+  if agy_pool_configured && [ "$KIND" != secondmate ]; then
     AGY_BIN="$SCRIPT_DIR/agy-pool/agy"
   else
     AGY_BIN=$(resolve_pi_executable agy) || {
@@ -3589,7 +3592,7 @@ if [ "$HARNESS" = agy ]; then
   # Capacity gate (read-only): a spawn beyond FM_AGY_MAX_ACTIVE exits 75 here,
   # before any pane exists, rather than failing in the pane 30 seconds later.
   # A relaunch is checked by fm-control before it stops the old agent, never here.
-  if [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$RAW_LAUNCH" = 0 ] && [ "$RELAUNCH" -eq 0 ]; then
+  if [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$KIND" != secondmate ] && [ "$RAW_LAUNCH" = 0 ] && [ "$RELAUNCH" -eq 0 ]; then
     "$AGY_BIN" --check-capacity "$AGY_POOL_ACCOUNT" || {
       echo "error: $ID not launched: the agy account pool is at capacity; the task stays queued, retry when a pool worker finishes" >&2
       exit 75
@@ -7827,9 +7830,6 @@ if [ "$KIND" = secondmate ]; then
   # not enable them across the launch boundary (bin/fm-trace-context-lib.sh header).
   # Reuse the single frozen decision from the carrier resolution above so the
   # injected carrier and this on/off snapshot are guaranteed to agree.
-  if [ "$HARNESS" = agy ] && [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ]; then
-    LAUNCH="FM_AGY_MATE_HOME=$sq_home $LAUNCH"
-  fi
   LAUNCH="FM_ROOT_OVERRIDE= FM_STATE_OVERRIDE= FM_DATA_OVERRIDE= FM_PROJECTS_OVERRIDE= FM_CONFIG_OVERRIDE= FM_PUBLIC_FOLLOWUP_PRIMARY_HOME=$sq_primary_home FM_HOME=$sq_home FM_TRACE_CONTEXT=$SPAWN_TRACE_EFFECTIVE FM_SUPERVISION_MODEL=$supervision_model $LAUNCH"
 else
   # A ship or scout works for the active home itself.

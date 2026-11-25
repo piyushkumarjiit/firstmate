@@ -1412,31 +1412,6 @@ test_task_data_acl_is_scoped_to_the_selected_account_and_task() {
   pass "the per-task data ACL covers only the selected account and that one task"
 }
 
-test_secondmate_home_acl_is_scoped_to_the_selected_account() {
-  local fx="$TMP_ROOT/mate_home" home="$TMP_ROOT/mate_home/home"
-  make_named_account_fixture "$fx"
-  mkdir -p "$home/state" "$home/data"
-  RC=0
-  OUT=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
-    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_USER=gpro3 FM_HOME="$home" FM_AGY_MATE_HOME="$home" \
-    "$POOL" --model gemini-4-neon-medium -p hi 2>&1) || RC=$?
-  [ "$RC" -eq 0 ] || fail "secondmate run failed rc=$RC: $OUT"
-  assert_contains "$OUT" "Routing model 'gemini-4-neon-medium' to 'gpro3'" "FM_AGY_USER account is the one used"
-  assert_contains "$(cat "$fx/setfacl.log")" "u:gpro3:rwX -m d:u:gpro3:rwX" "secondmate home granted to the selected account"
-  assert_contains "$(cat "$fx/setfacl.log")" "$home" "the grant targets the secondmate home"
-  assert_not_contains "$(cat "$fx/setfacl.log")" "u:gpro2" "no other pool account is granted"
-  RC=0
-  : > "$fx/setfacl.log"
-  OUT=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
-    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_USER=gpro3 FM_HOME="$home" \
-    "$POOL" --model gemini-4-neon-medium -p hi 2>&1) || RC=$?
-  [ "$RC" -eq 0 ] || fail "plain run failed rc=$RC: $OUT"
-  assert_not_contains "$(cat "$fx/setfacl.log")" "$home" "without FM_AGY_MATE_HOME no home is granted"
-  pass "the secondmate home ACL covers only the selected account and only a marked secondmate launch"
-}
-
 test_named_unavailable_account_never_falls_back() {
   local fx="$TMP_ROOT/no_fallback"
   make_named_account_fixture "$fx"
@@ -1541,7 +1516,6 @@ fm_test_run \
   test_forged_conversation_record_is_not_trusted \
   test_check_account_validates_a_named_account \
   test_task_data_acl_is_scoped_to_the_selected_account_and_task \
-  test_secondmate_home_acl_is_scoped_to_the_selected_account \
   test_named_unavailable_account_never_falls_back \
   test_spawn_gates_are_read_only_and_capacity_aware \
   test_gh_config_forwards_only_to_direct_pr_and_local_only_workers \

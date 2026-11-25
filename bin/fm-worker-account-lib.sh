@@ -345,7 +345,7 @@ fm_worker_account_select() {
   fm_worker_account_request_valid "$account" || return 1
   # An agy account names an account-pool account; bin/fm-spawn.sh checks it
   # against the pool config through the launcher (--check-account).
-  [ "$harness" != agy ] || account=
+  [ "$harness" != agy ] || [ -n "$mate" ] || account=
   if [ -n "$account" ] && [ "$harness" != claude ]; then
     echo "error: --account names one of config/claude-accounts and applies to Claude workers only, not $harness" >&2
     return 1
