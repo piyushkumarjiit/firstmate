@@ -79,4 +79,15 @@ test_sudoers_rule_is_accepted_by_visudo() {
   pass "generated sudoers rule lists every launcher command and parses"
 }
 
-fm_test_run test_agy_bin_validation test_sudoers_rule_is_accepted_by_visudo test_help_prints_usage_and_exits_zero test_unknown_argument_is_rejected test_refuses_when_not_root test_conf_parsing_skips_comments_and_blank_lines test_example_conf_parses_to_placeholders
+test_helper_resolution_returns_absolute_paths() {
+  local out p
+  out=$(bash -c '. "$1"; fm_agy_pool_resolve_helpers test find git' _ "$PROVISION") || { fail "resolution failed: $out"; return; }
+  [[ $(wc -l <<<"$out") -eq 3 ]] || { fail "expected 3 paths: $out"; return; }
+  while read -r p; do
+    [[ "$p" == /* && -x "$p" ]] || { fail "not an absolute executable: $p"; return; }
+  done <<<"$out"
+  bash -c '. "$1"; fm_agy_pool_resolve_helpers fm-no-such-command-xyz' _ "$PROVISION" >/dev/null && { fail "missing command should fail"; return; }
+  pass "helpers (including the test builtin) resolve to absolute executables"
+}
+
+fm_test_run test_helper_resolution_returns_absolute_paths test_agy_bin_validation test_sudoers_rule_is_accepted_by_visudo test_help_prints_usage_and_exits_zero test_unknown_argument_is_rejected test_refuses_when_not_root test_conf_parsing_skips_comments_and_blank_lines test_example_conf_parses_to_placeholders

@@ -56,7 +56,7 @@
 #      core.sharedRepository=group on repositories found within three levels.
 #   4. Writes /etc/sudoers.d/firstmate-gpro letting PRIMARY_USER run only
 #      /usr/bin/env, AGY_BIN, and the absolute paths of test, find and git
-#      (resolved with command -v; the pool launcher runs these via sudo -n) as the
+#      (resolved with type -P; the pool launcher runs these via sudo -n) as the
 #      listed pool users without a password. The rule is built in a temp file,
 #      validated with visudo, then moved into place; an invalid rule never
 #      replaces the current one. AGY_BIN must be an absolute path without spaces.
@@ -102,6 +102,16 @@ fm_agy_pool_sudoers_rule() {
 Defaults:${primary} env_keep += "TERM COLORTERM LANG LC_ALL"
 ${primary} ALL=(${users}) NOPASSWD: ${cmds}
 EOF
+}
+
+# Prints the absolute PATH location of each command named in $@, one per line;
+# fails if any is missing (type -P, since command -v returns builtin names).
+fm_agy_pool_resolve_helpers() {
+  local c p
+  for c in "$@"; do
+    p=$(type -P "$c") && [[ "$p" == /* ]] || return 1
+    echo "$p"
+  done
 }
 
 fm_agy_pool_provision_usage() {
@@ -256,16 +266,12 @@ EOF
   # sudo ignores names containing '.', so the temp file is never read while unvalidated.
   local sudoers_tmp
   sudoers_tmp=$(mktemp /etc/sudoers.d/.firstmate-gpro.XXXXXX)
-  local helper helper_path helper_paths=()
-  for helper in test find git; do
-    helper_path=$(command -v "$helper" || true)
-    if [[ "$helper_path" != /* ]]; then
-      rm -f "$sudoers_tmp"
-      echo "ERROR: cannot resolve $helper to an absolute path" >&2
-      exit 1
-    fi
-    helper_paths+=("$helper_path")
-  done
+  local helper_paths
+  if ! mapfile -t helper_paths < <(fm_agy_pool_resolve_helpers test find git); then
+    rm -f "$sudoers_tmp"
+    echo "ERROR: cannot resolve test, find and git to absolute paths" >&2
+    exit 1
+  fi
   fm_agy_pool_sudoers_rule "$POOL_CONF" "$PRIMARY_USER" "$USER_LIST_CSV" \
     /usr/bin/env "$AGY_BIN" "${helper_paths[@]}" > "$sudoers_tmp"
 
