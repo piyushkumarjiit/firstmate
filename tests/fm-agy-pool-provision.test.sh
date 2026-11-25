@@ -57,4 +57,26 @@ test_example_conf_parses_to_placeholders() {
   pass "the example config lists only the placeholder accounts"
 }
 
-fm_test_run test_help_prints_usage_and_exits_zero test_unknown_argument_is_rejected test_refuses_when_not_root test_conf_parsing_skips_comments_and_blank_lines test_example_conf_parses_to_placeholders
+test_agy_bin_validation() {
+  local v
+  for v in /usr/local/bin/agy /opt/agy/bin/agy; do
+    bash -c '. "$1"; fm_agy_pool_valid_agy_bin "$2"' _ "$PROVISION" "$v" || { fail "valid AGY_BIN rejected: $v"; return; }
+  done
+  for v in agy ./agy "/opt/my agy" "/usr/bin/agy,/bin/sh" ""; do
+    bash -c '. "$1"; fm_agy_pool_valid_agy_bin "$2"' _ "$PROVISION" "$v" && { fail "invalid AGY_BIN accepted: $v"; return; }
+  done
+  pass "AGY_BIN must be absolute with no whitespace or sudoers separators"
+}
+
+test_sudoers_rule_is_accepted_by_visudo() {
+  local out rule="$TMP_ROOT/rule"
+  out=$(bash -c '. "$1"; fm_agy_pool_sudoers_rule /etc/x.conf op gpro1,gpro2 /usr/bin/env /usr/local/bin/agy /usr/bin/test /usr/bin/find /usr/bin/git' _ "$PROVISION") || { fail "rule generation failed"; return; }
+  grep -q '^op ALL=(gpro1,gpro2) NOPASSWD: /usr/bin/env, /usr/local/bin/agy, /usr/bin/test, /usr/bin/find, /usr/bin/git$' <<<"$out" || { fail "unexpected rule: $out"; return; }
+  printf '%s\n' "$out" > "$rule"
+  if command -v visudo >/dev/null 2>&1; then
+    visudo -cf "$rule" >/dev/null 2>&1 || { fail "visudo rejected generated rule: $out"; return; }
+  fi
+  pass "generated sudoers rule lists every launcher command and parses"
+}
+
+fm_test_run test_agy_bin_validation test_sudoers_rule_is_accepted_by_visudo test_help_prints_usage_and_exits_zero test_unknown_argument_is_rejected test_refuses_when_not_root test_conf_parsing_skips_comments_and_blank_lines test_example_conf_parses_to_placeholders
