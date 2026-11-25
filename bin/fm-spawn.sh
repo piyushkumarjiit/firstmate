@@ -75,11 +75,11 @@
 #   backend, kind, project or home, worktree, endpoint - comes from the task's
 #   validated state/<id>.meta, so --backend, --scout, --secondmate, a project
 #   positional, and batch pairs are all refused alongside it; only harness,
-#   model, effort, and a declared Claude account may change, which is what
-#   makes a harness switch one ordinary relaunch. It refuses unless the
-#   recorded endpoint is positively agent-free on a backend with both a
-#   recovery-grade agent-state classifier and replacement-agent support
-#   (tmux or herdr), and clears the previous harness's per-task wiring
+#   model, effort, a declared Claude account, or an agy pool account may
+#   change, which is what makes a harness switch one ordinary relaunch. It
+#   refuses unless the recorded endpoint is positively agent-free on a backend
+#   with both a recovery-grade agent-state classifier and replacement-agent
+#   support (tmux or herdr), and clears the previous harness's per-task wiring
 #   before arming the new incarnation. T3 Code has the classifier but refuses
 #   relaunch because a thread keeps its conversation across turns and provider
 #   changes. Two verdicts are agent-free: a `dead`
@@ -523,6 +523,9 @@
 #   relaunch reuses the recorded entry unless --account moves it. Without the
 #   list, --account refuses and nothing else changes. docs/configuration.md
 #   "Several Claude accounts" owns the contract.
+#   For an `agy` ship or scout, --account instead names an account-pool account
+#   (a Linux account from the pool config); docs/configuration.md's "agy pool
+#   accounts" owns that contract. A secondmate refuses --account as above.
 # Per-secondmate omp profile (config/secondmate-accounts/<id>/omp-profile):
 #   Opt-in, and read only for a local secondmate's own omp agent;
 #   bin/fm-omp-profile-lib.sh owns the file and its refusals. A pinned launch
@@ -8415,10 +8418,10 @@ if [ "${BRIEF_BUILDER:-}" = pool ] && [ "$KIND" = ship ] && [ "$MODE" != local-o
   FM_HOME=$FM_HOME "$SCRIPT_DIR/fm-deliver.sh" "$ID" autostart >/dev/null 2>&1 \
     || echo "warning: could not arm delivery autostart for $ID; start it with bin/fm-deliver.sh $ID run" >&2
 fi
-# A finished pool builder must free its FM_AGY_MAX_ACTIVE account slot: a
-# detached poller stops it through fm-control once its latest status is done.
 # Every pool-launched task shape (scouts, direct-PR, local-only, no-mistakes)
-# frees its slot the same way; fm-control relaunch is the way back in.
+# must free its FM_AGY_MAX_ACTIVE account slot: a detached poller stops it
+# through fm-control once its latest status is done. fm-control relaunch is the
+# way back in.
 if [ "$HARNESS" = agy ] && [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$RAW_LAUNCH" = 0 ] && [ "$KIND" != secondmate ] && [ "${FM_POOL_EXIT:-on}" != off ]; then
   FM_HOME=$FM_HOME setsid nohup "$SCRIPT_DIR/fm-pool-exit.sh" "$ID" >/dev/null 2>&1 </dev/null &
 fi

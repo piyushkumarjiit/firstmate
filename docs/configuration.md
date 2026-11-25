@@ -2055,12 +2055,10 @@ This section is the single owner of the canonical schema and its per-field seman
 **agy pool accounts**
 
 On a home whose pool config (`/etc/firstmate/gpro-pool.conf`) lists at least one account, every firstmate-launched `agy` ship or scout launches through `bin/agy-pool/agy`; only a `no-mistakes` ship also needs the pool-builder brief (`fm-brief.sh --pool-build`), while `direct-PR`, `local-only`, and scout tasks keep their ordinary brief.
-Homes without a pool config and every non-agy harness launch exactly as before.
-`--account <pool account>` on `bin/fm-spawn.sh` (and `bin/fm-control.sh <id> relaunch --account`) runs an agy task on that Linux pool account.
-The account must be listed in the pool config, exist, be signed in, be allowed for the task's model by `/etc/firstmate/gpro-models.conf`, and not be marked exhausted; otherwise the spawn refuses with the reason and never uses another account.
-The spawn records it as `account=` in `state/<id>.meta`, passes it to the launcher as `FM_AGY_USER`, and a relaunch reuses it unless a new `--account` moves it; without `--account` the launcher picks an account as before.
-A spawn beyond `FM_AGY_MAX_ACTIVE` pool accounts exits 75 before any pane exists, and `bin/fm-pool-exit.sh` frees each finished pool worker's slot.
-Secondmates are not routed through the pool and `--account` is refused for them. Run `bin/fm-agy-pool-setup.sh apply` after adding a project: its `projects` step grants the pool accounts access to the new clone ([setup](agy-pool-setup.md)).
+Homes without a pool config, a raw launch command, and every non-agy harness keep their existing launch.
+`--account <pool account>` on `bin/fm-spawn.sh`, and `--account` on `bin/fm-control.sh <id> relaunch`, names the Linux pool account that task runs on; it is validated before the launch, recorded as `account=` in `state/<id>.meta`, and reused on relaunch unless the flag moves it.
+Secondmates are not routed through the pool and `--account` is refused for them.
+[Pool setup](agy-pool-setup.md) owns the account checks, the `FM_AGY_MAX_ACTIVE` capacity cap, the per-task grants, and what each task shape does.
 
 **Pipeline roles (`roles.review`, `roles.fix`)**
 

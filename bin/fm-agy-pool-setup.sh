@@ -12,6 +12,13 @@
 #   1. acl       pool accounts get rwX plus default ACLs on the no-mistakes
 #                worktrees directory, so a pool agent can read and write the
 #                operator-side run worktrees.
+#   1b. task-paths pool accounts can traverse this home's state/ and data/
+#                directories, so any task shape can append status, read its
+#                steering inbox, and write data/<task>/ (the launcher adds the
+#                per-task data ACL when the worker starts).
+#   1c. projects pool accounts can write each project clone under projects/
+#                (access + default ACL), so a direct-PR or local-only pool
+#                worker can commit there. Re-run `apply` after adding a project.
 #   2. git-auth  each pool account gets a git HTTPS credential helper backed by
 #                the operator's gh login (read-only ACL on the gh config dir),
 #                so a pool account's own clone or fetch never hits a login
@@ -19,13 +26,6 @@
 #                operator's own git credential and gh login instead.
 #                The operator account itself must also hold a github.com gh login
 #                and a git credential helper that serves github.com (check only).
-#   2b. task-paths pool accounts can traverse this home's state/ and data/
-#                directories, so any task shape can append status, read its
-#                steering inbox, and write data/<task>/ (the launcher adds the
-#                per-task data ACL when the worker starts).
-#   2c. projects pool accounts can write each project clone under projects/
-#                (access + default ACL), so a direct-PR or local-only pool
-#                worker can commit there. Re-run `apply` after adding a project.
 #   3. models    the models allowlist maps Neon and Hydrogen models to accounts;
 #                its account order is the quota failover order.
 #   4. run-log   the operator can read the pool usage log and per-run logs.
@@ -37,6 +37,9 @@
 #   FM_NM_WORKTREES                 default $NM_HOME or ~/.no-mistakes, + /worktrees
 #   FM_NM_CONFIG                    default $NM_HOME or ~/.no-mistakes, + /config.yaml
 #   FM_AGY_USAGE_LOG, FM_AGY_STATE_DIR   pool run-log locations
+#   FM_HOME, FM_STATE_OVERRIDE, FM_DATA_OVERRIDE, FM_PROJECTS_OVERRIDE
+#                                   this home and the state/, data/, and
+#                                   projects/ directories the steps grant
 #   FM_GH_CONFIG_DIR, FM_GH_BIN     operator gh config dir and binary
 #   FM_SETUP_SUDO                   privilege prefix for per-account commands
 #                                   (default "sudo -n"); "none" disables them
@@ -185,7 +188,7 @@ step_task_paths() {
   done
 }
 
-# --- 2a. project clones ------------------------------------
+# --- 1c. project clones ------------------------------------
 # A direct-PR or local-only pool worker commits through its task worktree into
 # the project clone's shared git directory, so each clone under projects/ needs
 # an rwX ACL (access + default) for the pool account.

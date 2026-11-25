@@ -17,6 +17,7 @@ Its header owns the full setup order, the environment variables, adding or remov
 ## What it covers
 
 - Access and default ACLs for each pool account on the no-mistakes worktrees directory, plus traverse access on its parent, so pool agents can work in run worktrees.
+- Traverse access from each pool account into this home's `state/` and `data/`, and access plus default ACLs on every clone under `projects/`, so any task shape can record status, read its steering inbox, and commit.
 - A git HTTPS credential helper in each pool account, backed by the operator's `gh` login, so a pool account's own clone or fetch of a private origin never stops at a login prompt.
 - The operator account's own push credentials (check only): a working `gh` login and a git credential helper, because `fm-deliver` runs no-mistakes, and so the push, as the operator. A failed push reports a blocker naming these `operator push credentials` check lines.
 - The models allowlist (`/etc/firstmate/gpro-models.conf`): Neon and Hydrogen rules naming the pool accounts, where listed order is the quota failover order.
@@ -26,7 +27,7 @@ Its header owns the full setup order, the environment variables, adding or remov
 
 ## What changes with a pool configured
 
-The pool takes over on a home whose pool config lists at least one account, for every firstmate-launched `agy` crew ship or scout (`no-mistakes`, `direct-PR`, `local-only`, and scouts); a secondmate (which keeps the plain `agy` launcher and runs as the operator, and for which `--account` is refused) and every non-agy harness keep their existing launch.
+The pool takes over on a home whose pool config lists at least one account, for every firstmate-launched `agy` crew ship or scout (`no-mistakes`, `direct-PR`, `local-only`, and scouts); a secondmate (which keeps the plain `agy` launcher and runs as the operator, and for which `--account` is refused), a raw launch command, and every non-agy harness keep their existing launch.
 Only the `no-mistakes` ship needs the pool-builder brief below; the other shapes keep their ordinary brief and delivery contract.
 Name the account for one task with `--account <pool account>` on `bin/fm-spawn.sh` (a Linux account name from the pool config, never a Google address).
 The spawn checks it through `bin/agy-pool/agy --check-account <account> [model]` before any pane exists: it must be listed, exist, be signed in, be allowed for the model by the models config, and not be marked exhausted, or the spawn refuses and never picks another account.
@@ -34,7 +35,7 @@ It is recorded as `account=` in the task record, handed to the launcher as `FM_A
 The launcher grants the selected account an ACL on that task's `data/<task>/` only (a scout's `report.md`), and `bin/fm-agy-pool-setup.sh` checks and applies traverse access on `state/` and `data/` (step `task-paths`).
 Pool-routed scouts and ships use the pool account's quota, not the operator's own agy sign-in, and their commits are authored by the pool worker identity (`Firstmate Worker (<account>)`), not the operator.
 Before a spawn creates any pane, `bin/agy-pool/agy --check-capacity [account]` (read-only, no pool state written) refuses a launch beyond `FM_AGY_MAX_ACTIVE` with exit 75, so the task stays queued.
-Every pool-launched ship or scout worker, direct-PR and local-only included, is stopped by `bin/fm-pool-exit.sh` once its latest status is `done` (a scout: once `data/<task>/report.md` exists), which frees its slot; unlike other harnesses, an agy direct-PR worker therefore cannot be steered after `done` until `bin/fm-control.sh <task> relaunch` brings it back (on its recorded account, with the pool capacity checked before the old agent stops when the old agent was not an agy one). A secondmate is not routed through the pool.
+Every pool-launched ship or scout worker, direct-PR and local-only included, is stopped by `bin/fm-pool-exit.sh` once its latest status is `done` (a scout counts only once `data/<task>/report.md` exists), which frees its slot; unlike other harnesses, an agy direct-PR worker therefore cannot be steered after `done` until `bin/fm-control.sh <task> relaunch` brings it back (on its recorded account, with the pool capacity checked before the old agent stops when the old agent was not an agy one). A secondmate is not routed through the pool.
 Run `bin/fm-agy-pool-setup.sh apply` after adding a project: step `projects` gives each pool account write access to every clone under `projects/` so a pool worker can commit there; `check` reports what is missing.
 Direct-PR and local-only workers push through the pool account's git credential helper and open pull requests through the operator's `gh` login, whose config directory the launcher forwards read-only to those interactive ship workers only (never to scouts, builders, or no-mistakes review and fix calls).
 
@@ -52,7 +53,7 @@ Direct-PR and local-only workers push through the pool account's git credential 
 
 ## Overrides
 
-Paths and accounts can be redirected with `POOL_CONF`, `MODELS_CONF`, `FM_NM_WORKTREES`, `FM_NM_CONFIG`, `FM_AGY_USAGE_LOG`, `FM_AGY_STATE_DIR`, `FM_GH_CONFIG_DIR`, `FM_GH_BIN`, and `FM_SETUP_SUDO` (set to `none` to print per-account commands instead of running them).
+Paths and accounts can be redirected with `POOL_CONF`, `MODELS_CONF`, `FM_NM_WORKTREES`, `FM_NM_CONFIG`, `FM_AGY_USAGE_LOG`, `FM_AGY_STATE_DIR`, `FM_HOME`, `FM_STATE_OVERRIDE`, `FM_DATA_OVERRIDE`, `FM_PROJECTS_OVERRIDE`, `FM_GH_CONFIG_DIR`, `FM_GH_BIN`, and `FM_SETUP_SUDO` (set to `none` to print per-account commands instead of running them).
 The script header owns the exact list.
 Verification lives in `tests/fm-agy-pool-setup.test.sh` and `tests/fm-agy-pool-provision.test.sh`.
 For large review prompts see [`contrib/no-mistakes-antigravity-stdin/README.md`](../contrib/no-mistakes-antigravity-stdin/README.md).

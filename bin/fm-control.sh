@@ -88,6 +88,11 @@
 #              Claude ship or scout keeps the account its record names, and
 #              only an explicit --account <entry> moves it to another
 #              declared one, checked here the same way.
+#              An agy ship or scout replacement likewise passes the account
+#              pool's read-only checks before the old agent stops: a named or
+#              recorded pool account (bin/agy-pool/agy --check-account), plus
+#              --check-capacity when the prior harness was not agy;
+#              docs/agy-pool-setup.md owns the contract.
 #              A replacement omp secondmate likewise passes its per-secondmate
 #              omp profile pin (bin/fm-omp-profile-lib.sh) before the old agent
 #              stops.
