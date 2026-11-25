@@ -162,4 +162,18 @@ test_operator_cache_only_helper_is_rejected() {
   pass "a helper that cannot serve github.com is rejected"
 }
 
-fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited test_unreachable_ancestor_is_not_reported_ok test_operator_push_credentials_are_checked test_operator_cache_only_helper_is_rejected test_operator_store_helper_with_github_entry_is_accepted
+test_projects_step_checks_and_applies_clone_access() {
+  local home="$TMP_ROOT/projhome" out rc
+  mkdir -p "$home/projects/p1" "$home/data"
+  git -C "$home/projects/p1" init -q
+  out=$(FM_HOME="$home" run_setup check); rc=$?
+  [[ $rc -eq 1 ]] || { fail "check must fail while a project clone grants the pool account nothing (rc=$rc): $out"; }
+  grep -q "MISSING project clone $home/projects/p1 not writable by $ME" <<<"$out" || { fail "unwritable clone not reported: $out"; }
+  out=$(FM_HOME="$home" run_setup apply); rc=$?
+  grep -q "fixed   ACL (access + default) for $ME on $home/projects/p1" <<<"$out" || { fail "apply did not grant the clone: $out"; }
+  out=$(FM_HOME="$home" run_setup check)
+  grep -q "ok      project clone $home/projects/p1 writable by $ME" <<<"$out" || { fail "granted clone not confirmed: $out"; }
+  pass "the projects step reports an ungranted clone, applies the ACL, "
+}
+
+fm_test_run test_check_is_read_only_and_reports_missing test_apply_is_idempotent_and_check_then_passes test_root_steps_print_commands test_nm_config_never_edited test_unreachable_ancestor_is_not_reported_ok test_operator_push_credentials_are_checked test_operator_cache_only_helper_is_rejected test_operator_store_helper_with_github_entry_is_accepted test_projects_step_checks_and_applies_clone_access

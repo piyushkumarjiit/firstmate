@@ -610,6 +610,12 @@ BASE_PATH=${FM_TEST_BASE_PATH:-$NODE_BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin}
 run_agy_spawn() {
   local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6
   shift 6
+  # AGY_SPAWN_PROJ / AGY_SPAWN_MODE_ARGS, when set (even empty), replace the
+  # default project argument and "--mode no-mistakes --yolo off" (scouts and
+  # relaunches take neither).
+  local -a proj_args=("$proj") mode_args=(--mode no-mistakes --yolo off)
+  [ -z "${AGY_SPAWN_PROJ+x}" ] || { proj_args=(); [ -z "$AGY_SPAWN_PROJ" ] || proj_args=("$AGY_SPAWN_PROJ"); }
+  [ -z "${AGY_SPAWN_MODE_ARGS+x}" ] || { mode_args=(); [ -z "$AGY_SPAWN_MODE_ARGS" ] || read -r -a mode_args <<<"$AGY_SPAWN_MODE_ARGS"; }
   HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
@@ -628,7 +634,7 @@ run_agy_spawn() {
     POOL_CONF="${POOL_CONF:-$case_dir/no-pool.conf}" \
     FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=${FM_AGY_MODELS_TIMEOUT:-1} \
     PATH="$fakebin:$BASE_PATH" \
-    "$SPAWN" "$id" "$proj" --harness agy --mode no-mistakes --yolo off "$@" 2>&1
+    "$SPAWN" "$id" ${proj_args[@]+"${proj_args[@]}"} --harness agy ${mode_args[@]+"${mode_args[@]}"} "$@" 2>&1
 }
 
 test_agy_launch_carries_the_brief_with_model_effort_and_autonomy() {
@@ -900,7 +906,9 @@ test_agy_pool_route_requires_real_pool_config() {
   pass "fm-spawn: agy routes through the pool only when real pool config exists"
 }
 
-test_agy_direct_pr_keeps_plain_launcher_with_pool_config() {
+test_agy_direct_pr_routes_through_launcher_with_pool_config() {
+  # Captain-approved reversal (2026-11-25): with a pool config, a direct-PR agy
+  # ship now routes through the pool launcher like every other task shape.
   local id rec out rc pc
   id="agy-poolroute-d1-$$"
   rec=$(make_agy_spawn_case poolroute-dpr "$id")
@@ -909,11 +917,148 @@ test_agy_direct_pr_keeps_plain_launcher_with_pool_config() {
   printf '%s\n' gpro1 > "$pc"
   rc=0
   out=$(POOL_CONF="$pc" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
-    --mode direct-PR --model gemini-3.8-flash-low --effort low) || rc=$?
-  expect_code 0 "$rc" "a direct-PR agy ship must spawn with a plain brief even when a pool config exists: $out"
-  assert_contains "$(cat "$CASE_DIR/launch.log")" "$FAKEBIN_DIR/agy" "direct-PR must launch the plain agy binary"
-  assert_not_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "direct-PR must not route through the pool launcher"
-  pass "fm-spawn: a direct-PR agy ship keeps the plain launcher when a pool config exists"
+    --mode direct-PR --model gemini-4-neon-medium --effort low) || rc=$?
+  expect_code 0 "$rc" "a direct-PR agy ship must spawn with a plain brief on a pool config: $out"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "direct-PR must route through the pool launcher"
+  assert_not_contains "$(cat "$HOME_DIR/state/$id.meta")" "builder=pool" "direct-PR keeps the ordinary brief"
+  pass "fm-spawn: a direct-PR agy ship routes through the pool launcher when a pool config exists"
+}
+
+# Pool routing for every task shape, and --account naming. The fake id and sudo
+# make gpro1 and gpro2 signed-in pool accounts (gpro3 unsigned); models.conf
+# reserves Neon for gpro2.
+make_pool_spawn_case() {  # <name> <id> -> record
+  local rec case_dir fb
+  rec=$(make_agy_spawn_case "$1" "$2")
+  case_dir=${rec%%|*}
+  fb="$case_dir/fake/fakebin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fb/id"
+  cat > "$fb/sudo" <<'SH'
+#!/usr/bin/env bash
+while [ $# -gt 0 ]; do case "$1" in -n|-H) shift ;; -u) T=$2; shift 2 ;; *) break ;; esac; done
+if [ "${1:-}" = test ]; then [ "$T" != gpro3 ]; exit $?; fi
+exec "$@"
+SH
+  chmod +x "$fb/id" "$fb/sudo"
+  printf '%s\n' gpro1 gpro2 gpro3 > "$case_dir/gpro-pool.conf"
+  printf '%s\n' '*neon* gpro2' > "$case_dir/models.conf"
+  mkdir -p "$case_dir/pool-state"
+  printf '%s\n' "$rec"
+}
+
+run_pool_spawn() {  # <record> <id> <spawn args...>
+  local rec=$1 id=$2
+  shift 2
+  read_agy_spawn_record "$rec"
+  local ship_flags="--mode no-mistakes --yolo off" a
+  for a in "$@"; do [ "$a" != --scout ] || ship_flags=; done
+  AGY_SPAWN_MODE_ARGS=$ship_flags POOL_CONF="$CASE_DIR/gpro-pool.conf" MODELS_CONF="$CASE_DIR/models.conf" \
+    FM_AGY_STATE_DIR="$CASE_DIR/pool-state" FM_AGY_USAGE_LOG="$CASE_DIR/usage.jsonl" \
+    run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$@"
+}
+
+test_agy_pool_routes_scout_and_local_only_through_the_launcher() {
+  local id rec out rc
+  id="agy-poolshape-s1-$$"
+  rec=$(make_pool_spawn_case poolshape-scout "$id")
+  rc=0
+  out=$(run_pool_spawn "$rec" "$id" --scout --model gemini-4-neon-medium --effort low 2>&1) || rc=$?
+  read_agy_spawn_record "$rec"
+  expect_code 0 "$rc" "a scout agy spawn must launch on a configured pool: $out"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "scout must take the pool launcher"
+  assert_grep 'kind=scout' "$HOME_DIR/state/$id.meta" "scout kind recorded"
+  assert_not_contains "$(cat "$HOME_DIR/state/$id.meta")" "builder=pool" "a scout keeps its scout brief, not a pool-builder brief"
+  assert_not_contains "$(cat "$CASE_DIR/launch.log")" "FM_AGY_USER" "no account named means the automatic choice"
+
+  id="agy-poolshape-l1-$$"
+  rec=$(make_pool_spawn_case poolshape-local "$id")
+  rc=0
+  out=$(run_pool_spawn "$rec" "$id" --mode local-only --model gemini-4-neon-medium 2>&1) || rc=$?
+  read_agy_spawn_record "$rec"
+  expect_code 0 "$rc" "a local-only agy ship must launch on a configured pool: $out"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "local-only must take the pool launcher"
+  pass "fm-spawn: agy scouts and local-only ships route through the pool launcher"
+}
+
+test_agy_account_flag_names_validates_and_records_a_pool_account() {
+  local id rec out rc meta
+  id="agy-acct-n1-$$"
+  rec=$(make_pool_spawn_case acct-ok "$id")
+  rc=0
+  out=$(run_pool_spawn "$rec" "$id" --scout --model gemini-4-neon-medium --account gpro2 2>&1) || rc=$?
+  read_agy_spawn_record "$rec"
+  expect_code 0 "$rc" "a valid named pool account must launch: $out"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "FM_AGY_USER=" "launch must hand the account to the launcher"
+  assert_contains "$(cat "$CASE_DIR/launch.log")" "gpro2" "launch names the requested account"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_grep 'account=gpro2' "$meta" "meta records the pool account"
+  assert_contains "$out" "account=gpro2" "spawn line reports the account"
+
+  pass "fm-spawn: --account names a validated agy pool account and records it"
+}
+
+test_agy_account_flag_refuses_bad_accounts_without_fallback() {
+  local id rec out rc
+  id="agy-acct-b1-$$"
+  rec=$(make_pool_spawn_case acct-unknown "$id")
+  rc=0
+  out=$(run_pool_spawn "$rec" "$id" --scout --model gemini-4-neon-medium --account nobody 2>&1) || rc=$?
+  read_agy_spawn_record "$rec"
+  [ "$rc" -ne 0 ] || fail "an unknown pool account must refuse"
+  assert_contains "$out" "not an account in" "unknown account refusal"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "a refused account must not launch"
+
+  id="agy-acct-b2-$$"
+  rec=$(make_pool_spawn_case acct-model "$id")
+  rc=0
+  out=$(run_pool_spawn "$rec" "$id" --scout --model gemini-4-neon-medium --account gpro1 2>&1) || rc=$?
+  read_agy_spawn_record "$rec"
+  [ "$rc" -ne 0 ] || fail "an account not allowed for the model must refuse"
+  assert_contains "$out" "not allowed for model" "model refusal"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "a refused account must not launch"
+
+  id="agy-acct-b3-$$"
+  rec=$(make_pool_spawn_case acct-unauth "$id")
+  rc=0
+  out=$(run_pool_spawn "$rec" "$id" --scout --model gemini-3.8-flash-low --account gpro3 2>&1) || rc=$?
+  read_agy_spawn_record "$rec"
+  [ "$rc" -ne 0 ] || fail "an unauthenticated account must refuse"
+  assert_contains "$out" "not authenticated" "sign-in refusal"
+
+  id="agy-acct-b4-$$"
+  rec=$(make_pool_spawn_case acct-exhausted "$id")
+  read_agy_spawn_record "$rec"
+  printf '{"user":"gpro1","window_start":1,"reset_at":9999999999,"used_sec":0,"budget_sec":5400,"exhausted":true}\n' > "$CASE_DIR/pool-state/gpro1.state.json"
+  rc=0
+  out=$(run_pool_spawn "$rec" "$id" --scout --model gemini-3.8-flash-low --account gpro1 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an exhausted account must refuse"
+  assert_contains "$out" "marked exhausted" "exhausted refusal"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "a refused account must not launch"
+
+  id="agy-acct-b5-$$"
+  rec=$(make_agy_spawn_case acct-nopool "$id")
+  read_agy_spawn_record "$rec"
+  rc=0
+  out=$(AGY_SPAWN_MODE_ARGS="" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" --scout --account gpro1 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "--account without a configured pool must refuse"
+  assert_contains "$out" "needs a configured pool" "no-pool refusal"
+  pass "fm-spawn: --account refuses an unknown, disallowed, unsigned, exhausted, or poolless account and never falls back"
+}
+
+test_agy_spawn_beyond_pool_capacity_exits_75_before_any_pane() {
+  local id rec out rc
+  id="agy-cap-c1-$$"
+  rec=$(make_pool_spawn_case cap-full "$id")
+  read_agy_spawn_record "$rec"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$CASE_DIR/pgrep-busy"
+  chmod +x "$CASE_DIR/pgrep-busy"
+  rc=0
+  out=$(FM_AGY_PGREP="$CASE_DIR/pgrep-busy" FM_AGY_MAX_ACTIVE=2 run_pool_spawn "$rec" "$id" --scout --model gemini-4-neon-medium 2>&1) || rc=$?
+  expect_code 75 "$rc" "a spawn beyond the pool cap must exit 75: $out"
+  assert_contains "$out" "cap is 2" "capacity refusal names the cap"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "an over-cap spawn must not create a launch"
+  [ ! -e "$CASE_DIR/pool-state/gpro1.state.json" ] || fail "the capacity check must not write pool state"
+  pass "fm-spawn: an agy spawn beyond the pool cap exits 75 before any pane, writing no pool state"
 }
 
 test_agy_missing_binary_refuses_before_pane_creation() {
@@ -1011,6 +1156,62 @@ test_agy_unregistered_path_without_a_dialog_fails_the_spawn
 test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_pool_route_requires_real_pool_config
-test_agy_direct_pr_keeps_plain_launcher_with_pool_config
+test_agy_direct_pr_routes_through_launcher_with_pool_config
+test_agy_pool_home_keeps_plain_launcher_for_a_secondmate_and_refuses_account() {
+  local id rec sm_home out rc meta
+  id="agy-secondmate-p7-$$"
+  rec=$(make_pool_spawn_case secondmate-pool "$id")
+  read_agy_spawn_record "$rec"
+  sm_home="$CASE_DIR/sm-home"
+  mkdir -p "$sm_home/bin" "$sm_home/data" "$sm_home/state" "$sm_home/config" "$sm_home/projects"
+  : > "$sm_home/AGENTS.md"
+  printf '%s\n' "$id" > "$sm_home/.fm-secondmate-home"
+  printf '# Charter\n\nSecondmate charter for %s.\n' "$id" > "$sm_home/data/charter.md"
+  printf 'projects/\nstate/\ndata/\nconfig/\n.no-mistakes/\n' > "$sm_home/.gitignore"
+  git -C "$sm_home" init -q -b main
+  rc=0
+  out=$(HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    POOL_CONF="$CASE_DIR/gpro-pool.conf" MODELS_CONF="$CASE_DIR/models.conf" \
+    FM_AGY_STATE_DIR="$CASE_DIR/pool-state" FM_AGY_USAGE_LOG="$CASE_DIR/usage.jsonl" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$sm_home" TMUX="fake,1,0" \
+    FM_FAKE_LAUNCH_LOG="$CASE_DIR/launch.log" \
+    FM_FAKE_TMUX_CALL_LOG="$CASE_DIR/tmux-calls.log" \
+    FM_FAKE_AGY_STATE="$CASE_DIR/agy.state" \
+    FM_FAKE_AGY_SETTINGS="$HOME_DIR/.gemini/antigravity-cli/settings.json" \
+    FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=1 \
+    PATH="$FAKEBIN_DIR:$BASE_PATH" \
+    "$SPAWN" "$id" "$sm_home" --secondmate agy --model gemini-4-neon-medium --account gpro2 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "--account must be refused for a secondmate on a pool home"
+  assert_contains "$out" "--account applies to ships and scouts" "secondmate account refusal"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "a refused secondmate account must not launch"
+
+  rc=0
+  out=$(HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    POOL_CONF="$CASE_DIR/gpro-pool.conf" MODELS_CONF="$CASE_DIR/models.conf" \
+    FM_AGY_STATE_DIR="$CASE_DIR/pool-state" FM_AGY_USAGE_LOG="$CASE_DIR/usage.jsonl" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$sm_home" TMUX="fake,1,0" \
+    FM_FAKE_LAUNCH_LOG="$CASE_DIR/launch.log" FM_FAKE_TMUX_CALL_LOG="$CASE_DIR/tmux-calls.log" \
+    FM_FAKE_AGY_STATE="$CASE_DIR/agy.state" \
+    FM_FAKE_AGY_SETTINGS="$HOME_DIR/.gemini/antigravity-cli/settings.json" \
+    FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=1 \
+    PATH="$FAKEBIN_DIR:$BASE_PATH" \
+    "$SPAWN" "$id" "$sm_home" --secondmate agy 2>&1) || rc=$?
+  expect_code 0 "$rc" "a secondmate must still launch on a pool home ($out)"
+  assert_not_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "a secondmate keeps the plain launcher"
+  assert_not_contains "$(cat "$CASE_DIR/launch.log")" "FM_AGY_USER" "no pool account reaches a secondmate"
+  assert_grep 'kind=secondmate' "$HOME_DIR/state/$id.meta" "secondmate kind recorded"
+
+  pass "fm-spawn: a secondmate on a pool home keeps the plain launcher and refuses --account"
+}
+
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
 test_agy_spawn_arms_no_busy_wiring
+test_agy_pool_routes_scout_and_local_only_through_the_launcher
+test_agy_account_flag_names_validates_and_records_a_pool_account
+test_agy_account_flag_refuses_bad_accounts_without_fallback
+test_agy_spawn_beyond_pool_capacity_exits_75_before_any_pane
+test_agy_pool_home_keeps_plain_launcher_for_a_secondmate_and_refuses_account

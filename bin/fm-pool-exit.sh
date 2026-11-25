@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # fm-pool-exit.sh <task-id> [--once]
-# Frees a pool account slot (FM_AGY_MAX_ACTIVE) once a pool builder is finished:
+# Frees a pool account slot (FM_AGY_MAX_ACTIVE) once a pool worker (any task shape) is finished:
 # polls state/<task>.status and, when its latest line is `done`, stops the
 # builder through the control plane (bin/fm-control.sh <task> exit), which keeps
-# the worktree and every commit. Armed by bin/fm-spawn.sh for pool builds; it
+# the worktree and every commit; a scout counts as finished only once its
+# report exists. Armed by bin/fm-spawn.sh for every pool-launched task; it
 # exits when the task record is gone or after 24h. --once checks a single time.
 # FM_POOL_EXIT=off disables it; FM_POOL_EXIT_INTERVAL sets the poll seconds.
 set -euo pipefail
@@ -20,7 +21,14 @@ BASELINE_LINES=0
 [ "$ONCE" = --once ] || BASELINE_LINES=$(grep -vc '^[[:space:]]*$' "$FM_STATE/$TASK.status" 2>/dev/null || true)
 BASELINE_LINES=${BASELINE_LINES:-0}
 
+# A scout is finished only once its report exists (data/<task>/report.md).
+is_scout_without_report() {
+  [ "$(sed -n 's/^kind=//p' "$FM_STATE/$TASK.meta" 2>/dev/null | head -n 1)" = scout ] || return 1
+  [ ! -s "${FM_DATA_OVERRIDE:-$FM_HOME/data}/$TASK/report.md" ]
+}
+
 is_done() {
+  ! is_scout_without_report || return 1
   local last lines
   lines=$(grep -vc '^[[:space:]]*$' "$FM_STATE/$TASK.status" 2>/dev/null || true)
   [ "${lines:-0}" -gt "$BASELINE_LINES" ] || return 1

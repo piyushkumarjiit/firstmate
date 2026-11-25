@@ -1759,7 +1759,7 @@ A task with no recorded account, or one whose account is no longer declared, ref
 
 The list covers Claude ships and scouts only.
 A local secondmate's own agent never draws from it: under a list it needs its own [per-secondmate account pin](#per-secondmate-account-pins), and `--account` refuses for every secondmate, local or remote.
-Other runners ignore the list, and `--account` refuses for them.
+Other runners ignore the list, and `--account` refuses for them, except `agy` ships and scouts, where it names an account-pool account (see "agy pool accounts" under the crew dispatch roles below).
 Like the single pin, the list is not inherited into secondmate homes.
 
 ### Per-secondmate account pins
@@ -2051,6 +2051,14 @@ This section is the single owner of the canonical schema and its per-field seman
 | Top-level `preferred_provider` | Optional provider-family preference, applied after eligibility checks under `quota-array-dispatch`. |
 | Top-level `shared_quota` | Optional; see "Shared-quota opt-out" below. |
 | Top-level `roles` | Optional object with optional `review` and `fix` non-empty arrays of `{harness, model, account?}` objects; see "Pipeline roles" below. |
+
+**agy pool accounts**
+
+On a home whose pool config (`/etc/firstmate/gpro-pool.conf`) lists at least one account, every firstmate-launched `agy` ship or scout launches through `bin/agy-pool/agy`; only a `no-mistakes` ship also needs the pool-builder brief (`fm-brief.sh --pool-build`), while `direct-PR`, `local-only`, and scout tasks keep their ordinary brief.
+Homes without a pool config, a raw launch command, and every non-agy harness keep their existing launch.
+`--account <pool account>` on `bin/fm-spawn.sh`, and `--account` on `bin/fm-control.sh <id> relaunch`, names the Linux pool account that task runs on; it is validated before the launch, recorded as `account=` in `state/<id>.meta`, and reused on relaunch unless the flag moves it.
+Secondmates are not routed through the pool and `--account` is refused for them.
+[Pool setup](agy-pool-setup.md) owns the account checks, the `FM_AGY_MAX_ACTIVE` capacity cap, the per-task grants, and what each task shape does.
 
 **Pipeline roles (`roles.review`, `roles.fix`)**
 

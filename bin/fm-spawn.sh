@@ -75,11 +75,11 @@
 #   backend, kind, project or home, worktree, endpoint - comes from the task's
 #   validated state/<id>.meta, so --backend, --scout, --secondmate, a project
 #   positional, and batch pairs are all refused alongside it; only harness,
-#   model, effort, and a declared Claude account may change, which is what
-#   makes a harness switch one ordinary relaunch. It refuses unless the
-#   recorded endpoint is positively agent-free on a backend with both a
-#   recovery-grade agent-state classifier and replacement-agent support
-#   (tmux or herdr), and clears the previous harness's per-task wiring
+#   model, effort, a declared Claude account, or an agy pool account may
+#   change, which is what makes a harness switch one ordinary relaunch. It
+#   refuses unless the recorded endpoint is positively agent-free on a backend
+#   with both a recovery-grade agent-state classifier and replacement-agent
+#   support (tmux or herdr), and clears the previous harness's per-task wiring
 #   before arming the new incarnation. T3 Code has the classifier but refuses
 #   relaunch because a thread keeps its conversation across turns and provider
 #   changes. Two verdicts are agent-free: a `dead`
@@ -523,6 +523,9 @@
 #   relaunch reuses the recorded entry unless --account moves it. Without the
 #   list, --account refuses and nothing else changes. docs/configuration.md
 #   "Several Claude accounts" owns the contract.
+#   For an `agy` ship or scout, --account instead names an account-pool account
+#   (a Linux account from the pool config); docs/configuration.md's "agy pool
+#   accounts" owns that contract. A secondmate refuses --account as above.
 # Per-secondmate omp profile (config/secondmate-accounts/<id>/omp-profile):
 #   Opt-in, and read only for a local secondmate's own omp agent;
 #   bin/fm-omp-profile-lib.sh owns the file and its refusals. A pinned launch
@@ -3456,7 +3459,10 @@ omp)
 agy)
   # The account-pool launcher is reached through bin/agy-pool/agy so the live
   # process is named agy; bin/fm-agy-pool.sh's header owns why.
-  if agy_pool_configured && [ "$MODE" = no-mistakes ]; then
+  # Every agy ship or scout takes the pool launcher when the home configures a
+  # pool; only the no-mistakes ship also needs the pool-builder brief. A
+  # secondmate keeps the plain launcher and runs as the operator.
+  if agy_pool_configured && [ "$KIND" != secondmate ]; then
     AGY_BIN="$SCRIPT_DIR/agy-pool/agy"
   else
     AGY_BIN=$(resolve_pi_executable agy) || {
@@ -3562,6 +3568,40 @@ WORKER_ACCOUNT_DECLARED=${WORKER_ACCOUNT%%$'\t'*}
 WORKER_ACCOUNT_ROOT=${WORKER_ACCOUNT#*$'\t'}
 WORKER_ACCOUNT_PROVIDER=${WORKER_ACCOUNT_ROOT#*$'\t'}
 WORKER_ACCOUNT_ROOT=${WORKER_ACCOUNT_ROOT%%$'\t'*}
+# Named pool account for an agy task (--account <pool account>, or the account a
+# relaunch already records). Checked against the pool config before any
+# endpoint exists, and never replaced by another account: the launcher gets it
+# as FM_AGY_USER, so it either runs there or refuses.
+AGY_POOL_ACCOUNT=
+if [ "$HARNESS" = agy ]; then
+  AGY_POOL_REQUEST=$ACCOUNT_ARG
+  if [ -z "$AGY_POOL_REQUEST" ] && [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = agy ]; then
+    AGY_POOL_REQUEST=$(fm_meta_get "$RELAUNCH_META" account)
+  fi
+  if [ -n "$AGY_POOL_REQUEST" ]; then
+    if [ "$AGY_BIN" != "$SCRIPT_DIR/agy-pool/agy" ] || [ "$RAW_LAUNCH" != 0 ]; then
+      echo "error: --account '$AGY_POOL_REQUEST' names an agy account-pool account, which needs a configured pool (POOL_CONF) and a plain agy launch, not a raw launch command" >&2
+      exit 1
+    fi
+    AGY_POOL_MODEL=$MODEL
+    [ "$AGY_POOL_MODEL" != default ] || AGY_POOL_MODEL=
+    AGY_POOL_ACCOUNT=$("$AGY_BIN" --check-account "$AGY_POOL_REQUEST" "$AGY_POOL_MODEL") || {
+      echo "error: $ID cannot launch on agy pool account '$AGY_POOL_REQUEST'; choose another with --account$([ "$RELAUNCH" -eq 1 ] || printf ', or omit it for the automatic choice')" >&2
+      exit 1
+    }
+    WORKER_ACCOUNT=$AGY_POOL_ACCOUNT
+    WORKER_ACCOUNT_DECLARED=$AGY_POOL_ACCOUNT
+  fi
+  # Capacity gate (read-only): a spawn beyond FM_AGY_MAX_ACTIVE exits 75 here,
+  # before any pane exists, rather than failing in the pane 30 seconds later.
+  # A relaunch is checked by fm-control before it stops the old agent, never here.
+  if [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$KIND" != secondmate ] && [ "$RAW_LAUNCH" = 0 ] && [ "$RELAUNCH" -eq 0 ]; then
+    "$AGY_BIN" --check-capacity "$AGY_POOL_ACCOUNT" || {
+      echo "error: $ID not launched: the agy account pool is at capacity; the task stays queued, retry when a pool worker finishes" >&2
+      exit 75
+    }
+  fi
+fi
 # T3 starts the agent itself, at full access, with its provider instance's own
 # account and environment, so a launch setting only a Firstmate-built command
 # line can apply refuses here instead of being silently widened or dropped.
@@ -7762,6 +7802,9 @@ if [ -n "$WORKER_ACCOUNT" ]; then
   pi | pi-signed)
     LAUNCH="PI_CODING_AGENT_DIR=$(shell_quote "$WORKER_ACCOUNT_ROOT") $LAUNCH"
     ;;
+  agy)
+    LAUNCH="FM_AGY_USER=$(shell_quote "$AGY_POOL_ACCOUNT") $LAUNCH"
+    ;;
   esac
 elif [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
   LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$CLAUDE_CONFIG_DIR") $LAUNCH"
@@ -8375,9 +8418,11 @@ if [ "${BRIEF_BUILDER:-}" = pool ] && [ "$KIND" = ship ] && [ "$MODE" != local-o
   FM_HOME=$FM_HOME "$SCRIPT_DIR/fm-deliver.sh" "$ID" autostart >/dev/null 2>&1 \
     || echo "warning: could not arm delivery autostart for $ID; start it with bin/fm-deliver.sh $ID run" >&2
 fi
-# A finished pool builder must free its FM_AGY_MAX_ACTIVE account slot: a
-# detached poller stops it through fm-control once its latest status is done.
-if [ "${BRIEF_BUILDER:-}" = pool ] && [ "$KIND" = ship ] && [ "${FM_POOL_EXIT:-on}" != off ]; then
+# Every pool-launched task shape (scouts, direct-PR, local-only, no-mistakes)
+# must free its FM_AGY_MAX_ACTIVE account slot: a detached poller stops it
+# through fm-control once its latest status is done. fm-control relaunch is the
+# way back in.
+if [ "$HARNESS" = agy ] && [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$RAW_LAUNCH" = 0 ] && [ "$KIND" != secondmate ] && [ "${FM_POOL_EXIT:-on}" != off ]; then
   FM_HOME=$FM_HOME setsid nohup "$SCRIPT_DIR/fm-pool-exit.sh" "$ID" >/dev/null 2>&1 </dev/null &
 fi
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT$SPAWN_ACCOUNT"

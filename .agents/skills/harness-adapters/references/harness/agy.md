@@ -64,4 +64,7 @@ See `../../../../../docs/supervision-protocols/agy.md` for the complete supervis
 Live pool quota is read only via `bin/agy-pool/agy --usage <account>`; never call Google endpoints or other workarounds.
 Pool launches pass `queuedMessages=send-immediately` so steering doorbells land after the current step.
 On a home whose pool config (`POOL_CONF`, default `/etc/firstmate/gpro-pool.conf`) lists at least one account, an `agy` `no-mistakes` ship launches through `bin/agy-pool/agy` and its brief must be scaffolded with `fm-brief.sh --pool-build`; `bin/fm-spawn.sh` refuses either mismatch.
-Every other agy launch - `direct-PR` and `local-only` ships, scouts, and secondmates - keeps the plain binary.
+Every other agy ship or scout (`direct-PR`, `local-only`, scouts) launches through the same launcher with its ordinary brief; a raw launch command keeps its own command line, and a secondmate is not routed through the pool, keeps the plain binary, and refuses `--account`.
+`--account <pool account>` names the account for an agy task: `bin/fm-spawn.sh` validates it with `bin/agy-pool/agy --check-account`, refuses rather than falling back, records `account=`, passes `FM_AGY_USER`, and a relaunch reuses it unless a new `--account` moves it.
+A relaunch never moves silently: when the recorded account is exhausted or cannot serve a switched `--model`, it refuses, and `fm-control.sh <task> relaunch --account <other>` is the recovery.
+Pool-routed tasks spend pool quota rather than the operator's own agy sign-in, and their commits carry the pool worker identity.

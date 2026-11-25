@@ -343,6 +343,9 @@ fm_worker_account_select() {
   local harness=$1 config=$2 model=$3 executable=$4 raw=${5:-} mate=${6:-} account=${7:-}
   local selection declared root providers word provider='' selected_config setting listed count
   fm_worker_account_request_valid "$account" || return 1
+  # An agy account names an account-pool account; bin/fm-spawn.sh checks it
+  # against the pool config through the launcher (--check-account).
+  [ "$harness" != agy ] || [ -n "$mate" ] || account=
   if [ -n "$account" ] && [ "$harness" != claude ]; then
     echo "error: --account names one of config/claude-accounts and applies to Claude workers only, not $harness" >&2
     return 1

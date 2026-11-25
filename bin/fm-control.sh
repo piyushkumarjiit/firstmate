@@ -88,6 +88,11 @@
 #              Claude ship or scout keeps the account its record names, and
 #              only an explicit --account <entry> moves it to another
 #              declared one, checked here the same way.
+#              An agy ship or scout replacement likewise passes the account
+#              pool's read-only checks before the old agent stops: a named or
+#              recorded pool account (bin/agy-pool/agy --check-account), plus
+#              --check-capacity when the prior harness was not agy;
+#              docs/agy-pool-setup.md owns the contract.
 #              A replacement omp secondmate likewise passes its per-secondmate
 #              omp profile pin (bin/fm-omp-profile-lib.sh) before the old agent
 #              stops.
@@ -1119,6 +1124,20 @@ resolve_relaunch_profile() {
     "$PRIOR_HARNESS" "$(fm_meta_get "$META" account)" "$NEW_ACCOUNT" "$account_mate") || return 1
   fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$account_model" "$TARGET_HARNESS" "" "$account_mate" "$TARGET_ACCOUNT" >/dev/null || return 1
+  # A named agy pool account (explicit, else the one this task records) is
+  # checked before the old agent stops, so a refused account changes nothing.
+  if [ "$TARGET_HARNESS" = agy ] && [ "$KIND" != secondmate ]; then
+    local pool_account=$TARGET_ACCOUNT
+    [ -n "$pool_account" ] || [ "$PRIOR_HARNESS" != agy ] || pool_account=$(fm_meta_get "$META" account)
+    if [ -n "$pool_account" ]; then
+      "$FM_ROOT/bin/agy-pool/agy" --check-account "$pool_account" "$account_model" >/dev/null ||
+        die "agy pool account '$pool_account' cannot take this relaunch; the old agent is untouched"
+    fi
+    if [ "$PRIOR_HARNESS" != agy ]; then
+      "$FM_ROOT/bin/agy-pool/agy" --check-capacity "$pool_account" >/dev/null 2>&1 ||
+        die 'the agy account pool is at capacity; the old agent is untouched, retry when a pool worker finishes'
+    fi
+  fi
   fm_omp_profile_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$account_mate" >/dev/null || return 1
   # Likewise polytoken's launch profile and wiring refusals
