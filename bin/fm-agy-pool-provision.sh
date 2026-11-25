@@ -51,15 +51,16 @@
 #      variables (so agy uses the subscription login) and "umask 0002"; sets git
 #      safe.directory '*' and a worker git identity; reports whether its OAuth
 #      token exists. Also sets safe.directory '*' for PRIMARY_USER.
-#   3. For each existing REPO_PATHS directory: sets group SHARED_GROUP, setgid and
-#      group rwX, access and default ACLs for the group, and
+#   3. For each existing REPO_PATHS directory: sets group SHARED_GROUP, group rwX
+#      with setgid on directories, access and default ACLs for the group, and
 #      core.sharedRepository=group on repositories found within three levels.
 #   4. Writes /etc/sudoers.d/firstmate-gpro letting PRIMARY_USER run only
 #      /usr/bin/env, AGY_BIN, and the absolute paths of test, find and git
 #      (resolved with type -P; the pool launcher runs these via sudo -n) as the
 #      listed pool users without a password. The rule is built in a temp file,
 #      validated with visudo, then moved into place; an invalid rule never
-#      replaces the current one. AGY_BIN must be an absolute path without spaces.
+#      replaces the current one. AGY_BIN must be an absolute path with no
+#      whitespace and no sudoers separator (comma, colon, equals, quote).
 #
 # ADD OR REMOVE AN ACCOUNT
 #   Add: append the username to POOL_CONF, re-run this script, then

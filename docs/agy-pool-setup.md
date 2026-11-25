@@ -1,7 +1,6 @@
 # Gemini (agy) account pool setup
 
-Gemini work runs from separate Linux accounts through the pool launcher, so the operator account needs a few one-time grants.
-`bin/fm-agy-pool-setup.sh` performs every one of them in a single idempotent command.
+Gemini work runs from separate Linux accounts through the pool launcher, so the host needs a few one-time grants, split between one root provisioning step and one operator command.
 
 ## First-time provisioning
 
