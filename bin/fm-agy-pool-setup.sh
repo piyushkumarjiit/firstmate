@@ -163,7 +163,7 @@ step_task_paths() {
     for dir in "$FM_STATE_DIR" "$FM_DATA_DIR"; do
       [[ -d "$dir" ]] || { ok "task directory $dir not created yet"; continue; }
       if has_acl "$dir" "^user:${u}:..x" || run_as "$u" test -x "$dir" 2>/dev/null; then
-        ok "task directory $dir traversable by $u"
+        check_reach "$u" "$dir" -x "task directory $dir"
       elif [[ $MODE == apply ]]; then
         if setfacl -m "u:${u}:--x" "$dir" 2>/dev/null; then
           fixed "traverse ACL for $u on $dir"

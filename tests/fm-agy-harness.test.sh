@@ -906,7 +906,7 @@ test_agy_pool_route_requires_real_pool_config() {
   pass "fm-spawn: agy routes through the pool only when real pool config exists"
 }
 
-test_agy_direct_pr_keeps_plain_launcher_with_pool_config() {
+test_agy_direct_pr_routes_through_launcher_with_pool_config() {
   # Captain-approved reversal (2026-11-25): with a pool config, a direct-PR agy
   # ship now routes through the pool launcher like every other task shape.
   local id rec out rc pc
@@ -978,19 +978,6 @@ test_agy_pool_routes_scout_and_local_only_through_the_launcher() {
   expect_code 0 "$rc" "a local-only agy ship must launch on a configured pool: $out"
   assert_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "local-only must take the pool launcher"
   pass "fm-spawn: agy scouts and local-only ships route through the pool launcher"
-}
-
-test_agy_pool_routes_direct_pr_through_the_launcher() {
-  local id rec out rc
-  id="agy-poolshape-d1-$$"
-  rec=$(make_pool_spawn_case poolshape-dpr "$id")
-  rc=0
-  out=$(run_pool_spawn "$rec" "$id" --mode direct-PR --model gemini-4-neon-medium 2>&1) || rc=$?
-  read_agy_spawn_record "$rec"
-  expect_code 0 "$rc" "a direct-PR agy ship must launch on a configured pool: $out"
-  assert_contains "$(cat "$CASE_DIR/launch.log")" "agy-pool/agy" "direct-PR must take the pool launcher"
-  assert_not_contains "$(cat "$HOME_DIR/state/$id.meta")" "builder=pool" "direct-PR keeps the ordinary brief"
-  pass "fm-spawn: an agy direct-PR ship routes through the pool launcher"
 }
 
 test_agy_account_flag_names_validates_and_records_a_pool_account() {
@@ -1169,11 +1156,10 @@ test_agy_unregistered_path_without_a_dialog_fails_the_spawn
 test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_pool_route_requires_real_pool_config
-test_agy_direct_pr_keeps_plain_launcher_with_pool_config
+test_agy_direct_pr_routes_through_launcher_with_pool_config
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
 test_agy_spawn_arms_no_busy_wiring
 test_agy_pool_routes_scout_and_local_only_through_the_launcher
-test_agy_pool_routes_direct_pr_through_the_launcher
 test_agy_account_flag_names_validates_and_records_a_pool_account
 test_agy_account_flag_refuses_bad_accounts_without_fallback
 test_agy_spawn_beyond_pool_capacity_exits_75_before_any_pane

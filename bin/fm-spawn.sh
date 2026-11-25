@@ -3582,7 +3582,7 @@ if [ "$HARNESS" = agy ]; then
     AGY_POOL_MODEL=$MODEL
     [ "$AGY_POOL_MODEL" != default ] || AGY_POOL_MODEL=
     AGY_POOL_ACCOUNT=$("$AGY_BIN" --check-account "$AGY_POOL_REQUEST" "$AGY_POOL_MODEL") || {
-      echo "error: $ID cannot launch on agy pool account '$AGY_POOL_REQUEST'; choose another with --account, or omit it for the automatic choice" >&2
+      echo "error: $ID cannot launch on agy pool account '$AGY_POOL_REQUEST'; choose another with --account$([ "$RELAUNCH" -eq 1 ] || printf ', or omit it for the automatic choice')" >&2
       exit 1
     }
     WORKER_ACCOUNT=$AGY_POOL_ACCOUNT
@@ -3591,7 +3591,7 @@ if [ "$HARNESS" = agy ]; then
   # Capacity gate (read-only): a spawn beyond FM_AGY_MAX_ACTIVE exits 75 here,
   # before any pane exists, rather than failing in the pane 30 seconds later.
   # A relaunch's own old agent is already stopped, so it counts no slot.
-  if [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$KIND" != secondmate ]; then
+  if [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$KIND" != secondmate ] && [ "$RAW_LAUNCH" = 0 ] && [ "$RELAUNCH" -eq 0 ]; then
     "$AGY_BIN" --check-capacity "$AGY_POOL_ACCOUNT" || {
       echo "error: $ID not launched: the agy account pool is at capacity; the task stays queued, retry when a pool worker finishes" >&2
       exit 75
@@ -8418,7 +8418,7 @@ fi
 # detached poller stops it through fm-control once its latest status is done.
 # Every pool-launched task shape (scouts, direct-PR, local-only, no-mistakes)
 # frees its slot the same way; fm-control relaunch is the way back in.
-if [ "$HARNESS" = agy ] && [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$KIND" != secondmate ] && [ "${FM_POOL_EXIT:-on}" != off ]; then
+if [ "$HARNESS" = agy ] && [ "$AGY_BIN" = "$SCRIPT_DIR/agy-pool/agy" ] && [ "$RAW_LAUNCH" = 0 ] && [ "$KIND" != secondmate ] && [ "${FM_POOL_EXIT:-on}" != off ]; then
   FM_HOME=$FM_HOME setsid nohup "$SCRIPT_DIR/fm-pool-exit.sh" "$ID" >/dev/null 2>&1 </dev/null &
 fi
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT$SPAWN_ACCOUNT"

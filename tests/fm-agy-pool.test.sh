@@ -1476,7 +1476,7 @@ EOF2
   pass "GH_CONFIG_DIR reaches only interactive direct-PR and local-only ship workers"
 }
 
-test_relaunch_gate_never_moves_a_recorded_account_silently() {
+test_check_account_refuses_unserveable_model_on_recorded_account() {
   # fm-spawn --relaunch and fm-control relaunch both re-run --check-account on
   # the account the task records (fm-spawn tmux relaunch cannot be driven here:
   # it always refuses an endpoint it cannot prove absent).
@@ -1518,4 +1518,4 @@ fm_test_run \
   test_named_unavailable_account_never_falls_back \
   test_spawn_gates_are_read_only_and_capacity_aware \
   test_gh_config_forwards_only_to_direct_pr_and_local_only_workers \
-  test_relaunch_gate_never_moves_a_recorded_account_silently
+  test_check_account_refuses_unserveable_model_on_recorded_account

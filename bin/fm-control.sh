@@ -1128,6 +1128,10 @@ resolve_relaunch_profile() {
       "$FM_ROOT/bin/agy-pool/agy" --check-account "$pool_account" "$account_model" >/dev/null ||
         die "agy pool account '$pool_account' cannot take this relaunch; the old agent is untouched"
     fi
+    if [ "$PRIOR_HARNESS" != agy ] || [ -z "$(fm_meta_get "$META" account)" ]; then
+      "$FM_ROOT/bin/agy-pool/agy" --check-capacity "$pool_account" >/dev/null ||
+        die 'the agy account pool is at capacity; the old agent is untouched, retry when a pool worker finishes'
+    fi
   fi
   fm_omp_profile_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$account_mate" >/dev/null || return 1
