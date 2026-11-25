@@ -1477,9 +1477,10 @@ EOF2
 }
 
 test_check_account_refuses_unserveable_model_on_recorded_account() {
-  # fm-spawn --relaunch and fm-control relaunch both re-run --check-account on
-  # the account the task records (fm-spawn tmux relaunch cannot be driven here:
-  # it always refuses an endpoint it cannot prove absent).
+  # Covers only the --check-account contract that fm-control relaunch and
+  # fm-spawn --relaunch call on the recorded account; neither relaunch command
+  # is driven here (fm-spawn tmux relaunch refuses an endpoint it cannot prove
+  # absent).
   local fx="$TMP_ROOT/relaunch_gate"
   make_named_account_fixture "$fx"
   named_account_run "$fx" --check-account gpro1 gemini-3.8-flash-low
