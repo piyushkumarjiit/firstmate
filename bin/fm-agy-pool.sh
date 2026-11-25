@@ -20,8 +20,11 @@ MIN_REMAINING_PCT="${FM_AGY_MIN_PCT:-15}"         # Switch accounts when <= 15% 
 WINDOW_SECONDS="${FM_AGY_WINDOW_SEC:-18000}"       # Fallback 5-hour rolling window
 DEFAULT_BUDGET_SEC="${FM_AGY_BUDGET_SEC:-5400}"    # Fallback budget (auto-calibrates on 429)
 
-mkdir -p "$STATE_DIR"
-chmod 1777 "$STATE_DIR" 2>/dev/null || true
+# The --check-* spawn gates are read-only: they never create or touch pool state.
+if [[ "${1:-}" != --check-* ]]; then
+  mkdir -p "$STATE_DIR"
+  chmod 1777 "$STATE_DIR" 2>/dev/null || true
+fi
 
 if [[ -f "$POOL_CONF" ]]; then
   mapfile -t GPRO_USERS < <(grep -Ev '^\s*(#|$)' "$POOL_CONF" | awk '{print $1}')
@@ -500,6 +503,80 @@ is_user_exhausted() {
   (( pct <= MIN_REMAINING_PCT ))
 }
 
+# --check-account <account> [<model>]: the spawn-time gate for a named account
+# (bin/fm-spawn.sh --account). Local facts only, no network and no agy run: the
+# account must be listed in the pool config, exist, be signed in, be allowed for
+# the model by the models config, and not be marked exhausted. Prints the
+# account on success; exits 1 with one reason otherwise, never picking another.
+cmd_check_account() {
+  local user="${1:-}" model="${2:-${FM_AGY_POOL_MODEL:-}}" u listed=0
+  if [[ -z "$user" ]]; then
+    echo "[fm-agy-pool] ERROR: --check-account requires an account argument." >&2
+    exit 1
+  fi
+  for u in "${GPRO_USERS[@]}"; do
+    [[ "$u" == "$user" ]] && listed=1
+  done
+  if (( listed == 0 )); then
+    echo "[fm-agy-pool] ERROR: '$user' is not an account in $POOL_CONF (pool accounts: ${GPRO_USERS[*]:-none})." >&2
+    exit 1
+  fi
+  if ! id "$user" >/dev/null 2>&1; then
+    echo "[fm-agy-pool] ERROR: pool account '$user' does not exist as a Linux user." >&2
+    exit 1
+  fi
+  if ! is_authenticated "$user"; then
+    echo "[fm-agy-pool] ERROR: pool account '$user' is not authenticated (no agy sign-in token)." >&2
+    exit 1
+  fi
+  if ! is_user_allowed_for_model "$user" "$model"; then
+    echo "[fm-agy-pool] ERROR: pool account '$user' is not allowed for model '${model:-default}' by $MODELS_CONF (allowed: $(allowed_users_for_model "$model" || true))." >&2
+    exit 1
+  fi
+  if account_marked_exhausted "$user"; then
+    echo "[fm-agy-pool] ERROR: pool account '$user' is marked exhausted for model '${model:-default}'." >&2
+    exit 1
+  fi
+  printf '%s\n' "$user"
+  exit 0
+}
+
+# Read-only: is the account's recorded exhaustion window still open. Reads the
+# state file without creating or rolling it (init_or_roll_window writes).
+account_marked_exhausted() {
+  local qfile="$STATE_DIR/${1}.state.json" exhausted reset_at
+  [[ -f "$qfile" ]] || return 1
+  exhausted=$(jq -r '.exhausted // false' "$qfile" 2>/dev/null || echo false)
+  [[ "$exhausted" == true ]] || return 1
+  reset_at=$(jq -r '.reset_at // 0' "$qfile" 2>/dev/null || echo 0)
+  (( reset_at > 0 && $(now_epoch) >= reset_at )) && return 1
+  return 0
+}
+
+# --check-capacity [<account>]: the spawn-time capacity gate. Read-only (a
+# process check per account, no state writes, no network). Exits 75 with the
+# reason when FM_AGY_MAX_ACTIVE pool accounts already run and the named account
+# (if any) is not one of them; a named account that is already active fits.
+cmd_check_capacity() {
+  local target="${1:-}" max="${FM_AGY_MAX_ACTIVE:-2}" act
+  local -a active=()
+  mapfile -t active < <(find_active_pool_users)
+  for act in ${active[@]+"${active[@]}"}; do
+    [[ -n "$target" && "$act" == "$target" ]] && exit 0
+  done
+  if (( ${#active[@]} >= max )); then
+    echo "[fm-agy-pool] ERROR: ${#active[@]} pool accounts already active (${active[*]}); cap is $max (FM_AGY_MAX_ACTIVE). Retry once a pool worker finishes or exits." >&2
+    exit 75
+  fi
+  exit 0
+}
+if [[ "${1:-}" == --check-account ]]; then
+  cmd_check_account "${2:-}" "${3:-}"
+fi
+if [[ "${1:-}" == --check-capacity ]]; then
+  cmd_check_capacity "${2:-}"
+fi
+
 # Parse --user / --account (strip before passing to agy) and inspect --model / -m (keep for agy)
 EXPLICIT_USER="${FM_AGY_USER:-}"
 REQ_MODEL=""
@@ -770,6 +847,18 @@ grant_task_tmp() {
 grant_task_tmp "${GOTMPDIR:-}"
 grant_task_tmp "${TMPDIR:-}"
 
+# A pool worker writes its task's report and scratch files under data/<task>
+# (a scout's report.md most of all), which the operator created private. Grant
+# only the selected pool account an ACL on that one directory, access plus
+# default, so files it creates there stay readable and writable for both sides.
+grant_task_data() {
+  local user=$1 task=${FM_TASK_ID:-} home
+  [[ -n "$task" && "$task" =~ ^[A-Za-z0-9._-]+$ ]] || return 0
+  home=${FM_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}
+  [[ -d "$home/data/$task" && ! -L "$home/data/$task" && -O "$home/data/$task" ]] || return 0
+  setfacl -R -m "u:${user}:rwX" -m "d:u:${user}:rwX" "$home/data/$task" 2>/dev/null || true
+}
+
 # fm-spawn pre-registers the worktree in the operator's agy trust store; mirror
 # exactly that entry into the selected pool account's store so its launch does
 # not stop on the folder-trust dialog. Nothing is mirrored for a folder the
@@ -861,6 +950,26 @@ for _a in "${AGY_ARGS[@]}"; do
   esac
 done
 
+# Direct-PR and local-only ship workers push and open PRs themselves. The pool
+# account's git credential helper already reads the operator's gh login
+# (bin/fm-agy-pool-setup.sh git-auth); for exactly those interactive worker
+# launches hand gh the same read-only config dir. Scouts, no-mistakes builders,
+# and no-mistakes reviewer/fixer calls (nm-agy) never receive it.
+forward_gh_config() {
+  local meta kind mode dir
+  (( IS_INTERACTIVE )) || return 0
+  [[ -n "${FM_TASK_ID:-}" && "${FM_TASK_ID}" =~ ^[A-Za-z0-9._-]+$ ]] || return 0
+  meta="${FM_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}/state/${FM_TASK_ID}.meta"
+  [[ -f "$meta" ]] || return 0
+  kind=$(sed -n 's/^kind=//p' "$meta" | head -n 1)
+  mode=$(sed -n 's/^mode=//p' "$meta" | head -n 1)
+  [[ "$kind" == ship && ( "$mode" == direct-PR || "$mode" == local-only ) ]] || return 0
+  dir="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}"
+  [[ -d "$dir" ]] && FORWARD_ENV+=("GH_CONFIG_DIR=$dir")
+  return 0
+}
+forward_gh_config
+
 add_queued_messages_setting() {
   local mode="${FM_AGY_QUEUED_MESSAGES:-send-immediately}" a json
   for a in "${AGY_ARGS[@]}"; do
@@ -924,6 +1033,7 @@ while (( ATTEMPT < MAX_ATTEMPTS )); do
 
   if [[ "${AGY_ARGS[0]:-}" != models ]]; then
     mirror_trust
+    grant_task_data "$SELECTED_USER"
     case " $KEPT_ACCESS_USERS " in
       *" $SELECTED_USER "*) ;;
       *)

@@ -1335,6 +1335,163 @@ EOF2
   pass "conversation records naming a non-pool or model-disallowed account are not trusted"
 }
 
+# Fixture for the account-naming and task-data checks: a fake id, a sudo that
+# reports a pool account signed in unless the account is listed in
+# $fx/unauth, a setfacl that logs its arguments, and a stub agy.
+make_named_account_fixture() {
+  local fx=$1
+  rm -rf "$fx"
+  mkdir -p "$fx/bin" "$fx/state"
+  printf '%s\n' gpro1 gpro2 gpro3 > "$fx/pool.conf"
+  printf '%s\n' '*neon* gpro2,gpro3' > "$fx/models.conf"
+  : > "$fx/unauth"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<EOF2
+#!/usr/bin/env bash
+T=""
+while [[ \$# -gt 0 ]]; do
+  case "\$1" in -n|-H) shift ;; -u) T="\$2"; shift 2 ;; *) break ;; esac
+done
+if [[ "\${1:-}" == "test" ]]; then ! grep -qx "\$T" "$fx/unauth"; exit \$?; fi
+SUDO_TARGET_USER="\$T" exec "\$@"
+EOF2
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/setfacl.log"\n' "$fx" > "$fx/bin/setfacl"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/agy"
+  chmod +x "$fx"/bin/*
+}
+
+named_account_run() {  # <fx> <args>...  -> sets RC and OUT
+  local fx=$1; shift
+  RC=0
+  OUT=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" "$POOL" "$@" 2>&1) || RC=$?
+}
+
+test_check_account_validates_a_named_account() {
+  local fx="$TMP_ROOT/check_account"
+  make_named_account_fixture "$fx"
+  named_account_run "$fx" --check-account gpro2 gemini-4-neon-medium
+  [ "$RC" -eq 0 ] && [ "$OUT" = gpro2 ] || fail "listed, signed-in, allowed account must pass and print itself: rc=$RC $OUT"
+  named_account_run "$fx" --check-account nobody gemini-4-neon-medium
+  [ "$RC" -eq 1 ] || fail "unknown account must refuse, rc=$RC"
+  assert_contains "$OUT" "'nobody' is not an account in" "unknown account refusal names the account"
+  named_account_run "$fx" --check-account gpro1 gemini-4-neon-medium
+  [ "$RC" -eq 1 ] || fail "account not allowed for the model must refuse, rc=$RC"
+  assert_contains "$OUT" "not allowed for model 'gemini-4-neon-medium'" "model refusal names the model"
+  named_account_run "$fx" --check-account gpro1 gemini-3.8-flash-high
+  [ "$RC" -eq 0 ] || fail "unreserved account is allowed for flash, rc=$RC $OUT"
+  printf 'gpro3\n' > "$fx/unauth"
+  named_account_run "$fx" --check-account gpro3 gemini-4-neon-medium
+  [ "$RC" -eq 1 ] || fail "unauthenticated account must refuse, rc=$RC"
+  assert_contains "$OUT" "not authenticated" "unauthenticated refusal"
+  printf '{"user":"gpro2","window_start":1,"reset_at":9999999999,"used_sec":0,"budget_sec":5400,"exhausted":true}\n' > "$fx/state/gpro2.state.json"
+  named_account_run "$fx" --check-account gpro2 gemini-4-neon-medium
+  [ "$RC" -eq 1 ] || fail "exhausted account must refuse, rc=$RC"
+  assert_contains "$OUT" "marked exhausted" "exhausted refusal"
+  named_account_run "$fx" --check-account
+  [ "$RC" -eq 1 ] || fail "missing account argument must refuse"
+  pass "--check-account accepts only a listed, signed-in, allowed, non-exhausted account and never substitutes another"
+}
+
+test_task_data_acl_is_scoped_to_the_selected_account_and_task() {
+  local fx="$TMP_ROOT/task_data" home="$TMP_ROOT/task_data/home"
+  make_named_account_fixture "$fx"
+  mkdir -p "$home/data/scout-1" "$home/data/other-task" "$home/state"
+  RC=0
+  OUT=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_USER=gpro3 FM_HOME="$home" FM_TASK_ID=scout-1 \
+    "$POOL" --model gemini-4-neon-medium -p hi 2>&1) || RC=$?
+  [ "$RC" -eq 0 ] || fail "named-account run failed rc=$RC: $OUT"
+  assert_contains "$OUT" "Routing model 'gemini-4-neon-medium' to 'gpro3'" "FM_AGY_USER account is the one used"
+  assert_contains "$(cat "$fx/setfacl.log")" "u:gpro3:rwX -m d:u:gpro3:rwX $home/data/scout-1" "scout data dir granted to the selected account"
+  assert_not_contains "$(cat "$fx/setfacl.log")" "other-task" "no other task's data is granted"
+  assert_not_contains "$(cat "$fx/setfacl.log")" "u:gpro2" "no other pool account is granted"
+  pass "the per-task data ACL covers only the selected account and that one task"
+}
+
+test_named_unavailable_account_never_falls_back() {
+  local fx="$TMP_ROOT/no_fallback"
+  make_named_account_fixture "$fx"
+  printf 'gpro3\n' > "$fx/unauth"
+  named_account_run "$fx" --account gpro3 --model gemini-4-neon-medium -p hi
+  [ "$RC" -eq 75 ] || fail "unusable named account must exit 75, got $RC: $OUT"
+  assert_not_contains "$OUT" "to 'gpro2'" "must not run on another account"
+  pass "a named account that cannot run is refused rather than replaced"
+}
+
+test_spawn_gates_are_read_only_and_capacity_aware() {
+  local fx="$TMP_ROOT/gates"
+  make_named_account_fixture "$fx"
+  rm -rf "$fx/state"
+  named_account_run "$fx" --check-account gpro2 gemini-4-neon-medium
+  [ "$RC" -eq 0 ] || fail "check-account failed rc=$RC $OUT"
+  [ ! -e "$fx/state" ] || fail "--check-account must not create the pool state dir"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/fake-pgrep"
+  named_account_run "$fx" --check-capacity
+  [ "$RC" -eq 75 ] || fail "all accounts active and cap 2 must exit 75, got $RC: $OUT"
+  assert_contains "$OUT" "cap is 2" "capacity refusal names the cap"
+  [ ! -e "$fx/state" ] || fail "--check-capacity must not create the pool state dir"
+  # pgrep succeeding for every account means every account is active; a named
+  # active account fits, and a raised cap fits.
+  named_account_run "$fx" --check-capacity gpro1
+  [ "$RC" -eq 0 ] || fail "a named account that is already active fits: $RC $OUT"
+  RC=0
+  OUT=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" FM_AGY_STATE_DIR="$fx/state" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_MAX_ACTIVE=9 "$POOL" --check-capacity 2>&1) || RC=$?
+  [ "$RC" -eq 0 ] || fail "under a raised cap there is room: $RC $OUT"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  named_account_run "$fx" --check-capacity
+  [ "$RC" -eq 0 ] || fail "no active account leaves room: $RC $OUT"
+  pass "--check-account and --check-capacity are read-only; capacity exits 75 at the cap"
+}
+
+test_gh_config_forwards_only_to_direct_pr_and_local_only_workers() {
+  local fx="$TMP_ROOT/gh_scope" home="$TMP_ROOT/gh_scope/home" gh="$TMP_ROOT/gh_scope/xdg/gh" mode kind interactive
+  make_named_account_fixture "$fx"
+  mkdir -p "$home/state" "$gh"
+  cat > "$fx/bin/agy" <<EOF2
+#!/usr/bin/env bash
+printf '%s\n' "\${GH_CONFIG_DIR:-unset}" >> "$fx/gh.log"
+exit 0
+EOF2
+  chmod +x "$fx/bin/agy"
+  gh_case() {  # <kind> <mode> <interactive|print>
+    : > "$fx/gh.log"
+    printf 'kind=%s\nmode=%s\n' "$1" "$2" > "$home/state/t1.meta"
+    local flag=-p; [ "$3" = interactive ] && flag=--prompt-interactive
+    env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+      AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+      FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_HOME="$home" FM_TASK_ID=t1 XDG_CONFIG_HOME="$TMP_ROOT/gh_scope/xdg" \
+      "$POOL" --model gemini-4-neon-medium "$flag" hi >/dev/null 2>&1 </dev/null || true
+    cat "$fx/gh.log"
+  }
+  [ "$(gh_case ship direct-PR interactive)" = "$gh" ] || fail "direct-PR worker must receive gh config"
+  [ "$(gh_case ship local-only interactive)" = "$gh" ] || fail "local-only worker must receive gh config"
+  [ "$(gh_case ship no-mistakes interactive)" = unset ] || fail "no-mistakes builder must not receive gh config"
+  [ "$(gh_case scout '' interactive)" = unset ] || fail "scout must not receive gh config"
+  [ "$(gh_case ship direct-PR print)" = unset ] || fail "non-interactive calls (reviewer/fixer) must not receive gh config"
+  pass "GH_CONFIG_DIR reaches only interactive direct-PR and local-only ship workers"
+}
+
+test_relaunch_gate_never_moves_a_recorded_account_silently() {
+  # fm-spawn --relaunch and fm-control relaunch both re-run --check-account on
+  # the account the task records (fm-spawn tmux relaunch cannot be driven here:
+  # it always refuses an endpoint it cannot prove absent).
+  local fx="$TMP_ROOT/relaunch_gate"
+  make_named_account_fixture "$fx"
+  named_account_run "$fx" --check-account gpro1 gemini-3.8-flash-low
+  [ "$RC" -eq 0 ] || fail "the recorded account serves its own model: $RC $OUT"
+  named_account_run "$fx" --check-account gpro1 gemini-4-neon-medium
+  [ "$RC" -eq 1 ] || fail "switching --model to one the recorded account cannot serve must refuse, got $RC: $OUT"
+  assert_contains "$OUT" "not allowed for model 'gemini-4-neon-medium'" "refusal names the model"
+  named_account_run "$fx" --check-account gpro2 gemini-4-neon-medium
+  [ "$RC" -eq 0 ] || fail "relaunch --account <other> is the recovery path: $RC $OUT"
+  pass "relaunch gate refuses an unserveable model on the recorded account and passes on an explicit other account"
+}
+
 fm_test_run \
   test_symlink_refuses_claude_model \
   test_pool_model_env_refuses_claude \
@@ -1355,4 +1512,10 @@ fm_test_run \
   test_no_pool_config_has_no_placeholder_accounts \
   test_cap_reuse_follows_model_order \
   test_usage_follows_active_cap \
-  test_forged_conversation_record_is_not_trusted
+  test_forged_conversation_record_is_not_trusted \
+  test_check_account_validates_a_named_account \
+  test_task_data_acl_is_scoped_to_the_selected_account_and_task \
+  test_named_unavailable_account_never_falls_back \
+  test_spawn_gates_are_read_only_and_capacity_aware \
+  test_gh_config_forwards_only_to_direct_pr_and_local_only_workers \
+  test_relaunch_gate_never_moves_a_recorded_account_silently

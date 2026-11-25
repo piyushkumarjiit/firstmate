@@ -3,5 +3,6 @@
 # One Linux username per line, one per Google AI Pro account.
 # Blank lines and lines starting with # are ignored; only the first word of a line is used.
 # Provision with: sudo bin/fm-agy-pool-provision.sh (see its header and docs/agy-pool-setup.md).
+# Every agy ship or scout runs on one of these accounts; name one for a task with fm-spawn.sh --account <user>.
 gpro1
 gpro2

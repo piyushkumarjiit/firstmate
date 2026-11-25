@@ -19,6 +19,10 @@
 #                operator's own git credential and gh login instead.
 #                The operator account itself must also hold a github.com gh login
 #                and a git credential helper that serves github.com (check only).
+#   2b. task-paths pool accounts can traverse this home's state/ and data/
+#                directories, so any task shape can append status, read its
+#                steering inbox, and write data/<task>/ (the launcher adds the
+#                per-task data ACL when the worker starts).
 #   3. models    the models allowlist maps Neon and Hydrogen models to accounts;
 #                its account order is the quota failover order.
 #   4. run-log   the operator can read the pool usage log and per-run logs.
@@ -55,6 +59,9 @@ NM_WORKTREES="${FM_NM_WORKTREES:-$NM_BASE/worktrees}"
 NM_CONFIG="${FM_NM_CONFIG:-$NM_BASE/config.yaml}"
 USAGE_LOG="${FM_AGY_USAGE_LOG:-/var/log/firstmate/agy-usage.jsonl}"
 STATE_DIR="${FM_AGY_STATE_DIR:-/tmp/fm-agy-pool}"
+FM_HOME_DIR="${FM_HOME:-$(cd "$SETUP_DIR/.." && pwd)}"
+FM_STATE_DIR="${FM_STATE_OVERRIDE:-$FM_HOME_DIR/state}"
+FM_DATA_DIR="${FM_DATA_OVERRIDE:-$FM_HOME_DIR/data}"
 GH_CONFIG_DIR="${FM_GH_CONFIG_DIR:-${GH_CONFIG_DIR:-$HOME/.config/gh}}"
 GH_BIN="${FM_GH_BIN:-$(command -v gh 2>/dev/null || echo gh)}"
 SUDO_PREFIX="${FM_SETUP_SUDO:-sudo -n}"
@@ -141,6 +148,32 @@ step_acl() {
       miss "traverse ACL for $u on $base"
     fi
     check_reach "$u" "$NM_WORKTREES" -x "worktrees directory $NM_WORKTREES"
+  done
+}
+
+# --- 1b. task state and data paths --------------------------------------------
+# Every task shape (scout, direct-PR, local-only, no-mistakes) has its pool
+# worker append to state/<task>.status, read its steering inbox, and write
+# data/<task>/. The pool launcher grants the per-task data ACL at launch; what
+# setup owns is that the account can reach those directories at all.
+step_task_paths() {
+  local u dir
+  for u in "${POOL_USERS[@]}"; do
+    id "$u" >/dev/null 2>&1 || continue
+    for dir in "$FM_STATE_DIR" "$FM_DATA_DIR"; do
+      [[ -d "$dir" ]] || { ok "task directory $dir not created yet"; continue; }
+      if has_acl "$dir" "^user:${u}:..x" || run_as "$u" test -x "$dir" 2>/dev/null; then
+        ok "task directory $dir traversable by $u"
+      elif [[ $MODE == apply ]]; then
+        if setfacl -m "u:${u}:--x" "$dir" 2>/dev/null; then
+          fixed "traverse ACL for $u on $dir"
+        else
+          need_root "cannot set traverse ACL for $u on $dir" "sudo setfacl -m u:${u}:--x '$dir'"
+        fi
+      else
+        miss "task directory $dir not traversable by $u"
+      fi
+    done
   done
 }
 
@@ -291,6 +324,7 @@ step_nm_config() {
 
 echo "fm-agy-pool-setup: mode=$MODE operator=$OPERATOR pool=${POOL_USERS[*]:-<none>}"
 step_acl
+step_task_paths
 step_git_auth
 step_operator_push_auth
 step_models

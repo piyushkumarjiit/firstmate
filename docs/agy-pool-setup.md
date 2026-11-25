@@ -26,9 +26,19 @@ Its header owns the full setup order, the environment variables, adding or remov
 
 ## What changes with a pool configured
 
-The pool takes over only on a home whose pool config lists at least one account, and only for `agy` ships in `no-mistakes` mode; every other agy launch keeps the plain binary.
+The pool takes over on a home whose pool config lists at least one account, for every `agy` ship or scout (`no-mistakes`, `direct-PR`, `local-only`, and scouts); a secondmate and every non-agy harness keep their existing launch.
+Only the `no-mistakes` ship needs the pool-builder brief below; the other shapes keep their ordinary brief and delivery contract.
+Name the account for one task with `--account <pool account>` on `bin/fm-spawn.sh` (a Linux account name from the pool config, never a Google address).
+The spawn checks it through `bin/agy-pool/agy --check-account <account> [model]` before any pane exists: it must be listed, exist, be signed in, be allowed for the model by the models config, and not be marked exhausted, or the spawn refuses and never picks another account.
+It is recorded as `account=` in the task record, handed to the launcher as `FM_AGY_USER`, and reused on relaunch unless a new `--account` moves it; without `--account` the automatic choice applies.
+The launcher grants the selected account an ACL on that task's `data/<task>/` only (a scout's `report.md`), and `bin/fm-agy-pool-setup.sh` checks and applies traverse access on `state/` and `data/` (step `task-paths`).
+Pool-routed scouts and ships use the pool account's quota, not the operator's own agy sign-in, and their commits are authored by the pool worker identity (`Firstmate Worker (<account>)`), not the operator.
+Before a spawn creates any pane, `bin/agy-pool/agy --check-capacity [account]` (read-only, no pool state written) refuses a launch beyond `FM_AGY_MAX_ACTIVE` with exit 75, so the task stays queued.
+Every pool-launched worker is stopped by `bin/fm-pool-exit.sh` once its latest status is `done` (a scout: once `data/<task>/report.md` exists), which frees its slot; `bin/fm-control.sh <task> relaunch` brings it back.
+Run `bin/fm-agy-pool-setup.sh check` after adding a project, since a newly cloned project needs the pool accounts' access applied before a pool worker can commit in it.
+Direct-PR and local-only workers push through the pool account's git credential helper and open pull requests through the operator's `gh` login, whose config directory the launcher forwards read-only to those interactive ship workers only (never to scouts, builders, or no-mistakes review and fix calls).
 
-- Scaffold such a ship with `bin/fm-brief.sh --pool-build`, and `bin/fm-spawn.sh` refuses a spawn whose brief and launcher disagree.
+- Scaffold a `no-mistakes` ship with `bin/fm-brief.sh --pool-build`, and `bin/fm-spawn.sh` refuses a spawn whose brief and launcher disagree.
   The worker builds, commits on its task branch, and reports `done: committed <sha>` without running no-mistakes, pushing, or opening a PR.
 - Firstmate then drives validation through `bin/fm-deliver.sh`, which runs as the operator account, so delivery's push and pull request use the operator's own git credential and `gh` login rather than a pool account's.
 - Review and fix models come from the `roles` lists in `config/crew-dispatch.json` ([schema](configuration.md#crew-dispatch-profiles-configcrew-dispatchjson)).
