@@ -1452,6 +1452,28 @@ EOF
   pass "at the active cap reuse follows quota-ordered account priority and records its live start reading"
 }
 
+test_active_account_reuse_allows_uncertain_catalog() {
+  local fx="$TMP_ROOT/active_uncertain"
+  make_discovery_fixture "$fx" gpro1
+  printf 'gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n' > "$fx/models.default"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/fake-pgrep"
+  chmod +x "$fx/bin/fake-pgrep"
+  printf '{"user":"gpro1","fetched_at":1,"models":["gemini-4-hydrogen-high"]}\n' > "$fx/state/gpro1.models.json"
+  : > "$fx/fail_models"
+
+  discovery_run "$fx" FM_AGY_MAX_ACTIVE=1 -- --model gemini-4-hydrogen-high -p hi
+  [ "$RC" -eq 0 ] || fail "at the cap an active account with an uncertain catalog must be reused, got $RC: $OUT"
+  [ "$(cat "$fx/run_calls.log" 2>/dev/null)" = gpro1 ] || fail "at the cap the active account must run, got: $(cat "$fx/run_calls.log" 2>/dev/null)"
+  assert_contains "$OUT" "uncertain" "uncertain catalog must be reported"
+
+  : > "$fx/run_calls.log"
+  discovery_run "$fx" FM_AGY_MAX_ACTIVE=1 -- --user gpro1 --model gemini-4-hydrogen-high -p hi
+  [ "$RC" -eq 0 ] || fail "an explicit active account with an uncertain catalog must be reused, got $RC: $OUT"
+  [ "$(cat "$fx/run_calls.log" 2>/dev/null)" = gpro1 ] || fail "the explicit active account must run, got: $(cat "$fx/run_calls.log" 2>/dev/null)"
+
+  pass "active-account reuse allows an uncertain catalog instead of exiting at the cap"
+}
+
 test_usage_follows_active_cap() {
   local fx="$TMP_ROOT/usage_cap"
   mkdir -p "$fx/bin" "$fx/state"
@@ -2018,6 +2040,7 @@ fm_test_run \
   test_configured_order_wins_over_active_account_until_cap \
   test_no_pool_config_has_no_placeholder_accounts \
   test_cap_reuse_follows_model_order \
+  test_active_account_reuse_allows_uncertain_catalog \
   test_usage_follows_active_cap \
   test_forged_conversation_record_is_not_trusted \
   test_check_account_validates_a_named_account \

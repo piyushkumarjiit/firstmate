@@ -415,7 +415,7 @@ ensure_account_catalog() {
 is_user_allowed_for_model() {
   local user="$1" model="${2:-}"
   [[ -z "$model" || "$model" == "default" ]] && return 0
-  ensure_account_catalog "$user" || return 1
+  ensure_account_catalog "$user" || return 0
   catalog_has_model "$user" "$model"
 }
 
