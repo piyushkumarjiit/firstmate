@@ -1,0 +1,49 @@
+== check gates ==
+-- unknown catalog, unsupported model (exit 0 / 0)
+[fm-agy-pool] Notice: cached model catalog is unknown for one or more pool accounts; allowing '--model gemini-4-neon-high' unvalidated.
+[fm-agy-pool] Notice: model catalog for pool account 'agentic' is unknown (missing); allowing model 'gemini-4-neon-high' unvalidated.
+agentic
+-- fresh catalog, unsupported model (exit 1 / 1)
+[fm-agy-pool] ERROR: agy model 'gemini-4-neon-high' is not listed in any pool account's cached catalog; choose a listed id or omit --model.
+[fm-agy-pool] ERROR: pool account 'agentic' cached catalog does not list model 'gemini-4-neon-high'.
+-- fresh catalog, supported model (exit 0 / 0)
+agentic
+
+== live launches ==
+-- hydrogen catalog discovery (exit 0)
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-low' to 'agentic' (99% remaining, floor=15%)...
+-- neon request with legacy map (exit 75)
+[fm-agy-pool] ERROR: No eligible account in /tmp/fm-lab23/pool.conf for model 'gemini-4-neon-high' above 15% remaining quota.
+-- fresh-catalog reuse (exit 0)
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-low' to 'agentic' (99% remaining, floor=15%)...
+-- stale-catalog refresh (exit 0)
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-low' to 'agentic' (99% remaining, floor=15%)...
+
+== state ==
+{
+  "user": "agentic",
+  "fetched_at": 1795701525,
+  "models": [
+    "gemini-4-hydrogen-high",
+    "gemini-4-hydrogen-xhigh",
+    "gemini-4-hydrogen-medium",
+    "gemini-4-hydrogen-low",
+    "gemini-3.8-flash-high",
+    "gemini-3.8-flash-medium",
+    "gemini-3.8-flash-low",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6-thinking",
+    "gpt-oss-120b-medium"
+  ]
+}
+
+== usage log ==
+{"ts":"2026-11-26T07:58:22-06:00","provider":"google-ai-pro-direct","user":"agentic","model":"gemini-4-hydrogen-low","task":"live-gate","event":"usage_check","group":"Gemini Models","gemini_min_pct":99,"reset":"2026-12-03T13:51:35Z","weekly_pct":99,"weekly_reset":"2026-12-03T13:51:35Z","five_hour_pct":99,"five_hour_reset":"2026-11-26T18:51:35Z","decision":"start"}
+{"ts":"2026-11-26T07:58:29-06:00","provider":"google-ai-pro-direct","user":"agentic","model":"gemini-4-hydrogen-low","task":"live-gate","event":"quota_end","group":"Gemini Models","gemini_min_pct":99,"reset":"2026-12-03T13:51:35Z","weekly_pct":99,"weekly_reset":"2026-12-03T13:51:35Z","five_hour_pct":99,"five_hour_reset":"2026-11-26T18:51:35Z"}
+{"ts":"2026-11-26T07:58:29-06:00","provider":"google-ai-pro-direct","user":"agentic","model":"gemini-4-hydrogen-low","task":"live-gate","duration_sec":4,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-26T07:58:33-06:00","provider":"google-ai-pro-direct","user":"agentic","model":"gemini-4-hydrogen-low","task":"live-gate","event":"usage_check","group":"Gemini Models","gemini_min_pct":99,"reset":"2026-12-03T13:51:35Z","weekly_pct":99,"weekly_reset":"2026-12-03T13:51:35Z","five_hour_pct":99,"five_hour_reset":"2026-11-26T18:51:35Z","decision":"start"}
+{"ts":"2026-11-26T07:58:40-06:00","provider":"google-ai-pro-direct","user":"agentic","model":"gemini-4-hydrogen-low","task":"live-gate","event":"quota_end","group":"Gemini Models","gemini_min_pct":99,"reset":"2026-12-03T13:51:35Z","weekly_pct":99,"weekly_reset":"2026-12-03T13:51:35Z","five_hour_pct":99,"five_hour_reset":"2026-11-26T18:51:35Z"}
+{"ts":"2026-11-26T07:58:40-06:00","provider":"google-ai-pro-direct","user":"agentic","model":"gemini-4-hydrogen-low","task":"live-gate","duration_sec":4,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-26T07:58:47-06:00","provider":"google-ai-pro-direct","user":"agentic","model":"gemini-4-hydrogen-low","task":"live-gate","event":"usage_check","group":"Gemini Models","gemini_min_pct":99,"reset":"2026-12-03T13:51:35Z","weekly_pct":99,"weekly_reset":"2026-12-03T13:51:35Z","five_hour_pct":99,"five_hour_reset":"2026-11-26T18:51:35Z","decision":"start"}
+{"ts":"2026-11-26T07:58:54-06:00","provider":"google-ai-pro-direct","user":"agentic","model":"gemini-4-hydrogen-low","task":"live-gate","event":"quota_end","group":"Gemini Models","gemini_min_pct":99,"reset":"2026-12-03T13:51:35Z","weekly_pct":99,"weekly_reset":"2026-12-03T13:51:35Z","five_hour_pct":99,"five_hour_reset":"2026-11-26T18:51:35Z"}
+{"ts":"2026-11-26T07:58:54-06:00","provider":"google-ai-pro-direct","user":"agentic","model":"gemini-4-hydrogen-low","task":"live-gate","duration_sec":4,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}

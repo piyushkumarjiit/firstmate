@@ -1,0 +1,1 @@
+[fm-agy-pool] ERROR: agy model 'gemini-4-neon-high' is not listed in any pool account's cached catalog; choose a listed id or omit --model.

@@ -1,0 +1,1 @@
+[fm-agy-pool] Notice: cached model catalog is unknown for one or more pool accounts; allowing '--model gemini-4-neon-high' unvalidated.

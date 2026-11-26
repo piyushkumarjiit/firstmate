@@ -1,0 +1,1 @@
+[fm-agy-pool] ERROR: Another pool account ('acct_a') is currently active; refusing live usage check for 'acct_c' (2 pool accounts active, cap is 2 (FM_AGY_MAX_ACTIVE)).

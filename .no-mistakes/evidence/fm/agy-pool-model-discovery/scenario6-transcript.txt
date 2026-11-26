@@ -1,0 +1,12 @@
+== concurrent cross-account gate intervals (start_ms end_ms account) ==
+1795701603500	1795701604520	acct_a
+1795701607589	1795701608612	acct_b
+1795701611683	1795701612705	acct_a
+1795701615785	1795701616803	acct_b
+
+== full call log of the concurrent phase ==
+
+same-account wait=277ms; different-account wait=5331ms
+== --usage at the active cap ==
+[fm-agy-pool] ERROR: Another pool account ('acct_a') is currently active; refusing live usage check for 'acct_c' (2 pool accounts active, cap is 2 (FM_AGY_MAX_ACTIVE)).
+exit=75 agy calls during refused check=0

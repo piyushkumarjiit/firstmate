@@ -1,0 +1,20 @@
+fm-agy-pool-setup: mode=check operator=agentic pool=agentic
+MISSING ACL (access + default) for agentic on ~/.no-mistakes/worktrees
+MISSING traverse ACL for agentic on ~/.no-mistakes
+ok      task directory ~/.no-mistakes/worktrees/406d2d249c60/01M8C175QRFR8PN3KCPEG4F3C7/state not created yet
+ok      task directory ~/.no-mistakes/worktrees/406d2d249c60/01M8C175QRFR8PN3KCPEG4F3C7/data not created yet
+ok      projects directory ~/.no-mistakes/worktrees/406d2d249c60/01M8C175QRFR8PN3KCPEG4F3C7/projects not created yet
+MISSING gh config readable by agentic
+MISSING git HTTPS credential helper for agentic (cannot inspect without sudo; apply prints the command)
+ok      operator push credentials: gh login for agentic
+ok      operator push credentials: git credential helper for agentic
+ok      model discovery uses per-account cached 'agy models' catalogs in /tmp/fm-setup7/state (Neon accounts reserved automatically)
+info    legacy /tmp/fm-setup7/gpro-models.conf is present and ignored; model availability comes from per-account catalogs
+ok      usage log readable: /var/log/firstmate/agy-usage.jsonl
+ok      pool state readable: /tmp/fm-setup7/state
+ok      pool run logs readable
+ok      antigravity launcher points at nm-agy
+info    review_agents do not use antigravity; Gemini review/fix is not active in ~/.no-mistakes/config.yaml
+info    agent_args_override.antigravity pins --model/--account; nm-agy replaces them from firstmate roles when a role record exists
+info    firstmate's own repo sets disable_project_settings, which no-mistakes refuses for antigravity gate agents: keep Gemini gates off the firstmate repo
+result: 4 item(s) need attention

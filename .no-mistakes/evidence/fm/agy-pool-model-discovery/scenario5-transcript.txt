@@ -1,0 +1,52 @@
+== catalogs (per-account discovery input) ==
+-- catalog-acct_a.txt
+gemini-3.8-flash-high	Gemini 3.8 Flash (High)
+gemini-4-hydrogen-high	Gemini 4 Hydrogen (High)
+-- catalog-acct_b.txt
+gemini-3.8-flash-high	Gemini 3.8 Flash (High)
+gemini-4-hydrogen-high	Gemini 4 Hydrogen (High)
+-- catalog-acct_c.txt
+gemini-3.8-flash-high	Gemini 3.8 Flash (High)
+gemini-4-hydrogen-high	Gemini 4 Hydrogen (High)
+-- catalog-neon1.txt
+gemini-4-neon-high	Gemini 4 Neon (High)
+gemini-4-hydrogen-high	Gemini 4 Hydrogen (High)
+gemini-3.8-flash-high	Gemini 3.8 Flash (High)
+-- catalog-plain1.txt
+gemini-4-hydrogen-high	Gemini 4 Hydrogen (High)
+gemini-3.8-flash-high	Gemini 3.8 Flash (High)
+== live calls ==
+Flash:
+1795701401728	neon1	models
+1795701401996	plain1	models
+1795701402185	plain1	-p /usage
+1795701402396	plain1	--model gemini-3.8-flash-high -p hello
+1795701402527	plain1	-p /usage
+Hydrogen:
+1795701403088	plain1	-p /usage
+1795701403228	plain1	--model gemini-4-hydrogen-high -p hello
+1795701403330	plain1	-p /usage
+Flash spill:
+1795701403975	neon1	-p /usage
+1795701404187	neon1	--model gemini-3.8-flash-high -p hello
+1795701404322	neon1	-p /usage
+Neon:
+1795701404889	neon1	-p /usage
+1795701405003	neon1	--model gemini-4-neon-high -p hello
+1795701405091	neon1	-p /usage
+
+== usage log ==
+{"ts":"2026-11-26T07:56:40-06:00","provider":"google-ai-pro-direct","user":"neon1","model":"default","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":95,"reset":"2027-12-03T13:51:31Z","weekly_pct":95,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":95,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"manual"}
+{"ts":"2026-11-26T07:56:41-06:00","provider":"google-ai-pro-direct","user":"plain1","model":"default","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":50,"reset":"2027-12-03T13:51:31Z","weekly_pct":50,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":50,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"manual"}
+{"ts":"2026-11-26T07:56:42-06:00","provider":"google-ai-pro-direct","user":"plain1","model":"gemini-3.8-flash-high","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":50,"reset":"2027-12-03T13:51:31Z","weekly_pct":50,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":50,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"start"}
+{"ts":"2026-11-26T07:56:42-06:00","provider":"google-ai-pro-direct","user":"plain1","model":"gemini-3.8-flash-high","task":"fixlive","event":"quota_end","group":"Gemini Models","gemini_min_pct":50,"reset":"2027-12-03T13:51:31Z","weekly_pct":50,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":50,"five_hour_reset":"2027-11-26T18:51:31Z"}
+{"ts":"2026-11-26T07:56:42-06:00","provider":"google-ai-pro-direct","user":"plain1","model":"gemini-3.8-flash-high","task":"fixlive","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-26T07:56:43-06:00","provider":"google-ai-pro-direct","user":"plain1","model":"gemini-4-hydrogen-high","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":50,"reset":"2027-12-03T13:51:31Z","weekly_pct":50,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":50,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"start"}
+{"ts":"2026-11-26T07:56:43-06:00","provider":"google-ai-pro-direct","user":"plain1","model":"gemini-4-hydrogen-high","task":"fixlive","event":"quota_end","group":"Gemini Models","gemini_min_pct":50,"reset":"2027-12-03T13:51:31Z","weekly_pct":50,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":50,"five_hour_reset":"2027-11-26T18:51:31Z"}
+{"ts":"2026-11-26T07:56:43-06:00","provider":"google-ai-pro-direct","user":"plain1","model":"gemini-4-hydrogen-high","task":"fixlive","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-26T07:56:44-06:00","provider":"google-ai-pro-direct","user":"neon1","model":"gemini-3.8-flash-high","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":95,"reset":"2027-12-03T13:51:31Z","weekly_pct":95,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":95,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"start"}
+{"ts":"2026-11-26T07:56:44-06:00","provider":"google-ai-pro-direct","user":"neon1","model":"gemini-3.8-flash-high","task":"fixlive","event":"quota_end","group":"Gemini Models","gemini_min_pct":95,"reset":"2027-12-03T13:51:31Z","weekly_pct":95,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":95,"five_hour_reset":"2027-11-26T18:51:31Z"}
+{"ts":"2026-11-26T07:56:44-06:00","provider":"google-ai-pro-direct","user":"neon1","model":"gemini-3.8-flash-high","task":"fixlive","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-26T07:56:44-06:00","provider":"google-ai-pro-direct","user":"neon1","model":"gemini-4-neon-high","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":95,"reset":"2027-12-03T13:51:31Z","weekly_pct":95,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":95,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"start"}
+{"ts":"2026-11-26T07:56:45-06:00","provider":"google-ai-pro-direct","user":"neon1","model":"gemini-4-neon-high","task":"fixlive","event":"quota_end","group":"Gemini Models","gemini_min_pct":95,"reset":"2027-12-03T13:51:31Z","weekly_pct":95,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":95,"five_hour_reset":"2027-11-26T18:51:31Z"}
+{"ts":"2026-11-26T07:56:45-06:00","provider":"google-ai-pro-direct","user":"neon1","model":"gemini-4-neon-high","task":"fixlive","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}

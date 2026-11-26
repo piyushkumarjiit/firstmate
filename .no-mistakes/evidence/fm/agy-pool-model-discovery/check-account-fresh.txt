@@ -1,0 +1,1 @@
+[fm-agy-pool] ERROR: pool account 'agentic' cached catalog does not list model 'gemini-4-neon-high'.

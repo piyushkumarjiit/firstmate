@@ -1,0 +1,1 @@
+[fm-agy-pool] ERROR: No eligible account in /tmp/fm-lab23/pool.conf for model 'gemini-4-neon-high' above 15% remaining quota.

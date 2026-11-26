@@ -1,0 +1,2 @@
+[fm-agy-pool] Notice: model catalog for pool account 'agentic' is unknown (missing); allowing model 'gemini-4-neon-high' unvalidated.
+agentic

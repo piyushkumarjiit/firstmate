@@ -1,0 +1,46 @@
+== calls (epoch_ms account argv) ==
+A sticky:
+1795701363669	acct_b	-p /usage
+1795701363869	acct_b	--model gemini-3.8-flash-high -p hello
+1795701364012	acct_b	-p /usage
+B fallback:
+1795701364760	acct_a	models
+1795701364948	acct_a	-p /usage
+1795701365165	acct_a	--model gemini-3.8-flash-high -p hello
+1795701365293	acct_a	-p /usage
+C at-cap:
+1795701365738	acct_c	models
+1795701366104	acct_a	-p /usage
+1795701366336	acct_a	--model gemini-3.8-flash-high -p hello
+1795701366489	acct_a	-p /usage
+D explicit:
+1795701367037	acct_c	-p /usage
+1795701367233	acct_c	--model gemini-3.8-flash-high -p hello
+1795701367372	acct_c	-p /usage
+
+== usage log ==
+{"ts":"2026-11-26T07:56:01-06:00","provider":"google-ai-pro-direct","user":"acct_a","model":"default","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":85,"reset":"2027-12-03T13:51:31Z","weekly_pct":85,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":85,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"manual"}
+{"ts":"2026-11-26T07:56:02-06:00","provider":"google-ai-pro-direct","user":"acct_c","model":"default","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":45,"reset":"2027-12-03T13:51:31Z","weekly_pct":45,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":45,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"manual"}
+{"ts":"2026-11-26T07:56:02-06:00","provider":"google-ai-pro-direct","user":"acct_b","model":"gemini-3.8-flash-high","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":70,"reset":"2027-12-03T13:51:31Z","weekly_pct":70,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":70,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"start"}
+{"ts":"2026-11-26T07:56:02-06:00","provider":"google-ai-pro-direct","user":"acct_b","model":"gemini-3.8-flash-high","task":"fixlive","event":"quota_end","group":"Gemini Models","gemini_min_pct":70,"reset":"2027-12-03T13:51:31Z","weekly_pct":70,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":70,"five_hour_reset":"2027-11-26T18:51:31Z"}
+{"ts":"2026-11-26T07:56:03-06:00","provider":"google-ai-pro-direct","user":"acct_b","model":"gemini-3.8-flash-high","task":"fixlive","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-26T07:56:03-06:00","provider":"google-ai-pro-direct","user":"acct_b","model":"gemini-3.8-flash-high","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":70,"reset":"2027-12-03T13:51:31Z","weekly_pct":70,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":70,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"start"}
+{"ts":"2026-11-26T07:56:04-06:00","provider":"google-ai-pro-direct","user":"acct_b","model":"gemini-3.8-flash-high","task":"fixlive","event":"quota_end","group":"Gemini Models","gemini_min_pct":70,"reset":"2027-12-03T13:51:31Z","weekly_pct":70,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":70,"five_hour_reset":"2027-11-26T18:51:31Z"}
+{"ts":"2026-11-26T07:56:04-06:00","provider":"google-ai-pro-direct","user":"acct_b","model":"gemini-3.8-flash-high","task":"fixlive","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-26T07:56:05-06:00","provider":"google-ai-pro-direct","user":"acct_a","model":"gemini-3.8-flash-high","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":85,"reset":"2027-12-03T13:51:31Z","weekly_pct":85,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":85,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"start"}
+{"ts":"2026-11-26T07:56:05-06:00","provider":"google-ai-pro-direct","user":"acct_a","model":"gemini-3.8-flash-high","task":"fixlive","event":"quota_end","group":"Gemini Models","gemini_min_pct":85,"reset":"2027-12-03T13:51:31Z","weekly_pct":85,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":85,"five_hour_reset":"2027-11-26T18:51:31Z"}
+{"ts":"2026-11-26T07:56:05-06:00","provider":"google-ai-pro-direct","user":"acct_a","model":"gemini-3.8-flash-high","task":"fixlive","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-26T07:56:06-06:00","provider":"google-ai-pro-direct","user":"acct_a","model":"gemini-3.8-flash-high","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":62,"reset":"2027-12-03T13:51:31Z","weekly_pct":62,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":62,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"start"}
+{"ts":"2026-11-26T07:56:06-06:00","provider":"google-ai-pro-direct","user":"acct_a","model":"gemini-3.8-flash-high","task":"fixlive","event":"quota_end","group":"Gemini Models","gemini_min_pct":62,"reset":"2027-12-03T13:51:31Z","weekly_pct":62,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":62,"five_hour_reset":"2027-11-26T18:51:31Z"}
+{"ts":"2026-11-26T07:56:06-06:00","provider":"google-ai-pro-direct","user":"acct_a","model":"gemini-3.8-flash-high","task":"fixlive","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+{"ts":"2026-11-26T07:56:07-06:00","provider":"google-ai-pro-direct","user":"acct_c","model":"gemini-3.8-flash-high","task":"fixlive","event":"usage_check","group":"Gemini Models","gemini_min_pct":48,"reset":"2027-12-03T13:51:31Z","weekly_pct":48,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":48,"five_hour_reset":"2027-11-26T18:51:31Z","decision":"start"}
+{"ts":"2026-11-26T07:56:07-06:00","provider":"google-ai-pro-direct","user":"acct_c","model":"gemini-3.8-flash-high","task":"fixlive","event":"quota_end","group":"Gemini Models","gemini_min_pct":48,"reset":"2027-12-03T13:51:31Z","weekly_pct":48,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":48,"five_hour_reset":"2027-11-26T18:51:31Z"}
+{"ts":"2026-11-26T07:56:07-06:00","provider":"google-ai-pro-direct","user":"acct_c","model":"gemini-3.8-flash-high","task":"fixlive","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+
+== saved readings at end ==
+-- acct_a.state.json
+{"user":"acct_a","exhausted":false,"quota":{"Gemini Models":{"min_pct":62,"reset":"2027-12-03T13:51:31Z","reset_at":1827841891,"weekly_pct":62,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":62,"five_hour_reset":"2027-11-26T18:51:31Z","checked_at":1795701366}}}
+-- acct_b.state.json
+{"user":"acct_b","exhausted":false,"quota":{"Gemini Models":{"min_pct":70,"reset":"2027-12-03T13:51:31Z","reset_at":1827841891,"weekly_pct":70,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":70,"five_hour_reset":"2027-11-26T18:51:31Z","checked_at":1795701364}}}
+-- acct_c.state.json
+{"user":"acct_c","exhausted":false,"quota":{"Gemini Models":{"min_pct":48,"reset":"2027-12-03T13:51:31Z","reset_at":1827841891,"weekly_pct":48,"weekly_reset":"2027-12-03T13:51:31Z","five_hour_pct":48,"five_hour_reset":"2027-11-26T18:51:31Z","checked_at":1795701367}}}
