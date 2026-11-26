@@ -1,0 +1,12 @@
+S7 live (adversarial): an open gate is surfaced as needs-decision, never hidden behind a checks-passed outcome
+product: ~/.no-mistakes/worktrees/406d2d249c60/01M8CH0GRDRK7VPKZMGJAHVGZB/bin/fm-deliver.sh  exit=0
+--- observable state ---
+[state/s7-target.status]
+  done [at=1000]: committed bca4bd6ce71c5dcd56504dd1ef8797576a407e0d
+  needs-decision [at=1795717252] [key=gate-document]: 2 ask-user findings
+[data/s7-target/drive.log]
+  outcome: checks-passed
+  pr: https://forge.example.test/o/r/pull/9
+  [fm-deliver] Parked at gate 'document', appended needs-decision to /tmp/fm-lab.n8cj8q/run/s7-target/state/s7-target.status
+
+[check] last status line: needs-decision [at=1795717252] [key=gate-document]: 2 ask-user findings

@@ -1,0 +1,22 @@
+S6 live: an immediately-returning reattach backs off instead of burning the budget at once
+product: ~/.no-mistakes/worktrees/406d2d249c60/01M8CH0GRDRK7VPKZMGJAHVGZB/bin/fm-deliver.sh  exit=0  elapsed_ms=4771 (4 reattaches, 1s pause => >=3000ms)
+--- observable state ---
+[state/s6-target.status]
+  done [at=1000]: committed 1d88349e7f8096d0244e5510a07cc48b76993aa1
+  blocked [at=1795717251]: delivery run still in progress after 4 reattaches; check bin/fm-deliver.sh s6-target status
+[data/s6-target/drive.log]
+  [fm-deliver] Run still in progress; reattaching (1/4)
+  
+  [fm-deliver] Run still in progress; reattaching (2/4)
+  
+  [fm-deliver] Run still in progress; reattaching (3/4)
+  
+  [fm-deliver] Run still in progress; reattaching (4/4)
+  
+
+[reattach calls, nanosecond timestamps]
+  1795717246863957805 run 1
+  1795717246949281552 run 2
+  1795717248063525554 run 3
+  1795717249182820456 run 4
+  1795717250321833731 run 5

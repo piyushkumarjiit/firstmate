@@ -1,0 +1,18 @@
+S6 baseline: SAME scenario against the pre-change driver (base commit a4860ac)
+product: /tmp/fm-lab.n8cj8q/base-bin/fm-deliver.sh  exit=0  elapsed_ms=572 (4 reattaches, 1s pause => >=3000ms)
+--- observable state ---
+[state/s6-base.status]
+  done [at=1000]: committed 2943a786037447d87cf4fb91ad5b712e5e8b0b7a
+  blocked [at=1795717252]: delivery run still in progress after 4 reattaches; check bin/fm-deliver.sh s6-base status
+[data/s6-base/drive.log]
+  [fm-deliver] Run still in progress; reattaching (1/4)
+  [fm-deliver] Run still in progress; reattaching (2/4)
+  [fm-deliver] Run still in progress; reattaching (3/4)
+  [fm-deliver] Run still in progress; reattaching (4/4)
+
+[reattach calls, nanosecond timestamps]
+  1795717251693593934 run 1
+  1795717251764342992 run 2
+  1795717251861721949 run 3
+  1795717251944757918 run 4
+  1795717252026949802 run 5

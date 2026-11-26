@@ -1,0 +1,22 @@
+S8 supervision visibility: the captain/supervision-facing fleet snapshot reads the newly surfaced later gate
+command: bin/fm-fleet-snapshot.sh --json   (disposable FM_HOME of the S8 lab)
+(only observational reads; no pipeline was started)
+
+tasks[0].id              = s8-target
+tasks[0].branch          = fm/s8-target
+tasks[0].paths.status_log.last_event.state = needs-decision
+tasks[0].paths.status_log.last_event.note  = test-1
+tasks[0].paths.status_log.last_event.raw   = needs-decision [at=1795717253] [key=gate-test]: test-1
+
+verbatim tasks[0].paths.status_log JSON:
+{
+  "path": "/tmp/fm-lab.n8cj8q/run/s8-target/state/s8-target.status",
+  "present": true,
+  "kind": "event_history",
+  "last_event": {
+    "state": "needs-decision",
+    "note": "test-1",
+    "raw": "needs-decision [at=1795717253] [key=gate-test]: test-1",
+    "age_seconds": 38
+  }
+}

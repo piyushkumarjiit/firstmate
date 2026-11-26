@@ -1,0 +1,12 @@
+S2 live (adversarial): a refused answer that leaves the run on the SAME gate must keep that gate open
+product: /tmp/fm-lab.n8cj8q/base-bin/fm-deliver.sh  respond exit=1
+--- observable state ---
+[state/s2-base.status]
+  done [at=1000]: committed dcc52d93a70bde6550fa0c563859baede1de449d
+  needs-decision [at=100] [key=gate-review]: review findings
+[data/s2-base/drive.log]
+  [fm-deliver] Running respond in /tmp/fm-lab.n8cj8q/run/s2-base/wt: no-mistakes axi respond --action approve
+  [fm-deliver] respond failed (exit 1); leaving the gate open
+
+[check] resolved lines: 0 (expected 0)
+[check] open review gate still last: needs-decision [at=100] [key=gate-review]: review findings

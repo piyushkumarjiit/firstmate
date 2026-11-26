@@ -1,0 +1,21 @@
+S3 baseline: SAME scenario against the pre-change driver (base commit a4860ac)
+product: /tmp/fm-lab.n8cj8q/base-bin/fm-deliver.sh  exit=0
+--- observable state ---
+[state/s3-base.status]
+  done [at=1000]: committed b7872a1f5812abb753d52325c758cfb55d2616eb
+  blocked [at=1795717244]: delivery run still in progress after 4 reattaches; check bin/fm-deliver.sh s3-base status
+[data/s3-base/drive.log]
+  [fm-deliver] Run still in progress; reattaching (1/4)
+  outcome: checks-passed
+  pr: https://forge.example.test/o/r/pull/7
+  [fm-deliver] Run still in progress; reattaching (2/4)
+  outcome: checks-passed
+  pr: https://forge.example.test/o/r/pull/7
+  [fm-deliver] Run still in progress; reattaching (3/4)
+  outcome: checks-passed
+  pr: https://forge.example.test/o/r/pull/7
+  [fm-deliver] Run still in progress; reattaching (4/4)
+  outcome: checks-passed
+  pr: https://forge.example.test/o/r/pull/7
+
+[check] last status line: blocked [at=1795717244]: delivery run still in progress after 4 reattaches; check bin/fm-deliver.sh s3-base status

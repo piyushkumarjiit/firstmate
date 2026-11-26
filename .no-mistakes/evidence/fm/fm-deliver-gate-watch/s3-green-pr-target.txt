@@ -1,0 +1,13 @@
+S3 live: a reattach that returns checks-passed + PR reports the PR ready, never blocked
+product: ~/.no-mistakes/worktrees/406d2d249c60/01M8CH0GRDRK7VPKZMGJAHVGZB/bin/fm-deliver.sh  exit=0
+--- observable state ---
+[state/s3-target.status]
+  done [at=1000]: committed b7872a1f5812abb753d52325c758cfb55d2616eb
+  done [at=1795717243]: head b7872a1f5812abb753d52325c758cfb55d2616eb PR https://forge.example.test/o/r/pull/7 checks green
+[data/s3-target/drive.log]
+  [fm-deliver] Run still in progress; reattaching (1/4)
+  outcome: checks-passed
+  pr: https://forge.example.test/o/r/pull/7
+  [fm-deliver] Outcome 'checks-passed' with PR https://forge.example.test/o/r/pull/7; reported PR-ready
+
+[check] last status line: done [at=1795717243]: head b7872a1f5812abb753d52325c758cfb55d2616eb PR https://forge.example.test/o/r/pull/7 checks green

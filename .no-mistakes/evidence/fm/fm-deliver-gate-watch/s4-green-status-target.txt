@@ -1,0 +1,14 @@
+S4 live: checks-passed + PR visible in axi status is also reported as the PR ready
+product: ~/.no-mistakes/worktrees/406d2d249c60/01M8CH0GRDRK7VPKZMGJAHVGZB/bin/fm-deliver.sh  exit=0
+--- observable state ---
+[state/s4-target.status]
+  done [at=1000]: committed bfd83f1f805816d17658cc04ee4b79cb12b2e825
+  done [at=1795717244]: head bfd83f1f805816d17658cc04ee4b79cb12b2e825 PR https://forge.example.test/o/r/pull/11 checks green
+[data/s4-target/drive.log]
+  [fm-deliver] Run still in progress; reattaching (1/4)
+  
+  [fm-deliver] Run still in progress; reattaching (2/4)
+  
+  [fm-deliver] Outcome 'checks-passed' with PR https://forge.example.test/o/r/pull/11; reported PR-ready
+
+[check] last status line: done [at=1795717244]: head bfd83f1f805816d17658cc04ee4b79cb12b2e825 PR https://forge.example.test/o/r/pull/11 checks green

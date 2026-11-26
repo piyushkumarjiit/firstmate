@@ -1,0 +1,11 @@
+S4 live: checks-passed + PR visible in axi status is also reported as the PR ready
+product: /tmp/fm-lab.n8cj8q/base-bin/fm-deliver.sh  exit=0
+--- observable state ---
+[state/s4-base.status]
+  done [at=1000]: committed bfd83f1f805816d17658cc04ee4b79cb12b2e825
+  blocked [at=1795717245]: outcome checks-passed
+[data/s4-base/drive.log]
+  [fm-deliver] Run still in progress; reattaching (1/4)
+  [fm-deliver] Run still in progress; reattaching (2/4)
+
+[check] last status line: blocked [at=1795717245]: outcome checks-passed

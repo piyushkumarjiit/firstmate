@@ -1,0 +1,18 @@
+S5 live (adversarial): an older run's checks-passed line in the shared drive log is never read as this run's green PR
+product: ~/.no-mistakes/worktrees/406d2d249c60/01M8CH0GRDRK7VPKZMGJAHVGZB/bin/fm-deliver.sh  exit=0
+--- observable state ---
+[state/s5-target.status]
+  done [at=1000]: committed 15f4cef6683a7dad2ef5d42cdd906e56218ffab9
+  blocked [at=1795717246]: delivery run still in progress after 3 reattaches; check bin/fm-deliver.sh s5-target status
+[data/s5-target/drive.log]
+  [fm-deliver] older run in this task
+  outcome: checks-passed
+  pr: https://forge.example.test/o/r/pull/3
+  [fm-deliver] Run still in progress; reattaching (1/3)
+  
+  [fm-deliver] Run still in progress; reattaching (2/3)
+  
+  [fm-deliver] Run still in progress; reattaching (3/3)
+  
+
+[check] last status line: blocked [at=1795717246]: delivery run still in progress after 3 reattaches; check bin/fm-deliver.sh s5-target status

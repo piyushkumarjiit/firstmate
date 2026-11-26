@@ -1,0 +1,21 @@
+S8 live: a later gate in the repo's byte-authentic real axi-status capture is surfaced after a nonzero respond
+product: ~/.no-mistakes/worktrees/406d2d249c60/01M8CH0GRDRK7VPKZMGJAHVGZB/bin/fm-deliver.sh  respond exit=0
+gate payload replayed from: tests/captures/no-mistakes-v1.70.1/parked.toon
+--- observable state ---
+[state/s8-target.status]
+  done [at=1000]: committed bca4bd6ce71c5dcd56504dd1ef8797576a407e0d
+  needs-decision [at=100] [key=gate-review]: review findings
+  resolved [at=1795717253] [key=gate-review]: firstmate responded approve
+  needs-decision [at=1795717253] [key=gate-test]: test-1
+[data/s8-target/drive.log]
+  [fm-deliver] Running respond in /tmp/fm-lab.n8cj8q/run/s8-target/wt: no-mistakes axi respond --action approve
+  [fm-deliver] respond exited 1 but the run left the answered gate; resolving it and continuing
+  [fm-deliver] Resolved gate 'gate-review': firstmate responded approve
+  [fm-deliver] Run still in progress; reattaching (1/15)
+  
+  [fm-deliver] Parked at gate 'test', appended needs-decision to /tmp/fm-lab.n8cj8q/run/s8-target/state/s8-target.status
+
+[gate keys in the status log, in order]
+  needs-decision [at=100] [key=gate-review]
+  resolved [at=1795717253] [key=gate-review]
+  needs-decision [at=1795717253] [key=gate-test]

@@ -1,0 +1,13 @@
+S1 baseline: SAME scenario against the pre-change driver (base commit a4860ac)
+product: /tmp/fm-lab.n8cj8q/base-bin/fm-deliver.sh
+respond#1 exit=1 ; respond#2 exit=skipped
+--- observable state ---
+[state/s1-base.status]
+  done [at=1000]: committed dcc52d93a70bde6550fa0c563859baede1de449d
+  needs-decision [at=100] [key=gate-review]: review findings
+[data/s1-base/drive.log]
+  [fm-deliver] Running respond in /tmp/fm-lab.n8cj8q/run/s1-base/wt: no-mistakes axi respond --action approve
+  [fm-deliver] respond failed (exit 1); leaving the gate open
+
+[gate keys in the status log, in order]
+  needs-decision [at=100] [key=gate-review]

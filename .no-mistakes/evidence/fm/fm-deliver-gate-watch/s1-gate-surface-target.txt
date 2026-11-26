@@ -1,0 +1,30 @@
+S1 live: later gates surface after a respond that exits nonzero
+product: ~/.no-mistakes/worktrees/406d2d249c60/01M8CH0GRDRK7VPKZMGJAHVGZB/bin/fm-deliver.sh
+respond#1 exit=0 ; respond#2 exit=0
+--- observable state ---
+[state/s1-target.status]
+  done [at=1000]: committed 4d19640780b57c644e95f6c0adb704a52e1a83ae
+  needs-decision [at=100] [key=gate-review]: review findings
+  resolved [at=1795717241] [key=gate-review]: firstmate responded approve
+  needs-decision [at=1795717241] [key=gate-document]: 2 ask-user findings
+  resolved [at=1795717242] [key=gate-document]: firstmate responded approve
+  needs-decision [at=1795717242] [key=gate-ci]: checks failed
+[data/s1-target/drive.log]
+  [fm-deliver] Running respond in /tmp/fm-lab.n8cj8q/run/s1-target/wt: no-mistakes axi respond --action approve
+  [fm-deliver] respond exited 1 but the run left the answered gate; resolving it and continuing
+  [fm-deliver] Resolved gate 'gate-review': firstmate responded approve
+  [fm-deliver] Run still in progress; reattaching (1/15)
+  
+  [fm-deliver] Parked at gate 'document', appended needs-decision to /tmp/fm-lab.n8cj8q/run/s1-target/state/s1-target.status
+  [fm-deliver] Running respond in /tmp/fm-lab.n8cj8q/run/s1-target/wt: no-mistakes axi respond --action approve
+  [fm-deliver] Resolved gate 'gate-document': firstmate responded approve
+  [fm-deliver] Run still in progress; reattaching (1/15)
+  
+  [fm-deliver] Parked at gate 'ci', appended needs-decision to /tmp/fm-lab.n8cj8q/run/s1-target/state/s1-target.status
+
+[gate keys in the status log, in order]
+  needs-decision [at=100] [key=gate-review]
+  resolved [at=1795717241] [key=gate-review]
+  needs-decision [at=1795717241] [key=gate-document]
+  resolved [at=1795717242] [key=gate-document]
+  needs-decision [at=1795717242] [key=gate-ci]
