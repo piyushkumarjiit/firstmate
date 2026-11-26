@@ -63,8 +63,9 @@ See `../../../../../docs/supervision-protocols/agy.md` for the complete supervis
 
 Live pool quota is read only via `bin/agy-pool/agy --usage <account>`; never call Google endpoints or other workarounds.
 Per-account model availability is cached under `FM_AGY_STATE_DIR` (`<account>.models.json`, TTL `FM_AGY_MODELS_TTL`, default 24h) and refreshed one account at a time via `agy models`; legacy `/etc/firstmate/gpro-models.conf` is ignored.
-An account whose catalog lists any Neon model is reserved; non-Neon models (Flash, Hydrogen, and others) prefer non-reserved accounts and fall back to reserved accounts only when no non-reserved account can serve, while Neon routes only to accounts whose catalog lists it.
+An account whose catalog lists any Neon model is reserved; non-Neon models (Flash, Hydrogen, and others) prefer non-reserved accounts and fall back to reserved accounts only when no non-reserved account can serve, while Neon routes only to accounts whose catalog lists it, apart from the already-running reuse below.
 Selection starts with the sticky last-active account when eligible, then checks remaining candidates ordered by their last recorded quota reading for that model's usage group (`Gemini Models` or `Claude and GPT models`), skipping accounts at or below floor until their reset.
+An already-running account that fits is reused when an explicit `--account` names it or the `FM_AGY_MAX_ACTIVE` cap is reached, and a catalog that cannot be refreshed there counts as uncertainty rather than refusal, so that reuse can precede catalog confirmation.
 All live `agy models` and `agy -p /usage` calls serialize under one machine-wide flock in `FM_AGY_STATE_DIR` with a minimum cross-account gap (`FM_AGY_PACING_SEC`, default 60s; same-account calls are not gapped).
 At launch (`usage_check`) and at task end (`quota_end`), live group readings (weekly and five-hour pct and reset) are appended to `FM_AGY_USAGE_LOG`.
 Pool launches pass `queuedMessages=send-immediately` so steering doorbells land after the current step.

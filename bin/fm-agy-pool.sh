@@ -311,6 +311,8 @@ get_last_quota_reading() {
 # Serialize every live agy query (models and /usage) across all homes and tasks
 # on this host under one flock file, enforcing PACING_SECONDS between queries on
 # different accounts (same-account back-to-back queries are not gapped).
+# The gap exists because one host and IP issuing the same command on several
+# accounts at once risks Google banning those accounts.
 run_live_agy_query() {
   local user="$1"
   shift
@@ -412,6 +414,8 @@ ensure_account_catalog() {
   return 1
 }
 
+# A catalog that cannot be refreshed is uncertainty, not refusal: a caller that
+# already targets an account (reuse or conversation affinity) may still use it.
 is_user_allowed_for_model() {
   local user="$1" model="${2:-}"
   [[ -z "$model" || "$model" == "default" ]] && return 0
@@ -1085,7 +1089,8 @@ cleanup_pool_tmp() {
 trap cleanup_pool_tmp EXIT
 umask 0002
 
-# Hand the pool a world-readable copy of any private --json-schema file.
+# Hand the pool a world-readable copy of any private --json-schema file; the
+# schema holds no secrets.
 _fix_args=()
 _want_schema=0
 for _a in "${AGY_ARGS[@]}"; do
@@ -1215,7 +1220,9 @@ forward_gh_config() {
 }
 forward_gh_config
 
-# Interactive sessions deliver mid-turn steering and suppress the feedback survey.
+# Interactive sessions deliver mid-turn steering and suppress the feedback survey,
+# which otherwise replaces the idle input row and makes exit and steering checks
+# read unknown.
 add_queued_messages_setting() {
   local mode="${FM_AGY_QUEUED_MESSAGES:-send-immediately}" a json
   for a in "${AGY_ARGS[@]}"; do
