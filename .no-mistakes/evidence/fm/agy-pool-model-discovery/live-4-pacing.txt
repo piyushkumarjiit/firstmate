@@ -1,0 +1,10 @@
+== scenario 4: live queries on different accounts paced ~5s apart (1s clock granularity); same-account not gapped ==
+-- exit: 0 (elapsed 6535ms)
+[fm-agy-pool] Account 'pacct1' live quota is 5% (floor=15%), exhausted until 2026-12-05T00:00:00Z; skipping to next account.
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'pacct2' (88% remaining, floor=15%)...
+-- live query timeline (epoch-ms delta from first call, account, args):
+      +0 ms  pacct1   -p /usage
+   +5397 ms  pacct2   -p /usage
+   +5615 ms  pacct2   --model gemini-4-hydrogen-high -p hi
+   +5774 ms  pacct2   -p /usage
+-- usage query order: pacct1 pacct2 pacct2 

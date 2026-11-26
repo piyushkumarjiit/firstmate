@@ -1,0 +1,17 @@
+== scenario 1: sticky account with discovered model support ==
+-- command: bin/agy-pool/agy --model gemini-4-hydrogen-high -p hi
+-- pool.conf: alpha beta (config order); legacy models.conf: *hydrogen* alpha; sticky: beta
+-- catalog: alpha fresh WITHOUT hydrogen; beta stale WITH hydrogen
+-- exit: 0
+-- output:
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'beta' (64% remaining, floor=15%)...
+-- stub agy calls (models / -p /usage / run):
+models: beta 
+usage:  beta beta 
+run:    beta 
+-- FQD ingest log records (start reading, end reading, run summary):
+{"ts":"2026-11-26T08:53:32-06:00","provider":"google-ai-pro-direct","user":"beta","model":"gemini-4-hydrogen-high","task":"task-hydrogen-1","event":"usage_check","group":"Gemini Models","gemini_min_pct":64,"reset":"2026-11-26T05:00:00Z","weekly_pct":82,"weekly_reset":"2026-12-05T00:00:00Z","five_hour_pct":64,"five_hour_reset":"2026-11-26T05:00:00Z","decision":"start"}
+{"ts":"2026-11-26T08:53:32-06:00","provider":"google-ai-pro-direct","user":"beta","model":"gemini-4-hydrogen-high","task":"task-hydrogen-1","event":"quota_end","group":"Gemini Models","gemini_min_pct":55,"reset":"2026-11-26T05:00:00Z","weekly_pct":71,"weekly_reset":"2026-12-05T00:00:00Z","five_hour_pct":55,"five_hour_reset":"2026-11-26T05:00:00Z"}
+{"ts":"2026-11-26T08:53:32-06:00","provider":"google-ai-pro-direct","user":"beta","model":"gemini-4-hydrogen-high","task":"task-hydrogen-1","duration_sec":1,"exit_code":0,"est_remaining_pct":100,"quota_hit":false}
+-- beta state quota after run:
+{"Gemini Models":{"min_pct":55,"reset":"2026-11-26T05:00:00Z","reset_at":1795669200,"weekly_pct":71,"weekly_reset":"2026-12-05T00:00:00Z","five_hour_pct":55,"five_hour_reset":"2026-11-26T05:00:00Z","checked_at":1795704812}}

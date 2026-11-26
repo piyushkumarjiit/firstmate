@@ -1,0 +1,23 @@
+== scenario 6: firstmate spawn gates are read-only catalog checks ==
+-- (a) no cached catalog yet: --check-model allows unvalidated with a notice and never queries live
+exit: 0 ; output:
+[fm-agy-pool] Notice: cached model catalog is unknown for one or more pool accounts; allowing '--model gemini-4-neon-medium' unvalidated.
+state dir created? no; live queries: 0
+-- (b) all fresh catalogs omit the model: --check-model refuses
+exit: 1 ; output:
+[fm-agy-pool] ERROR: agy model 'gemini-4-neon-medium' is not listed in any pool account's cached catalog; choose a listed id or omit --model.
+-- (c) --check-account gproA with a fresh catalog omitting the model refuses
+exit: 1 ; output:
+[fm-agy-pool] ERROR: pool account 'gproA' cached catalog does not list model 'gemini-4-neon-medium'.
+-- (d) stale catalog is uncertainty: --check-account allows with a notice
+exit: 0 ; output:
+[fm-agy-pool] Notice: model catalog for pool account 'gproA' is unknown (stale); allowing model 'gemini-4-neon-medium' unvalidated.
+gproA
+-- (e) fresh catalog listing the model passes both gates
+--check-model exit: 0
+--check-account exit: 0
+gproB
+-- (f) an account outside pool.conf is refused
+exit: 1 ; output:
+[fm-agy-pool] ERROR: 'ghost' is not an account in /tmp/fm-agy-live.rYz7Uf/s6/pool.conf (pool accounts: gproA gproB).
+-- live agy queries during all gates: 0

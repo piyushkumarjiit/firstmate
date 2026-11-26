@@ -1,0 +1,29 @@
+== real bin/fm-agy-pool-setup.sh check with legacy gpro-models.conf present ==
+-- pool.conf: poolacct1 poolacct2; MODELS_CONF: /tmp/fm-agy-setup.dPU3JW/models.conf (legacy map present)
+fm-agy-pool-setup: mode=check operator=agentic pool=poolacct1 poolacct2
+MISSING pool account 'poolacct1' does not exist
+MISSING pool account 'poolacct2' does not exist
+MISSING operator push credentials: no working gh login for agentic in /tmp/fm-agy-setup.dPU3JW/gh (run: gh auth login)
+MISSING operator push credentials: no git credential for github.com served to agentic (run: git config --global --replace-all 'credential.https://github.com.helper' '!GH_CONFIG_DIR=/tmp/fm-agy-setup.dPU3JW/gh /bin/false auth git-credential')
+ok      model discovery uses per-account cached 'agy models' catalogs in /tmp/fm-agy-setup.dPU3JW/state (Neon accounts reserved automatically)
+info    legacy /tmp/fm-agy-setup.dPU3JW/models.conf is present and ignored; model availability comes from per-account catalogs
+ok      usage log readable: /tmp/fm-agy-setup.dPU3JW/usage.jsonl
+ok      pool state dir not created yet (pool creates it on first run)
+ok      pool run logs readable
+MISSING no-mistakes config /tmp/fm-agy-setup.dPU3JW/nm/config.yaml not found
+result: 5 item(s) need attention
+-- exit: 1
+
+== same check with the legacy models.conf absent ==
+fm-agy-pool-setup: mode=check operator=agentic pool=poolacct1 poolacct2
+MISSING pool account 'poolacct1' does not exist
+MISSING pool account 'poolacct2' does not exist
+MISSING operator push credentials: no working gh login for agentic in /tmp/fm-agy-setup.dPU3JW/gh (run: gh auth login)
+MISSING operator push credentials: no git credential for github.com served to agentic (run: git config --global --replace-all 'credential.https://github.com.helper' '!GH_CONFIG_DIR=/tmp/fm-agy-setup.dPU3JW/gh /bin/false auth git-credential')
+ok      model discovery uses per-account cached 'agy models' catalogs in /tmp/fm-agy-setup.dPU3JW/state (Neon accounts reserved automatically)
+ok      usage log readable: /tmp/fm-agy-setup.dPU3JW/usage.jsonl
+ok      pool state dir not created yet (pool creates it on first run)
+ok      pool run logs readable
+MISSING no-mistakes config /tmp/fm-agy-setup.dPU3JW/nm/config.yaml not found
+result: 5 item(s) need attention
+-- exit: 1

@@ -1,0 +1,36 @@
+1..34
+ok - ready fires only on a fresh committed report without a run for that head
+ok - refuses non-main user
+ok - refuses missing or mismatched meta
+ok - refuses worktree branch mismatch
+ok - refuses dirty worktree
+ok - refuses HEAD sha mismatch
+ok - refuses --yes in respond
+ok - sync action allowlist executes valid commands as argv and blocks unexpected actions
+ok - respond resolves open gate key with action and ids, and appends nothing when none open
+ok - respond keeps the gate open and exits nonzero when the answer is not delivered
+ok - respond closes every named gate key and leaves unnamed ones open
+ok - run appends Firstmate decisions block from status file to intent
+ok - run opens a live delivery progress tab on herdr-backed tasks
+ok - run reattaches while the pipeline is still in progress and ignores stale log outcomes
+ok - respond normalizes supervisor forms and refuses invalid/banned answers before writing resolved
+ok - fm-deliver run resolves roles.review/roles.fix for nm-agy and preserves defaults when absent
+ok - fm-deliver restarts on the same head with the next role fallback model when all accounts are exhausted
+ok - quota words inside agent findings do not trigger a fallback model restart
+ok - nm-agy and fm-deliver project visible read-only tabs and report-agent lifecycle in Herdr
+ok - nm-agy reads per-task roles without daemon env and ignores merged task branches
+ok - fm-deliver reports the specific non-code blocker and never restarts the run blind
+ok - fm-deliver push-auth blocker names the operator credential check
+ok - non-Gemini tasks and non-agy role entries are untouched by the Gemini plumbing
+ok - nm-agy defaults review and fix to gemini-4-neon-medium for runs belonging to no task
+ok - exit status 75 is classified by its cause: quota, conversation owner, then capacity
+ok - run passes the task's base_branch to no-mistakes
+ok - nm-agy detects the review role from a stdin prompt and forwards stdin intact
+ok - background failover restart keeps --base-branch
+ok - respond on a still-running run writes no blocked status
+ok - respond creates a missing drive log without a bash error
+ok - blocker classification ignores project test output
+ok - failover triggers on the pool quota notice in review.log
+ok - no failover after the pool recovered by rotating accounts
+ok - failover keeps the nm-agy role line across a pool rotation
+FM_TEST_COMPLETE

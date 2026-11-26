@@ -1,0 +1,19 @@
+== scenario 14: fm-deliver role fallback respects discovered per-account model support ==
+-- pool: acctA (catalog lists neon+flash, marked exhausted until a future reset), acctB (catalog lists flash+hydrogen, healthy)
+-- review entry 1 = gemini-4-neon-high (only acctA lists it), entry 2 = gemini-3.8-flash-high; fix entry 1 = hydrogen (acctB lists it)
+-- fm-deliver exit: 0
+-- no-mistakes invocations (chosen review/fix models):
+axi run|review_model=gemini-3.8-flash-high|fix_model=gemini-4-hydrogen-high
+axi status|review_model=gemini-3.8-flash-high|fix_model=gemini-4-hydrogen-high
+axi sync|review_model=gemini-3.8-flash-high|fix_model=gemini-4-hydrogen-high
+-- persisted role record state/t1.nm-roles:
+review_model=gemini-3.8-flash-high
+review_account=
+review_from_config=1
+review_fallback=gemini-4-neon-high,gemini-3.8-flash-high
+fix_model=gemini-4-hydrogen-high
+fix_account=
+fix_from_config=1
+fix_fallback=gemini-4-hydrogen-high,gemini-3.8-flash-high
+-- transcript tail:
+[fm-deliver] Running axi run in foreground...

@@ -1,0 +1,8 @@
+== scenario 7: explicit --account that is already active records its live start reading ==
+-- exit: 0
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'expacct' (66% remaining, floor=15%)...
+-- run calls: expacct 
+-- usage_check record:
+{"user":"expacct","decision":"start","gemini_min_pct":66,"weekly_pct":66,"five_hour_pct":66}
+-- quota_end record:
+{"user":"expacct","gemini_min_pct":66,"weekly_pct":66,"five_hour_pct":66}

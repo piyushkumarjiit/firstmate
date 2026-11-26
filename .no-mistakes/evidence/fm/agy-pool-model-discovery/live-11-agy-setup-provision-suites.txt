@@ -1,0 +1,23 @@
+1..9
+ok - check mode is read-only and reports missing items
+ok - apply is idempotent and check passes afterwards
+ok - legacy models conf is ignored and root-needing steps print exact commands
+ok - no-mistakes config is reported, never edited
+ok - check reports a pool account that cannot traverse to the worktrees
+ok - check verifies the operator's own push credentials
+ok - a helper that cannot serve github.com is rejected
+ok - a store helper holding a github.com entry is accepted
+ok - the projects step reports an ungranted clone, applies the ACL, 
+FM_TEST_COMPLETE
+setup rc=0
+1..8
+ok - helpers (including the test builtin) resolve to absolute executables
+ok - AGY_BIN must be absolute with no whitespace or sudoers separators
+ok - generated sudoers rule lists every launcher command and parses
+ok - --help prints the usage and header documentation
+ok - an unknown argument is rejected with exit 2
+ok - a non-root run refuses before touching anything
+ok - config parsing ignores comments and blank lines and keeps the first word
+ok - the example config lists only the placeholder accounts
+FM_TEST_COMPLETE
+provision rc=0

@@ -1,0 +1,10 @@
+== scenario 5: already-active pool account, start reading at/below the quota floor ==
+-- 5% start reading, cap 1: exit 75
+[fm-agy-pool] ERROR: 1 pool accounts already active (onlyacct), active account(s) are at or below the quota floor; cap is 1 (FM_AGY_MAX_ACTIVE).
+-- run calls for the low case: 
+-- 91% start reading, cap 1 (fresh lab): exit 0
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'onlyacct' (91% remaining, floor=15%)...
+-- run calls for the healthy case: onlyacct 
+-- usage_check decisions in the JSONL logs (low lab, then healthy lab):
+{"user":"onlyacct","decision":"skip","gemini_min_pct":5}
+{"user":"onlyacct","decision":"start","gemini_min_pct":91}

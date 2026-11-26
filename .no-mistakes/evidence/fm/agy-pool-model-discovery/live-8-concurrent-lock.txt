@@ -1,0 +1,10 @@
+== scenario 8: two concurrent launches on different accounts serialize live queries ==
+-- exits: conc1=0 conc2=0
+-- each query interval (account, start delta ms, end delta ms, pid):
+conc1        +0 ->     +412 ms  (pid 1934364)
+conc1      +945 ->    +1359 ms  (pid 1934446)
+conc2      +466 ->     +876 ms  (pid 1934380)
+conc2     +1397 ->    +1808 ms  (pid 1934527)
+-- overlap check across different accounts:
+none: every different-account live query ran alone
+-- run calls: conc1 conc2 

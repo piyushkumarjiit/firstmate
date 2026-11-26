@@ -1,0 +1,7 @@
+== scenario 2: Neon-capable account reserved from Hydrogen work ==
+-- pool.conf: neonacct workacct; sticky: neonacct; legacy models.conf inverted on purpose
+-- Hydrogen run exit: 0
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'workacct' (80% remaining, floor=15%)...
+-- Neon run exit: 0
+[fm-agy-pool] Routing model 'gemini-4-neon-medium' to 'neonacct' (77% remaining, floor=15%)...
+-- run calls (account per launch): workacct neonacct 

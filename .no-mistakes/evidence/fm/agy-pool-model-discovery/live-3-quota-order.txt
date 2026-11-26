@@ -1,0 +1,6 @@
+== scenario 3: fallback order by last saved quota reading ==
+-- pool.conf order: acct-low, acct-mid, acct-high; saved readings: 10%, 40%, 90%
+-- exit: 0
+[fm-agy-pool] Routing model 'gemini-4-hydrogen-high' to 'acct-high' (90% remaining, floor=15%)...
+-- live usage query order (sticky at-floor skipped on its saved reading; 90% tried before 40%): acct-high acct-high 
+-- run calls: acct-high 

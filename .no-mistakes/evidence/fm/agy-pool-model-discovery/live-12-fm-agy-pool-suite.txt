@@ -1,0 +1,36 @@
+1..34
+ok - Claude model through the agy symlink is refused before agy runs
+ok - Claude model named through FM_AGY_POOL_MODEL is refused
+ok - no eligible pool account exits 75 without running agy
+ok - single active account refusal works and allows concurrent on same account
+ok - Flash prefers non-reserved accounts and falls back to reserved only when none can serve
+ok - pool launcher probe validates against cached catalogs read-only with no Hydrogen/Neon skip
+ok - quota-hit false positive fix logs suspicion without setting exhausted
+ok - usage check covers above floor, below floor switch-and-skip, and unparsable fallback
+ok - --usage subcommand behavior: validates args, enforces single active account, prints Gemini usage and logs manual check
+ok - --status subcommand reads usage log without network or agy invocation
+ok - add_queued_messages_setting adds queuedMessages=send-immediately on interactive launches only
+ok - large used_sec without exhausted never skips an account when FM_AGY_LOCAL_ESTIMATE is off
+ok - Individual quota reached marks account until stated reset time and rotates across space/comma allowlists
+ok - --conversation pins the call to the owning account and exits 75 when that account is exhausted
+ok - stdin prompt is replayed to the next account after a quota rotation
+ok - configured account order wins over an active account until the active cap is reached
+ok - a missing pool config yields no eligible account instead of placeholder accounts
+ok - at the active cap reuse follows quota-ordered account priority and records its live start reading
+ok - active-account reuse allows an uncertain catalog instead of exiting at the cap
+ok - --usage follows FM_AGY_MAX_ACTIVE: allowed for an active target or under the cap, refused otherwise
+ok - conversation records naming a non-pool or model-disallowed account are not trusted
+ok - --check-account accepts only a listed, signed-in, catalog-allowed, non-exhausted account and never substitutes another
+ok - the per-task data ACL covers only the selected account and that one task
+ok - a named account that cannot run is refused rather than replaced
+ok - --check-account and --check-capacity are read-only; capacity exits 75 at the cap
+ok - GH_CONFIG_DIR reaches only interactive direct-PR and local-only ship workers
+ok - relaunch gate refuses an unserveable model on the recorded account and passes on an explicit other account
+ok - per-account catalog cache parses models, honors TTL for one account, and keeps prior cache as uncertainty on failure
+ok - selection tries sticky first, orders remaining by last quota descending, skips below-floor until reset, and maps model group
+ok - Neon-capable catalog reserves account, Hydrogen/Flash ignore stale gpro-models.conf and prefer non-reserved accounts
+ok - machine-wide lock serializes live queries and paces different accounts without gapping same-account queries
+ok - --check-account and --check-model enforce fresh catalogs read-only and allow unknown catalogs with a notice
+ok - usage log records both group windows at start (usage_check) and end (quota_end) while keeping run summary
+ok - do not launch on an active account whose start reading is at or below the quota floor
+FM_TEST_COMPLETE
