@@ -3669,6 +3669,91 @@ SH
   pass "herdr flat teardown refuses before returning the isolated copy under lock contention and the retry completes cleanly"
 }
 
+# Fake herdr whose panes close independently: wG:pQ is the task pane and
+# wG:pD the optional deliver tab. A closed pane is recorded as a marker file.
+configure_deliver_tab_herdr_case() {  # <case-dir> <deliver-pane-exists: 1|0>
+  local case_dir=$1 deliver_exists=$2
+  sed -i.bak 's/^window=.*/window=default:wG:pQ/' "$case_dir/state/task-x1.meta"
+  rm -f "$case_dir/state/task-x1.meta.bak"
+  printf '%s\n' \
+    'backend=herdr' \
+    'herdr_session=default' \
+    'herdr_workspace_id=wG' \
+    'herdr_tab_id=wG:tQ' \
+    'herdr_pane_id=wG:pQ' >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/closed-panes" "$case_dir/data/task-x1"
+  [ "$deliver_exists" = 1 ] || : > "$case_dir/closed-panes/wG_pD"
+  cat > "$case_dir/fakebin/herdr" <<SH
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "\$*" >> "$case_dir/herdr.log"
+pane=""
+for a in "\$@"; do case "\$a" in w*:p*) pane=\$a ;; esac; done
+marker="$case_dir/closed-panes/\${pane//:/_}"
+case "\${1:-} \${2:-}" in
+  "workspace list")
+    printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wH","active_tab_id":"wH:t1","focused":true},{"workspace_id":"wG","active_tab_id":"wG:tQ","focused":false}]}}' ;;
+  "tab list")
+    case "\$*" in
+      *"--workspace wH"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"wH:t1","focused":true}]}}' ;;
+      *) printf '%s\n' '{"result":{"tabs":[{"tab_id":"wG:tQ","workspace_id":"wG"}]}}' ;;
+    esac ;;
+  "pane list")
+    printf '%s\n' '{"result":{"panes":[{"pane_id":"wG:pQ","tab_id":"wG:tQ"}]}}' ;;
+  "status --json") printf '%s\n' '{"server":{"running":true}}' ;;
+  "session list")
+    printf '%s\n' '{"sessions":[{"name":"default","running":true,"socket_path":"$case_dir/herdr.sock"}]}' ;;
+  "pane close") : > "\$marker" ;;
+  "pane get")
+    if [ -e "\$marker" ]; then
+      printf '%s\n' '{"error":{"code":"pane_not_found"}}' >&2
+      exit 1
+    fi
+    printf '%s\n' "{\"result\":{\"pane\":{\"pane_id\":\"\$pane\",\"tab_id\":\"wG:tQ\",\"workspace_id\":\"wG\"}}}" ;;
+  "agent get")
+    printf '%s\n' '{"error":{"code":"agent_not_found"}}' >&2
+    exit 1 ;;
+esac
+SH
+  chmod +x "$case_dir/fakebin/herdr"
+}
+
+test_herdr_teardown_closes_recorded_deliver_tab() {
+  local case_dir
+  case_dir=$(make_case herdr-deliver-tab)
+  write_meta "$case_dir" local-only ship
+  configure_deliver_tab_herdr_case "$case_dir" 1
+  printf '%s\n' 'wG:pD' > "$case_dir/data/task-x1/deliver-tab"
+  : > "$case_dir/herdr.log"
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "herdr-deliver-tab: teardown failed: $(cat "$case_dir/stderr")"
+  [ -e "$case_dir/closed-panes/wG_pQ" ] || fail "herdr-deliver-tab: the task pane was not closed"
+  [ -e "$case_dir/closed-panes/wG_pD" ] || fail "herdr-deliver-tab: the recorded deliver tab pane was left open"
+  grep -q "teardown task-x1 complete" "$case_dir/stdout" \
+    || fail "herdr-deliver-tab: teardown did not report completion"
+  pass "herdr teardown closes the recorded deliver tab pane with the task pane"
+}
+
+test_herdr_teardown_ignores_stale_deliver_tab_record() {
+  local case_dir
+  case_dir=$(make_case herdr-deliver-tab-stale)
+  write_meta "$case_dir" local-only ship
+  configure_deliver_tab_herdr_case "$case_dir" 0
+  printf '%s\n' 'wG:pD' > "$case_dir/data/task-x1/deliver-tab"
+  : > "$case_dir/herdr.log"
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "herdr-deliver-tab-stale: teardown failed on a gone deliver pane: $(cat "$case_dir/stderr")"
+  [ -e "$case_dir/closed-panes/wG_pQ" ] || fail "herdr-deliver-tab-stale: the task pane was not closed"
+  if grep -q "^pane close wG:pD" "$case_dir/herdr.log"; then
+    fail "herdr-deliver-tab-stale: a close was attempted on a pane that was already gone"
+  fi
+  grep -q "teardown task-x1 complete" "$case_dir/stdout" \
+    || fail "herdr-deliver-tab-stale: teardown did not report completion"
+  pass "herdr teardown tolerates a stale deliver tab record whose pane is gone"
+}
+
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence() {
   local case_dir log closed rc
   case_dir=$(make_case herdr-garbage-presence)
@@ -6624,6 +6709,8 @@ test_teardown_preserves_ignored_project_polytoken_layer
 test_teardown_leaves_polytoken_layer_for_other_harnesses
 test_herdr_teardown_clears_escalation_marker
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
+test_herdr_teardown_closes_recorded_deliver_tab
+test_herdr_teardown_ignores_stale_deliver_tab_record
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence
 test_herdr_flat_teardown_preflight_refuses_before_changes
 test_herdr_teardown_presentation_lock_namespace_is_per_account
