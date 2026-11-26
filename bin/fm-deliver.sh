@@ -185,9 +185,10 @@ mkdir -p "$(dirname "$DRIVE_LOG")"
 
 # Visible progress: delivery runs as a background job, so on a herdr-backed task
 # open one "deliver: <task>" tab in the task's workspace that follows the drive
-# log live. Best effort only - it never affects delivery. The tab's shell exits
-# (and herdr closes the tab) once the task worktree is gone, i.e. at cleanup.
-# A rerun reuses a still-open tab. FM_DELIVER_TAB=off disables it.
+# log live. Best effort only - it never affects delivery. Teardown closes the
+# pane recorded in this task's data directory, so a finished task does not leave
+# the tab behind, and the tab's shell also exits once the task's metadata file
+# is removed. A rerun reuses a still-open tab. FM_DELIVER_TAB=off disables it.
 open_progress_tab() {
   [[ "${FM_DELIVER_TAB:-on}" != off ]] || return 0
   command -v herdr >/dev/null 2>&1 || return 0

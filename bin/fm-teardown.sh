@@ -185,10 +185,12 @@
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
 # an Orca target from ambient CLI state.
 # A Herdr presentation journal never authorizes cleanup. Teardown still closes
-# only the exact task pane from ordinary endpoint metadata and never calls
-# `workspace close`. It retires the non-authoritative journal only when a
-# read-only token correlation agrees with that endpoint and pane closure is
-# confirmed. Otherwise the journal stays quarantined for manual inspection.
+# only the exact task pane from ordinary endpoint metadata plus, best effort,
+# the delivery progress pane bin/fm-deliver.sh records in the task's data
+# directory, and never calls `workspace close`. It retires the
+# non-authoritative journal only when a read-only token correlation agrees with
+# that endpoint and pane closure is confirmed. Otherwise the journal stays
+# quarantined for manual inspection.
 # Projected closes share the presentation-order lock, refuse to close the
 # captain's active tab, and restore the exact response-derived pre-close tab
 # if Herdr's last-pane cleanup focuses an unrelated neighboring workspace.
