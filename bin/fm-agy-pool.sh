@@ -481,7 +481,7 @@ log_usage_event() {
 # accounts exhausted, and appending the JSONL record. Sets _LIVE_PCT and
 # _LIVE_RESET. Modes:
 #   gate   - log usage_check start/skip/unknown; return 2 when <= floor
-#   start  - log usage_check start/unknown (already-active reuse)
+#   start  - log usage_check start/skip/unknown; return 2 when <= floor (reuse)
 #   end    - log quota_end (post-task reading)
 #   manual - print verbose lines + "<pct> <reset>", log usage_check manual;
 #            return 1 on query failure
@@ -529,8 +529,7 @@ record_live_quota() {
   case "$mode" in
     end)    log_usage_event "quota_end" "$user" "$group" "$_LIVE_PCT" "$_LIVE_RESET" "$wk_pct" "$wk_reset" "$fh_pct" "$fh_reset" ;;
     manual) log_usage_event "usage_check" "$user" "$group" "$_LIVE_PCT" "$_LIVE_RESET" "$wk_pct" "$wk_reset" "$fh_pct" "$fh_reset" "manual" ;;
-    start)  log_usage_event "usage_check" "$user" "$group" "$_LIVE_PCT" "$_LIVE_RESET" "$wk_pct" "$wk_reset" "$fh_pct" "$fh_reset" "start" ;;
-    gate)
+    start|gate)
       if (( low == 1 )); then
         log_usage_event "usage_check" "$user" "$group" "$_LIVE_PCT" "$_LIVE_RESET" "$wk_pct" "$wk_reset" "$fh_pct" "$fh_reset" "skip"
         return 2
@@ -1012,7 +1011,7 @@ parse_reset_epoch_from_log() {
 
 select_pool_user() {
   local -a active_users=()
-  local active_user picked="" picked_pct=""
+  local active_user picked="" picked_pct="" active_low=0
   mapfile -t active_users < <(find_active_pool_users)
   if (( ${#active_users[@]} > 0 )); then
     if [[ -n "$EXPLICIT_USER" ]]; then
@@ -1046,9 +1045,23 @@ select_pool_user() {
       fi
     fi
   fi
+  if [[ -n "$picked" ]]; then
+    local rrc=0
+    record_live_quota start "$picked" "$(model_usage_group "$ROUTE_MODEL")" || rrc=$?
+    if (( rrc == 2 )); then
+      active_low=1
+      picked=""
+    else
+      picked_pct="$_LIVE_PCT"
+    fi
+  fi
   if [[ -z "$picked" ]]; then
     if (( ${#active_users[@]} >= MAX_ACTIVE )); then
-      echo "[fm-agy-pool] ERROR: ${#active_users[@]} pool accounts already active (${active_users[*]}), none fit model '${ROUTE_MODEL:-default}'${EXPLICIT_USER:+ / account $EXPLICIT_USER}; cap is $MAX_ACTIVE (FM_AGY_MAX_ACTIVE)." >&2
+      if (( active_low == 1 )); then
+        echo "[fm-agy-pool] ERROR: ${#active_users[@]} pool accounts already active (${active_users[*]}), active account(s) are at or below the quota floor; cap is $MAX_ACTIVE (FM_AGY_MAX_ACTIVE)." >&2
+      else
+        echo "[fm-agy-pool] ERROR: ${#active_users[@]} pool accounts already active (${active_users[*]}), none fit model '${ROUTE_MODEL:-default}'${EXPLICIT_USER:+ / account $EXPLICIT_USER}; cap is $MAX_ACTIVE (FM_AGY_MAX_ACTIVE)." >&2
+      fi
       return 75
     fi
     local selection
@@ -1057,9 +1070,6 @@ select_pool_user() {
       picked="${selection%%|*}"
       picked_pct="${selection#*|}"
     fi
-  else
-    record_live_quota start "$picked" "$(model_usage_group "$ROUTE_MODEL")"
-    picked_pct="$_LIVE_PCT"
   fi
   [[ -n "$picked" ]] || return 1
   printf '%s|%s\n' "$picked" "$picked_pct"

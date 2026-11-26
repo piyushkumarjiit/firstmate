@@ -2021,6 +2021,73 @@ test_start_and_end_quota_records() {
   pass "usage log records both group windows at start (usage_check) and end (quota_end) while keeping run summary"
 }
 
+test_active_account_start_reading_at_or_below_floor() {
+  local fx="$TMP_ROOT/active_low_quota"
+  make_discovery_fixture "$fx" gpro1 gpro2
+  printf 'gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n' > "$fx/models.default"
+  cat > "$fx/bin/fake-pgrep" <<'EOF'
+#!/usr/bin/env bash
+[[ "$*" == *"-u gpro1"* ]] && exit 0
+exit 1
+EOF
+  chmod +x "$fx/bin/fake-pgrep"
+  printf "Gemini Models\tWeekly Limit Remaining\t5%%\t2026-11-29T00:00:00Z\nGemini Models\tFive Hour Limit Remaining\t5%%\t2026-11-22T20:00:00Z\n" > "$fx/usage.gpro1"
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\nGemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n" > "$fx/usage.gpro2"
+
+  # 1. An already-active account whose fake /usage is below floor is not chosen.
+  #    A non-active account with quota is chosen instead, and the low account gets a skip record and no second query.
+  discovery_run "$fx" FM_AGY_MAX_ACTIVE=2 -- --model gemini-4-hydrogen-high -p hi
+  [ "$RC" -eq 0 ] || fail "case 1 must succeed with non-active account, got $RC: $OUT"
+  [ "$(cat "$fx/run_calls.log" 2>/dev/null)" = "gpro2" ] || fail "non-active gpro2 must run, got: $(cat "$fx/run_calls.log" 2>/dev/null)"
+  local gpro1_dec gpro1_calls
+  gpro1_dec=$(jq -r 'select(.user == "gpro1" and .event == "usage_check") | .decision' "$fx/usage.jsonl")
+  [ "$gpro1_dec" = "skip" ] || fail "low active account must get skip decision, got: $gpro1_dec"
+  gpro1_calls=$(grep -c '^gpro1$' "$fx/usage_calls.log" || true)
+  [ "$gpro1_calls" -eq 1 ] || fail "low active account must receive no second query, got $gpro1_calls calls"
+
+  # 2. At the cap with the only active account low, the result is exit 75 with the new message.
+  local fx2="$TMP_ROOT/active_low_cap"
+  make_discovery_fixture "$fx2" gpro1
+  printf 'gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n' > "$fx2/models.default"
+  cat > "$fx2/bin/fake-pgrep" <<'EOF'
+#!/usr/bin/env bash
+[[ "$*" == *"-u gpro1"* ]] && exit 0
+exit 1
+EOF
+  chmod +x "$fx2/bin/fake-pgrep"
+  printf "Gemini Models\tWeekly Limit Remaining\t5%%\t2026-11-29T00:00:00Z\nGemini Models\tFive Hour Limit Remaining\t5%%\t2026-11-22T20:00:00Z\n" > "$fx2/usage.gpro1"
+
+  discovery_run "$fx2" FM_AGY_MAX_ACTIVE=1 -- --model gemini-4-hydrogen-high -p hi
+  [ "$RC" -eq 75 ] || fail "at cap with only active account low must exit 75, got $RC: $OUT"
+  assert_contains "$OUT" "active account(s) are at or below the quota floor" "must report active account(s) at or below quota floor"
+  assert_contains "$OUT" "FM_AGY_MAX_ACTIVE" "must name cap variable"
+  [ ! -f "$fx2/run_calls.log" ] || fail "low account must not run at cap"
+  local fx2_dec
+  fx2_dec=$(jq -r 'select(.user == "gpro1" and .event == "usage_check") | .decision' "$fx2/usage.jsonl")
+  [ "$fx2_dec" = "skip" ] || fail "low active account at cap must log skip, got: $fx2_dec"
+
+  # 3. The healthy reuse case still records start.
+  local fx3="$TMP_ROOT/active_healthy_reuse"
+  make_discovery_fixture "$fx3" gpro1
+  printf 'gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n' > "$fx3/models.default"
+  cat > "$fx3/bin/fake-pgrep" <<'EOF'
+#!/usr/bin/env bash
+[[ "$*" == *"-u gpro1"* ]] && exit 0
+exit 1
+EOF
+  chmod +x "$fx3/bin/fake-pgrep"
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\nGemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n" > "$fx3/usage.gpro1"
+
+  discovery_run "$fx3" FM_AGY_MAX_ACTIVE=1 -- --model gemini-4-hydrogen-high -p hi
+  [ "$RC" -eq 0 ] || fail "healthy reuse must succeed, got $RC: $OUT"
+  [ "$(cat "$fx3/run_calls.log" 2>/dev/null)" = "gpro1" ] || fail "healthy active account must run, got: $(cat "$fx3/run_calls.log" 2>/dev/null)"
+  local fx3_dec
+  fx3_dec=$(jq -r 'select(.user == "gpro1" and .event == "usage_check") | .decision' "$fx3/usage.jsonl")
+  [ "$fx3_dec" = "start" ] || fail "healthy reuse must record start decision, got: $fx3_dec"
+
+  pass "do not launch on an active account whose start reading is at or below the quota floor"
+}
+
 fm_test_run \
   test_symlink_refuses_claude_model \
   test_pool_model_env_refuses_claude \
@@ -2054,4 +2121,5 @@ fm_test_run \
   test_reservation_from_catalog_and_hydrogen_unrestricted \
   test_live_query_pacing_and_lock \
   test_check_account_and_spawn_probe_cache_gates \
-  test_start_and_end_quota_records
+  test_start_and_end_quota_records \
+  test_active_account_start_reading_at_or_below_floor
