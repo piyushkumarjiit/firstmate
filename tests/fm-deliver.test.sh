@@ -1515,6 +1515,86 @@ EOF
   pass "failover keeps the nm-agy role line across a pool rotation"
 }
 
+test_respond_nonzero_after_run_advanced_drives_next_gate() {
+  local sha
+  sha=$(setup_fixture task_respond_adv)
+  local tdir="$TMP_ROOT/task_respond_adv"
+  mkdir -p "$tdir/bin"
+  # respond exits 1 although the run moved on; the next status reads show it running, then parked at document.
+  cat > "$tdir/bin/no-mistakes" <<EOF2
+#!/usr/bin/env bash
+if [[ "\${1:-} \${2:-}" == "axi respond" ]]; then
+  exit 1
+elif [[ "\${1:-} \${2:-}" == "axi run" ]]; then
+  exit 0
+elif [[ "\${1:-} \${2:-}" == "axi status" ]]; then
+  n=\$(cat "$tdir/n" 2>/dev/null || echo 0); n=\$((n + 1)); echo "\$n" > "$tdir/n"
+  if (( n <= 2 )); then
+    printf 'run:\n  id: "01R"\n  status: running\n'
+  else
+    printf 'run:\n  id: "01R"\n  status: awaiting_approval\ngate:\n  step: document\n  summary: 2 ask-user findings\n'
+  fi
+  exit 0
+fi
+exit 0
+EOF2
+  chmod +x "$tdir/bin/no-mistakes"
+  echo "needs-decision [at=100] [key=gate-review]: review findings" >> "$tdir/state/task_respond_adv.status"
+
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 FM_DELIVER_REATTACH_PAUSE=0 \
+    "$DELIVER" task_respond_adv respond --action approve >/dev/null 2>&1 || true
+
+  local sfile="$tdir/state/task_respond_adv.status"
+  grep -q 'resolved.*\[key=gate-review\]' "$sfile" || fail "the answered gate must close once the run moved past it: $(cat "$sfile")"
+  assert_contains "$(tail -n 1 "$sfile")" "key=gate-document" "the next gate must surface as its own needs-decision"
+
+  pass "a respond that exits nonzero after the run advanced closes the old gate and surfaces the next one"
+}
+
+test_checks_passed_with_pr_is_done_and_reattach_is_paced() {
+  local sha
+  sha=$(setup_fixture task_green)
+  local tdir="$TMP_ROOT/task_green"
+  mkdir -p "$tdir/bin"
+  cat > "$tdir/bin/no-mistakes" <<EOF2
+#!/usr/bin/env bash
+if [[ "\${1:-} \${2:-}" == "axi run" ]]; then
+  echo "run-call" >> "$tdir/calls.log"
+  if [[ -n "\${GREEN:-}" ]] && (( \$(wc -l < "$tdir/calls.log") >= 2 )); then
+    printf 'outcome: checks-passed\npr: https://example.test/o/r/pull/7\n'
+  fi
+elif [[ "\${1:-} \${2:-}" == "axi status" ]]; then
+  printf 'run:\n  id: "01R"\n  status: running\n'
+fi
+exit 0
+EOF2
+  chmod +x "$tdir/bin/no-mistakes"
+
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 FM_DELIVER_REATTACH_PAUSE=0 GREEN=1 \
+    "$DELIVER" task_green run >/dev/null 2>&1 || true
+  local last
+  last=$(tail -n 1 "$tdir/state/task_green.status")
+  assert_contains "$last" "done" "checks-passed with a PR must be reported done"
+  assert_contains "$last" "https://example.test/o/r/pull/7" "the done line must carry the PR URL"
+  assert_not_contains "$last" "blocked" "a green PR must never be reported blocked"
+
+  # Never green: the reattach budget must be paced, not spent in an instant.
+  rm -f "$tdir/calls.log"
+  local t0=$SECONDS
+  env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" \
+    FM_STATE_OVERRIDE="$tdir/state" FM_DATA_OVERRIDE="$tdir/data" \
+    FM_MAIN_USER="$(id -un)" FM_DELIVER_FOREGROUND=1 FM_DELIVER_REATTACH_MAX=2 FM_DELIVER_REATTACH_PAUSE=1 \
+    "$DELIVER" task_green run >/dev/null 2>&1 || true
+  [ $((SECONDS - t0)) -ge 2 ] || fail "reattaches must back off between attempts"
+  assert_contains "$(tail -n 1 "$tdir/state/task_green.status")" "blocked" "an unfinished run still reports in-progress after the paced budget"
+
+  pass "checks-passed with a PR is done, and reattaches back off"
+}
+
 fm_test_run \
   test_ready_condition \
   test_refuse_non_main_user \
@@ -1549,4 +1629,6 @@ fm_test_run \
   test_blocker_ignores_test_step_output \
   test_failover_triggers_on_pool_quota_notice_in_review_log \
   test_no_failover_after_pool_rotation_recovered \
-  test_failover_keeps_role_line_across_rotation
+  test_failover_keeps_role_line_across_rotation \
+  test_respond_nonzero_after_run_advanced_drives_next_gate \
+  test_checks_passed_with_pr_is_done_and_reattach_is_paced
