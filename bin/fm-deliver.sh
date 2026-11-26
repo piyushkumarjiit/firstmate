@@ -616,21 +616,56 @@ handle_gate_or_outcome() {
   local failovers=0
 
   while :; do
-    local status_toon attempts=0 max_reattach="${FM_DELIVER_REATTACH_MAX:-15}"
+    local status_toon attempts=0 max_reattach="${FM_DELIVER_REATTACH_MAX:-15}" green_pr=""
     status_toon=$(cd "$wt" && no-mistakes axi status 2>/dev/null || true)
 
     # A drive call returns when its bounded hold (8m) elapses even though the run
     # keeps going ("wait of 8m0s elapsed ... not a pipeline failure"). While the
     # run is still executing or waiting for its driver, and is not at a gate,
-    # reattach with `no-mistakes axi run` instead of reading an outcome.
+    # reattach with `no-mistakes axi run` rather than treating the elapsed hold
+    # as a finished run; only the checks-green case below reads that call's own
+    # outcome.
     while ! grep -q '^gate:' <<<"$status_toon" &&
       { fm_nm_run_is_executing "$status_toon" || grep -Eq '^[[:space:]]*awaiting_agent:' <<<"$status_toon"; } &&
       (( attempts < max_reattach )); do
       attempts=$((attempts + 1))
       echo "[fm-deliver] Run still in progress; reattaching (${attempts}/${max_reattach})" >> "$dlog"
-      ( cd "$wt" && no-mistakes axi run ) >> "$dlog" 2>&1 || true
+      local run_out="" started=$SECONDS
+      run_out=$(cd "$wt" && no-mistakes axi run 2>&1 || true)
+      printf '%s\n' "$run_out" >> "$dlog"
       status_toon=$(cd "$wt" && no-mistakes axi status 2>/dev/null || true)
+      # Once checks are green the reattach returns checks-passed immediately while
+      # the CI monitor keeps the run "running" until merge, so status never shows it.
+      # Only this call's own output is read, never an older run's log lines.
+      if [[ "$(fm_nm_field "$run_out" outcome | tr -d '"'"'")" == "checks-passed" ]]; then
+        green_pr=$(fm_nm_field "$run_out" pr | tr -d '"'"'")
+        [[ -n "$green_pr" && "$green_pr" != "null" ]] || green_pr=$(fm_nm_field "$status_toon" pr | tr -d '"'"'")
+        [[ "$green_pr" != "null" ]] || green_pr=""
+        [[ -z "$green_pr" ]] || break
+      fi
+      # A reattach that returns at once must not burn the whole budget in seconds.
+      if (( SECONDS - started < ${FM_DELIVER_REATTACH_PAUSE:-3} )); then
+        sleep "${FM_DELIVER_REATTACH_PAUSE:-3}"
+      fi
     done
+
+    # Checks green with a PR: the PR is ready even though the CI monitor keeps the
+    # run alive until merge, so report it instead of an in-progress block.
+    if ! grep -q '^gate:' <<<"$status_toon"; then
+      if [[ -z "$green_pr" && "$(fm_nm_field "$status_toon" outcome | tr -d '"'"'")" == "checks-passed" ]]; then
+        green_pr=$(fm_nm_field "$status_toon" pr | tr -d '"'"'")
+        [[ "$green_pr" != "null" ]] || green_pr=""
+      fi
+      if [[ -n "$green_pr" ]]; then
+        local green_head now
+        green_head=$(fm_nm_field "$status_toon" head_sha | tr -d '"'"'")
+        [[ -n "$green_head" ]] || green_head=$(git -C "$wt" rev-parse HEAD 2>/dev/null || true)
+        now=$(date +%s)
+        echo "done [at=$now]: head $green_head PR $green_pr checks green" >> "$stat_file"
+        echo "[fm-deliver] Outcome 'checks-passed' with PR $green_pr; reported PR-ready" >> "$dlog"
+        return 0
+      fi
+    fi
 
     # Check if parked at gate
     if grep -q '^gate:' <<<"$status_toon"; then
@@ -680,8 +715,9 @@ handle_gate_or_outcome() {
     outcome=$(fm_nm_field "$status_toon" outcome)
     outcome=$(echo "$outcome" | tr -d '"'"'")
 
-    # The current run's own status is the only outcome source: an older run's
-    # "outcome:" line in the shared drive log must never be read as this run's.
+    # The current run's own status, or its own live call's output read above, is
+    # the only outcome source: an older run's "outcome:" line in the shared
+    # drive log must never be read as this run's.
     if [[ -z "$outcome" ]]; then
       if fm_nm_run_is_executing "$status_toon"; then
         local now
@@ -1023,6 +1059,22 @@ open_gate_keys() {
   ' "$sfile"
 }
 
+# 0 only with positive evidence in status TOON $1 that the run moved past every
+# gate still open in status file $2: it is executing, at a different gate, or finished.
+respond_run_left_gate() {
+  local st="$1" sfile="$2" step k
+  [[ -n "$st" ]] || return 1
+  if grep -q '^gate:' <<<"$st"; then
+    step=$(awk '/^gate:/{flag=1;next}/^[^ ]/{flag=0}flag && /^[[:space:]]+step:/{print $2; exit}' <<<"$st")
+    for k in $(open_gate_keys "$sfile"); do
+      [[ "$k" == "gate-$step" || -z "$step" ]] && return 1
+    done
+    return 0
+  fi
+  [[ -z "$(fm_nm_field "$st" outcome)" ]] || return 0
+  fm_nm_run_is_executing "$st" || grep -Eq '^[[:space:]]*awaiting_agent:' <<<"$st"
+}
+
 resolve_open_gate_if_present() {
   local sfile="$1" dlog="$2"
   shift 2
@@ -1106,8 +1158,15 @@ case "$SUBCMD" in
     respond_rc=0
     ( cd "$WORKTREE" && no-mistakes axi respond "${NORM_ARGS[@]}" ) >> "$DRIVE_LOG" 2>&1 || respond_rc=$?
     if [[ "$respond_rc" -ne 0 ]]; then
-      echo "[fm-deliver] respond failed (exit $respond_rc); leaving the gate open" >> "$DRIVE_LOG"
-      exit "$respond_rc"
+      # An answer no-mistakes accepted can still exit nonzero, and the run then
+      # advances unattended. Only a run that has demonstrably left the answered
+      # gate is closed and driven on; otherwise the gate stays open.
+      if respond_run_left_gate "$(cd "$WORKTREE" && no-mistakes axi status 2>/dev/null || true)" "$STATUS_FILE"; then
+        echo "[fm-deliver] respond exited $respond_rc but the run left the answered gate; resolving it and continuing" >> "$DRIVE_LOG"
+      else
+        echo "[fm-deliver] respond failed (exit $respond_rc); leaving the gate open" >> "$DRIVE_LOG"
+        exit "$respond_rc"
+      fi
     fi
     resolve_rc=0
     resolve_open_gate_if_present "$STATUS_FILE" "$DRIVE_LOG" "${NORM_ARGS[@]}" || resolve_rc=$?
