@@ -20,7 +20,7 @@ Its header owns the full setup order, the environment variables, adding or remov
 - Traverse access from each pool account into this home's `state/` and `data/`, and access plus default ACLs on every clone under `projects/`, so any task shape can record status, read its steering inbox, and commit.
 - A git HTTPS credential helper in each pool account, backed by the operator's `gh` login, so a pool account's own clone or fetch of a private origin never stops at a login prompt.
 - The operator account's own push credentials (check only): a working `gh` login and a git credential helper, because `fm-deliver` runs no-mistakes, and so the push, as the operator. A failed push reports a blocker naming these `operator push credentials` check lines.
-- The models allowlist (`/etc/firstmate/gpro-models.conf`): Neon and Hydrogen rules naming the pool accounts, where listed order is the quota failover order.
+- Model discovery via per-account cached `agy models` catalogs under `FM_AGY_STATE_DIR` (accounts whose catalog lists any Neon model are reserved for Neon preference, while legacy `/etc/firstmate/gpro-models.conf` is ignored).
 - Operator read access to the pool usage log and per-run logs.
 - A report of the no-mistakes reviewer and fixer configuration for Gemini runs, including whether `agent_path_override.antigravity` points at `bin/agy-pool/nm-agy`.
   That file is edited by hand; this step is check-only and the script never writes the no-mistakes config.
@@ -30,7 +30,7 @@ Its header owns the full setup order, the environment variables, adding or remov
 The pool takes over on a home whose pool config lists at least one account, for every firstmate-launched `agy` crew ship or scout (`no-mistakes`, `direct-PR`, `local-only`, and scouts); a secondmate (which keeps the plain `agy` launcher and runs as the operator, and for which `--account` is refused), a raw launch command, and every non-agy harness keep their existing launch.
 Only the `no-mistakes` ship needs the pool-builder brief below; the other shapes keep their ordinary brief and delivery contract.
 Name the account for one task with `--account <pool account>` on `bin/fm-spawn.sh` (a Linux account name from the pool config, never a Google address).
-The spawn checks it through `bin/agy-pool/agy --check-account <account> [model]` before any pane exists: it must be listed, exist, be signed in, be allowed for the model by the models config, and not be marked exhausted, or the spawn refuses and never picks another account.
+The spawn checks it read-only through `bin/agy-pool/agy --check-account <account> [model]` before any pane exists: it must be listed, exist, be signed in, pass the cached model catalog check (refusing if a fresh catalog omits the model, allowing with a notice if unknown), and not be marked exhausted, or the spawn refuses and never picks another account.
 It is recorded as `account=` in the task record, handed to the launcher as `FM_AGY_USER`, and reused on relaunch unless a new `--account` moves it; without `--account` the automatic choice applies.
 The launcher grants the selected account an ACL on that task's `data/<task>/` only (a scout's `report.md`), and `bin/fm-agy-pool-setup.sh` checks and applies traverse access on `state/` and `data/` (step `task-paths`).
 Pool-routed scouts and ships use the pool account's quota, not the operator's own agy sign-in, and their commits are authored by the pool worker identity (`Firstmate Worker (<account>)`), not the operator.
@@ -53,7 +53,7 @@ Direct-PR and local-only workers push through the pool account's git credential 
 
 ## Overrides
 
-Paths and accounts can be redirected with `POOL_CONF`, `MODELS_CONF`, `FM_NM_WORKTREES`, `FM_NM_CONFIG`, `FM_AGY_USAGE_LOG`, `FM_AGY_STATE_DIR`, `FM_HOME`, `FM_STATE_OVERRIDE`, `FM_DATA_OVERRIDE`, `FM_PROJECTS_OVERRIDE`, `FM_GH_CONFIG_DIR`, `FM_GH_BIN`, and `FM_SETUP_SUDO` (set to `none` to print per-account commands instead of running them).
+Paths and accounts can be redirected with `POOL_CONF`, the legacy model-map path `MODELS_CONF` (reported and ignored), `FM_NM_WORKTREES`, `FM_NM_CONFIG`, `FM_AGY_USAGE_LOG`, `FM_AGY_STATE_DIR`, `FM_HOME`, `FM_STATE_OVERRIDE`, `FM_DATA_OVERRIDE`, `FM_PROJECTS_OVERRIDE`, `FM_GH_CONFIG_DIR`, `FM_GH_BIN`, and `FM_SETUP_SUDO` (set to `none` to print per-account commands instead of running them).
 The script header owns the exact list.
 Verification lives in `tests/fm-agy-pool-setup.test.sh` and `tests/fm-agy-pool-provision.test.sh`.
 For large review prompts see [`contrib/no-mistakes-antigravity-stdin/README.md`](../contrib/no-mistakes-antigravity-stdin/README.md).

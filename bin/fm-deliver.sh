@@ -14,7 +14,6 @@ FM_DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 FM_CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 DISPATCH_CONFIG="$FM_CONFIG/crew-dispatch.json"
 POOL_CONF="${POOL_CONF:-/etc/firstmate/gpro-pool.conf}"
-MODELS_CONF="${MODELS_CONF:-/etc/firstmate/gpro-models.conf}"
 AGY_STATE_DIR="${FM_AGY_STATE_DIR:-/tmp/fm-agy-pool}"
 
 # Source shared Firstmate libraries
@@ -226,38 +225,26 @@ FIX_IDX=0
 
 allowed_users_for_model() {
   local model="${1:-}"
-  if [[ -n "$model" && -f "$MODELS_CONF" ]]; then
-    local line pattern users_str
-    while IFS= read -r line; do
-      line="${line%%#*}"
-      line="${line#"${line%%[![:space:]]*}"}"
-      line="${line%"${line##*[![:space:]]}"}"
-      [[ -z "$line" ]] && continue
-      pattern=$(awk '{print $1}' <<<"$line")
-      users_str=$(awk '{$1=""; sub(/^ +/,""); print}' <<<"$line")
-      [[ -z "$pattern" || -z "$users_str" ]] && continue
-      # shellcheck disable=SC2053
-      if [[ "$model" == $pattern ]]; then
-        printf '%s\n' "${users_str//,/ }"
-        return 0
+  [[ -f "$POOL_CONF" ]] || return 0
+  local u cfile models_ttl="${FM_AGY_MODELS_TTL:-86400}" now fetched age
+  [[ "$models_ttl" =~ ^[0-9]+$ ]] || models_ttl=86400
+  now=$(date +%s)
+  local -a candidates=()
+  while IFS= read -r u; do
+    [[ -n "$u" ]] || continue
+    cfile="$AGY_STATE_DIR/${u}.models.json"
+    if [[ -n "$model" && -f "$cfile" ]]; then
+      fetched=$(jq -r '.fetched_at // empty' "$cfile" 2>/dev/null || true)
+      if [[ "$fetched" =~ ^[0-9]+$ ]]; then
+        age=$(( now - fetched ))
+        if (( age < models_ttl )); then
+          jq -e --arg m "$model" '(.models // []) | index($m) != null' "$cfile" >/dev/null 2>&1 || continue
+        fi
       fi
-    done < "$MODELS_CONF"
-  fi
-  if [[ -f "$POOL_CONF" ]]; then
-    local u reserved_list=""
-    if [[ -f "$MODELS_CONF" ]]; then
-      reserved_list=$(grep -Ev '^\s*(#|$)' "$MODELS_CONF" | awk '{for (i=2; i<=NF; i++) print $i}' | tr ',' '\n')
     fi
-    local -a normal=()
-    while IFS= read -r u; do
-      [[ -n "$u" ]] || continue
-      if [[ -n "$reserved_list" ]] && grep -Fxq "$u" <<<"$reserved_list"; then
-        continue
-      fi
-      normal+=("$u")
-    done < <(grep -Ev '^\s*(#|$)' "$POOL_CONF" | awk '{print $1}')
-    printf '%s\n' "${normal[*]}"
-  fi
+    candidates+=("$u")
+  done < <(grep -Ev '^\s*(#|$)' "$POOL_CONF" | awk '{print $1}')
+  printf '%s\n' "${candidates[*]}"
 }
 
 user_is_exhausted() {

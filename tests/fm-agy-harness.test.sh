@@ -925,10 +925,10 @@ test_agy_direct_pr_routes_through_launcher_with_pool_config() {
 }
 
 # Pool routing for every task shape, and --account naming. The fake id and sudo
-# make gpro1 and gpro2 signed-in pool accounts (gpro3 unsigned); models.conf
-# reserves Neon for gpro2.
+# make gpro1 and gpro2 signed-in pool accounts (gpro3 unsigned); cached catalogs
+# give gpro2 Neon and gpro1 Flash+Hydrogen only.
 make_pool_spawn_case() {  # <name> <id> -> record
-  local rec case_dir fb
+  local rec case_dir fb now_ts
   rec=$(make_agy_spawn_case "$1" "$2")
   case_dir=${rec%%|*}
   fb="$case_dir/fake/fakebin"
@@ -943,6 +943,9 @@ SH
   printf '%s\n' gpro1 gpro2 gpro3 > "$case_dir/gpro-pool.conf"
   printf '%s\n' '*neon* gpro2' > "$case_dir/models.conf"
   mkdir -p "$case_dir/pool-state"
+  now_ts=$(date +%s)
+  printf '{"user":"gpro1","fetched_at":%s,"models":["gemini-3.8-flash-low","gemini-3.8-flash-high","gemini-4-hydrogen-high"]}\n' "$now_ts" > "$case_dir/pool-state/gpro1.models.json"
+  printf '{"user":"gpro2","fetched_at":%s,"models":["gemini-3.8-flash-low","gemini-3.8-flash-high","gemini-4-hydrogen-high","gemini-4-neon-medium"]}\n' "$now_ts" > "$case_dir/pool-state/gpro2.models.json"
   printf '%s\n' "$rec"
 }
 
@@ -1013,8 +1016,8 @@ test_agy_account_flag_refuses_bad_accounts_without_fallback() {
   rc=0
   out=$(run_pool_spawn "$rec" "$id" --scout --model gemini-4-neon-medium --account gpro1 2>&1) || rc=$?
   read_agy_spawn_record "$rec"
-  [ "$rc" -ne 0 ] || fail "an account not allowed for the model must refuse"
-  assert_contains "$out" "not allowed for model" "model refusal"
+  [ "$rc" -ne 0 ] || fail "an account whose fresh catalog omits the model must refuse"
+  assert_contains "$out" "does not list model" "model refusal"
   [ ! -s "$CASE_DIR/launch.log" ] || fail "a refused account must not launch"
 
   id="agy-acct-b3-$$"
