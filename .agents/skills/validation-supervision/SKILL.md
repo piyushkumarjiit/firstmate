@@ -15,7 +15,7 @@ When a `builder=pool` ship worker reports `done: committed <sha>`, the pool work
 Start `bin/fm-deliver.sh <task> run` yourself only when the spawn reported it could not arm the autostart.
 Firstmate answers only the gates that still reach it via `bin/fm-deliver.sh <task> respond`, never passing `--yes`.
 For `builder=pool` tasks, firstmate answers the gate decisions itself; the decision procedure below owns how.
-At run outcome, `bin/fm-deliver.sh` synchronizes the branch with `no-mistakes axi sync` and appends `done:` or `blocked:` to the status file.
+At a terminal run outcome, `bin/fm-deliver.sh` synchronizes the branch with `no-mistakes axi sync` and appends `done:` or `blocked:` to the status file.
 `bin/fm-dod-lib.sh` owns the worker-side `--intent` contract.
 Once validation starts, prefer routing new requirements to follow-up work rather than expanding the current task, unless a new requirement completely invalidates the work being validated; however, the smallest downstream changes needed to keep already accepted product or engineering behavior correct, add behavioral tests where an executable contract exists, or keep documentation accurate remain within the current task even when they touch files not named at intake, and corrections required to satisfy already accepted intent are not new requirements.
 

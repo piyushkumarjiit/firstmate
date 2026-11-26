@@ -622,7 +622,9 @@ handle_gate_or_outcome() {
     # A drive call returns when its bounded hold (8m) elapses even though the run
     # keeps going ("wait of 8m0s elapsed ... not a pipeline failure"). While the
     # run is still executing or waiting for its driver, and is not at a gate,
-    # reattach with `no-mistakes axi run` instead of reading an outcome.
+    # reattach with `no-mistakes axi run` rather than treating the elapsed hold
+    # as a finished run; only the checks-green case below reads that call's own
+    # outcome.
     while ! grep -q '^gate:' <<<"$status_toon" &&
       { fm_nm_run_is_executing "$status_toon" || grep -Eq '^[[:space:]]*awaiting_agent:' <<<"$status_toon"; } &&
       (( attempts < max_reattach )); do
@@ -713,8 +715,9 @@ handle_gate_or_outcome() {
     outcome=$(fm_nm_field "$status_toon" outcome)
     outcome=$(echo "$outcome" | tr -d '"'"'")
 
-    # The current run's own status is the only outcome source: an older run's
-    # "outcome:" line in the shared drive log must never be read as this run's.
+    # The current run's own status, or its own live call's output read above, is
+    # the only outcome source: an older run's "outcome:" line in the shared
+    # drive log must never be read as this run's.
     if [[ -z "$outcome" ]]; then
       if fm_nm_run_is_executing "$status_toon"; then
         local now
