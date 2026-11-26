@@ -183,7 +183,8 @@ EOF
   : > "$usage_calls"
   : > "$fixture_dir/usage.jsonl"
 
-  # Concurrent worker on same active account (gpro1) is allowed without pre-run /usage check
+  # Concurrent worker on same active account (gpro1) is allowed and records a
+  # live start reading for that same account
   rc=0
   err=$(env PATH="$fixture_dir/bin:$PATH" \
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
@@ -194,10 +195,15 @@ EOF
     FM_AGY_PACING_SEC=0 \
     "$POOL" --user gpro1 -p hello 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "concurrent run on same active account must succeed, got $rc: $err"
-  [ "$(head -n 1 "$usage_calls")" = "run:gpro1" ] || fail "active account reuse must run without pre-run /usage call, got: $(cat "$usage_calls")"
+  [ "$(head -n 1 "$usage_calls")" = "usage:gpro1" ] \
+    || fail "active account reuse must take one live /usage reading for its own account, got: $(cat "$usage_calls")"
+  [ "$(sed -n 2p "$usage_calls")" = "run:gpro1" ] \
+    || fail "active account reuse must still run on gpro1 after the reading, got: $(cat "$usage_calls")"
   local start_chk
-  start_chk=$(jq -s '[.[] | select(.event == "usage_check")] | length' "$fixture_dir/usage.jsonl")
-  [ "$start_chk" -eq 0 ] || fail "active account reuse must not log selection usage_check"
+  start_chk=$(jq -rs '[.[] | select(.event == "usage_check")] | last | .user + "|" + .decision + "|" + (.gemini_min_pct|tostring)' "$fixture_dir/usage.jsonl")
+  [ "$start_chk" = "gpro1|start|90" ] \
+    || fail "active account reuse must log the live start reading for gpro1, got: $start_chk"
+  assert_contains "$err" "(90% remaining" "route line must print the live reading used for the decision"
 
   pass "single active account refusal works and allows concurrent on same account"
 }
@@ -563,6 +569,7 @@ EOF
     FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello 2>&1)
   assert_contains "$out" "Routing model 'gemini-3.8-flash-high' to 'gpro1'" "above floor routes to gpro1"
+  assert_contains "$out" "(89% remaining" "route line must print the live reading used for the decision"
 
   # Verify usage_check logged "start" for gpro1
   local start_count
@@ -663,6 +670,7 @@ EOF
     FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello 2>&1)
   assert_contains "$out" "Routing model 'gemini-3.8-flash-high' to 'gpro1'" "unparsable usage treated as unknown and starts on gpro1"
+  assert_contains "$out" "(unknown remaining" "route line must say unknown when the live read gave no reading"
 
   # Verify usage_check logged "unknown" for gpro1
   local unk_count
@@ -1437,7 +1445,11 @@ EOF
     FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "capped neon call must succeed, got $rc: $out"
   [ "$(cat "$fx/calls.log")" = gpro2 ] || fail "at the cap the higher-quota active account must win, got: $(cat "$fx/calls.log")"
-  pass "at the active cap reuse follows quota-ordered account priority"
+  local at_cap_start
+  at_cap_start=$(jq -rs '[.[] | select(.event == "usage_check")] | last | .user + "|" + .decision + "|" + (.gemini_min_pct|tostring)' "$fx/usage.jsonl")
+  [ "$at_cap_start" = "gpro2|start|90" ] \
+    || fail "at-cap reuse must take a live start reading on the reused account, got: $at_cap_start"
+  pass "at the active cap reuse follows quota-ordered account priority and records its live start reading"
 }
 
 test_usage_follows_active_cap() {

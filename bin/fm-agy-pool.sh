@@ -605,14 +605,41 @@ log_usage_check() {
   log_usage_event "usage_check" "$account" "$group" "$min_pct" "$reset" "$wk_pct" "$wk_reset" "$fh_pct" "$fh_reset" "$decision"
 }
 
+# Take the start-of-task live reading for an account that was chosen without a
+# selection-time /usage query (already-active reuse). Queries only that same
+# account under the shared live-query lock, saves the reading, and logs it as
+# the task's usage_check start. Prints the live percentage, or nothing when the
+# read failed, so callers can report the reading they actually used.
+record_start_reading() {
+  local user="$1" group="${2:-Gemini Models}"
+  local usage_detail live_pct="" live_reset="" wk_pct="" wk_reset="" fh_pct="" fh_reset=""
+  if usage_detail=$(query_live_usage_detail "$user" "$group"); then
+    IFS='|' read -r live_pct live_reset wk_pct wk_reset fh_pct fh_reset <<<"$usage_detail"
+  fi
+  if [[ -n "$live_pct" ]]; then
+    local rst_epoch
+    rst_epoch=$(reset_to_epoch "$live_reset")
+    save_account_quota "$user" "$group" "$live_pct" "$live_reset" "$wk_pct" "$wk_reset" "$fh_pct" "$fh_reset" "$rst_epoch"
+    log_usage_check "$user" "$live_pct" "$live_reset" "start" "$group" "$wk_pct" "$wk_reset" "$fh_pct" "$fh_reset"
+    if (( live_pct <= MIN_REMAINING_PCT )); then
+      mark_account_exhausted "$user" "$rst_epoch"
+    fi
+    printf '%s\n' "$live_pct"
+    return 0
+  fi
+  log_usage_check "$user" "" "" "unknown" "$group" "" "" "" ""
+  return 0
+}
+
 # Evaluate one candidate account for model support (refreshing stale/missing
 # catalog once) and live /usage quota check (once). Sets _EVAL_PICKED and
 # returns 0 when accepted; returns 2 if account should be deferred to reserved
 # fallback; returns 1 otherwise.
-# Uses caller-scoped vars: _EVAL_PICKED _CHECKED_MODELS _CHECKED_USAGE _DEFERRED_RESERVED.
+# Uses caller-scoped vars: _EVAL_PICKED _EVAL_LIVE_PCT _CHECKED_MODELS _CHECKED_USAGE _DEFERRED_RESERVED.
 evaluate_candidate_account() {
   local u="$1" model="$2" group="$3" allow_reserved="$4"
   _EVAL_PICKED=""
+  _EVAL_LIVE_PCT=""
   local want_neon=0
   is_neon_model "$model" && want_neon=1
 
@@ -669,6 +696,7 @@ evaluate_candidate_account() {
       if (( live_pct > MIN_REMAINING_PCT )); then
         log_usage_check "$u" "$live_pct" "$live_reset" "start" "$group" "$wk_pct" "$wk_reset" "$fh_pct" "$fh_reset"
         _EVAL_PICKED="$u"
+        _EVAL_LIVE_PCT="$live_pct"
         return 0
       else
         log_usage_check "$u" "$live_pct" "$live_reset" "skip" "$group" "$wk_pct" "$wk_reset" "$fh_pct" "$fh_reset"
@@ -756,7 +784,7 @@ pick_sticky_user() {
     else
       log_usage_check "$explicit_user" "" "" "unknown" "$group" "" "" "" ""
     fi
-    echo "$explicit_user"
+    printf '%s|%s\n' "$explicit_user" "${live_pct:-}"
     return 0
   fi
 
@@ -765,7 +793,7 @@ pick_sticky_user() {
   local want_neon=0
   is_neon_model "$model" && want_neon=1
 
-  local _CHECKED_MODELS="" _CHECKED_USAGE="" _DEFERRED_RESERVED="" _EVAL_PICKED=""
+  local _CHECKED_MODELS="" _CHECKED_USAGE="" _DEFERRED_RESERVED="" _EVAL_PICKED="" _EVAL_LIVE_PCT=""
   local -a tier1_pool=() known_reserved=()
   local u cstat
   for u in "${GPRO_USERS[@]}"; do
@@ -790,7 +818,7 @@ pick_sticky_user() {
     rc=0
     evaluate_candidate_account "$u" "$model" "$group" "$want_neon" || rc=$?
     if (( rc == 0 )) && [[ -n "$_EVAL_PICKED" ]]; then
-      printf '%s\n' "$_EVAL_PICKED"
+      printf '%s|%s\n' "$_EVAL_PICKED" "$_EVAL_LIVE_PCT"
       return 0
     fi
   done
@@ -814,7 +842,7 @@ pick_sticky_user() {
       rc=0
       evaluate_candidate_account "$u" "$model" "$group" 1 || rc=$?
       if (( rc == 0 )) && [[ -n "$_EVAL_PICKED" ]]; then
-        printf '%s\n' "$_EVAL_PICKED"
+        printf '%s|%s\n' "$_EVAL_PICKED" "$_EVAL_LIVE_PCT"
         return 0
       fi
     done
@@ -1276,7 +1304,7 @@ parse_reset_epoch_from_log() {
 MAX_ACTIVE="${FM_AGY_MAX_ACTIVE:-2}"
 
 select_pool_user() {
-  local active_users=() active_user picked=""
+  local active_users=() active_user picked="" picked_pct=""
   mapfile -t active_users < <(find_active_pool_users)
   if (( ${#active_users[@]} > 0 )); then
     if [[ -n "$EXPLICIT_USER" ]]; then
@@ -1316,12 +1344,19 @@ select_pool_user() {
       echo "[fm-agy-pool] ERROR: ${#active_users[@]} pool accounts already active (${active_users[*]}), none fit model '${ROUTE_MODEL:-default}'${EXPLICIT_USER:+ / account $EXPLICIT_USER}; cap is $MAX_ACTIVE (FM_AGY_MAX_ACTIVE)." >&2
       return 75
     fi
-    picked=$(pick_sticky_user "$ROUTE_MODEL" "$EXPLICIT_USER" || true)
+    local selection
+    selection=$(pick_sticky_user "$ROUTE_MODEL" "$EXPLICIT_USER" || true)
+    if [[ -n "$selection" ]]; then
+      picked="${selection%%|*}"
+      picked_pct="${selection#*|}"
+    fi
+  else
+    picked_pct=$(record_start_reading "$picked" "$(model_usage_group "$ROUTE_MODEL")")
   fi
   if [[ -z "$picked" ]]; then
     return 1
   fi
-  printf '%s\n' "$picked"
+  printf '%s|%s\n' "$picked" "$picked_pct"
 }
 
 TASK_LABEL="${FM_TASK_ID:-${PWD##*/}}"
@@ -1556,8 +1591,13 @@ KEPT_ACCESS_USERS=""
 while (( ATTEMPT < MAX_ATTEMPTS )); do
   ATTEMPT=$(( ATTEMPT + 1 ))
   SELECTED_USER=""
+  SELECTED_PCT=""
   select_rc=0
-  SELECTED_USER=$(select_pool_user) || select_rc=$?
+  selection=$(select_pool_user) || select_rc=$?
+  if [[ -n "$selection" ]]; then
+    SELECTED_USER="${selection%%|*}"
+    SELECTED_PCT="${selection#*|}"
+  fi
   if [[ -z "$SELECTED_USER" ]]; then
     if [[ $CONVERSATION_PINNED -eq 1 ]]; then
       echo "[fm-agy-pool] ERROR: account '$EXPLICIT_USER' owns conversation '$REQ_CONVERSATION' but cannot take the call now; not running it on another account, which would drop the conversation and its cache." >&2
@@ -1573,7 +1613,8 @@ while (( ATTEMPT < MAX_ATTEMPTS )); do
     exit 75
   fi
 
-  BEFORE_PCT=$(get_remaining_pct "$SELECTED_USER" "$ROUTE_MODEL")
+  PCT_LABEL="unknown"
+  [[ -n "$SELECTED_PCT" ]] && PCT_LABEL="${SELECTED_PCT}%"
   START_TS=$(now_epoch)
   if [[ "$RUN_LOG_EPHEMERAL" -eq 1 ]]; then
     : > "$RUN_LOG"
@@ -1581,7 +1622,7 @@ while (( ATTEMPT < MAX_ATTEMPTS )); do
   chmod 0644 "$RUN_LOG" 2>/dev/null || true
   RUN_LOG_OFFSET=$(wc -c < "$RUN_LOG" 2>/dev/null || echo 0)
 
-  echo "[fm-agy-pool] Routing model '${ROUTE_MODEL:-default}' to '$SELECTED_USER' (${BEFORE_PCT}% remaining, floor=${MIN_REMAINING_PCT}%)..." >&2
+  echo "[fm-agy-pool] Routing model '${ROUTE_MODEL:-default}' to '$SELECTED_USER' (${PCT_LABEL} remaining, floor=${MIN_REMAINING_PCT}%)..." >&2
 
   if [[ "${AGY_ARGS[0]:-}" != models ]]; then
     record_sticky_user "$SELECTED_USER"
