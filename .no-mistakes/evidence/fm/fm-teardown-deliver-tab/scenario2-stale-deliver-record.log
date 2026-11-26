@@ -1,0 +1,27 @@
+### build fixture repos
+### install hermetic stubs
+### clear leftover lab panes
+### create herdr projection layout
+### write metadata
+### before: herdr state
+{"workspace_id":"w8","label":"firstmate","tab_count":1,"pane_count":1}
+{"workspace_id":"w9","label":"└ task-x1 · p:liveDeliverTabToken001","tab_count":1,"pane_count":1}
+{"pane_id":"w8:p1","tab_id":"w8:t1","workspace_id":"w8"}
+{"pane_id":"w9:p1","tab_id":"w9:t1","workspace_id":"w9"}
+### run teardown: {run-worktree}/bin/fm-teardown.sh
+teardown exit=0
+--- stdout:
+teardown task-x1 complete (window fm-lab-deltab-1437690-30980:w9:p1, worktree /tmp/fm-lab.rqKuAb/fx/wt)
+Backlog: task-x1 just finished (this home keeps no markdown backlog at /tmp/fm-lab.rqKuAb/data/backlog.md). Update /tmp/fm-lab.rqKuAb/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+--- stderr:
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.rqKuAb
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 3s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e {run-worktree}/.pi/extensions/fm-primary-turnend-guard.ts -e {run-worktree}/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### after: herdr state
+{"workspace_id":"w8","label":"firstmate","tab_count":1,"pane_count":1}
+{"pane_id":"w8:p1","tab_id":"w8:t1","workspace_id":"w8"}

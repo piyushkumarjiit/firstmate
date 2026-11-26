@@ -1,0 +1,41 @@
+### build fixture repos
+### install hermetic stubs
+### clear leftover lab panes
+### create herdr projection layout
+### create a neighbouring task's deliver tab that must survive
+wE:p2
+### write metadata
+### before: herdr state
+{"workspace_id":"wC","label":"firstmate","tab_count":1,"pane_count":1}
+{"workspace_id":"wD","label":"└ task-x1 · p:liveDeliverTabToken001","tab_count":2,"pane_count":2}
+{"workspace_id":"wE","label":"└ task-y1 · p:neighbourTaskToken01","tab_count":2,"pane_count":2}
+{"pane_id":"wC:p1","tab_id":"wC:t1","workspace_id":"wC"}
+{"pane_id":"wD:p1","tab_id":"wD:t1","workspace_id":"wD"}
+{"pane_id":"wD:p2","tab_id":"wD:t2","workspace_id":"wD"}
+{"pane_id":"wE:p1","tab_id":"wE:t1","workspace_id":"wE"}
+{"pane_id":"wE:p2","tab_id":"wE:t2","workspace_id":"wE"}
+### run teardown: {run-worktree}/bin/fm-teardown.sh
+teardown exit=0
+--- stdout:
+teardown task-x1 complete (window fm-lab-deltab-1437690-30980:wD:p1, worktree /tmp/fm-lab.rqKuAb/fx/wt)
+Backlog: task-x1 just finished (this home keeps no markdown backlog at /tmp/fm-lab.rqKuAb/data/backlog.md). Update /tmp/fm-lab.rqKuAb/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+--- stderr:
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.rqKuAb
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 3s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e {run-worktree}/.pi/extensions/fm-primary-turnend-guard.ts -e {run-worktree}/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{run-worktree}/bin/fm-teardown.sh: line 3949: /proc/1474836/cmdline: No such file or directory
+{run-worktree}/bin/fm-teardown.sh: line 3949: /proc/1474873/cmdline: No such file or directory
+{run-worktree}/bin/fm-teardown.sh: line 3949: /proc/1474881/cmdline: No such file or directory
+{run-worktree}/bin/fm-teardown.sh: line 3949: /proc/1474888/cmdline: No such file or directory
+{run-worktree}/bin/fm-teardown.sh: line 3949: /proc/1474899/cmdline: No such file or directory
+### after: herdr state
+{"workspace_id":"wC","label":"firstmate","tab_count":1,"pane_count":1}
+{"workspace_id":"wE","label":"└ task-y1 · p:neighbourTaskToken01","tab_count":2,"pane_count":2}
+{"pane_id":"wC:p1","tab_id":"wC:t1","workspace_id":"wC"}
+{"pane_id":"wE:p1","tab_id":"wE:t1","workspace_id":"wE"}
+{"pane_id":"wE:p2","tab_id":"wE:t2","workspace_id":"wE"}

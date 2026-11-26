@@ -1,0 +1,2 @@
+ok - herdr teardown closes the recorded deliver tab pane with the task pane
+ok - herdr teardown tolerates a stale deliver tab record whose pane is gone

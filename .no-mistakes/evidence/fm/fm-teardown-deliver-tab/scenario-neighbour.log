@@ -1,0 +1,42 @@
+### build fixture repos
+### install hermetic stubs
+### clear leftover lab panes
+### create herdr layout: neighbour
+### create a neighbouring task's deliver tab that must survive
+### spawn a matching fm-deliver.sh driver process for task-x1
+### write metadata
+### before: herdr state
+{"workspace_id":"wB","label":"firstmate","tab_count":1,"pane_count":1}
+{"workspace_id":"wC","label":"└ task-x1 · p:liveDeliverTabToken001","tab_count":2,"pane_count":2}
+{"workspace_id":"wD","label":"└ task-y1 · p:neighbourTaskToken01","tab_count":2,"pane_count":2}
+{"pane_id":"wB:p1","tab_id":"wB:t1","workspace_id":"wB"}
+{"pane_id":"wC:p1","tab_id":"wC:t1","workspace_id":"wC"}
+{"pane_id":"wC:p2","tab_id":"wC:t2","workspace_id":"wC"}
+{"pane_id":"wD:p1","tab_id":"wD:t1","workspace_id":"wD"}
+{"pane_id":"wD:p2","tab_id":"wD:t2","workspace_id":"wD"}
+### start /proc pid churn so pids vanish during teardown's driver scan
+### run teardown: {run-worktree}/bin/fm-teardown.sh
+teardown exit=0
+--- stdout:
+teardown task-x1 complete (window fm-lab-deltab-1585154-23815:wC:p1, worktree /tmp/fm-lab.7y0w66/fx/wt)
+Backlog: task-x1 just finished (this home keeps no markdown backlog at /tmp/fm-lab.7y0w66/data/backlog.md). Update /tmp/fm-lab.7y0w66/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+--- stderr:
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.7y0w66
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 3s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e {run-worktree}/.pi/extensions/fm-primary-turnend-guard.ts -e {run-worktree}/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+stderr-ENOENT-lines=0
+### check the task's deliver driver process was stopped
+task-x1 driver alive=no
+### after: herdr state
+{"workspace_id":"wB","label":"firstmate","tab_count":1,"pane_count":1}
+{"workspace_id":"wD","label":"└ task-y1 · p:neighbourTaskToken01","tab_count":2,"pane_count":2}
+{"pane_id":"wB:p1","tab_id":"wB:t1","workspace_id":"wB"}
+{"pane_id":"wD:p1","tab_id":"wD:t1","workspace_id":"wD"}
+{"pane_id":"wD:p2","tab_id":"wD:t2","workspace_id":"wD"}
+### assertions
+PASS scenario=neighbour noise=0 rc=0

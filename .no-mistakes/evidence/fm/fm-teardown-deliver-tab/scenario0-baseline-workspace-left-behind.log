@@ -1,0 +1,36 @@
+### build fixture repos
+### install hermetic stubs
+### clear leftover lab panes
+### create herdr layout: present
+### spawn a matching fm-deliver.sh driver process for task-x1
+### write metadata
+### before: herdr state
+{"workspace_id":"wE","label":"firstmate","tab_count":1,"pane_count":1}
+{"workspace_id":"wF","label":"└ task-x1 · p:liveDeliverTabToken001","tab_count":2,"pane_count":2}
+{"pane_id":"wE:p1","tab_id":"wE:t1","workspace_id":"wE"}
+{"pane_id":"wF:p1","tab_id":"wF:t1","workspace_id":"wF"}
+{"pane_id":"wF:p2","tab_id":"wF:t2","workspace_id":"wF"}
+### start /proc pid churn so pids vanish during teardown's driver scan
+### run teardown: /tmp/fm-lab.7y0w66/prefix/bin/fm-teardown.sh
+teardown exit=0
+--- stdout:
+teardown task-x1 complete (window fm-lab-deltab-1585154-23815:wF:p1, worktree /tmp/fm-lab.7y0w66/fx/wt)
+Backlog: task-x1 just finished (this home keeps no markdown backlog at /tmp/fm-lab.7y0w66/data/backlog.md). Update /tmp/fm-lab.7y0w66/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+--- stderr:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 4s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e {run-worktree}/.pi/extensions/fm-primary-turnend-guard.ts -e {run-worktree}/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+stderr-ENOENT-lines=0
+### check the task's deliver driver process was stopped
+task-x1 driver alive=yes
+### after: herdr state
+{"workspace_id":"wE","label":"firstmate","tab_count":1,"pane_count":1}
+{"workspace_id":"wF","label":"└ task-x1 · p:liveDeliverTabToken001","tab_count":1,"pane_count":1}
+{"pane_id":"wE:p1","tab_id":"wE:t1","workspace_id":"wE"}
+{"pane_id":"wF:p2","tab_id":"wF:t2","workspace_id":"wF"}
+### assertions
+FAIL: task-x1 deliver driver process survived teardown
