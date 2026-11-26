@@ -21,7 +21,7 @@
 #      gpro1 and gpro2; replace them with your real account names.
 #   2. sudo bin/fm-agy-pool-provision.sh        (this script, as root)
 #   3. bin/fm-agy-pool-setup.sh apply, then bin/fm-agy-pool-setup.sh check
-#      (as the operator; non-root ACLs, git auth, models allowlist, run logs).
+#      (as the operator; non-root ACLs, git auth, model discovery, run logs).
 #   4. Sign in once per pool account: sudo -H -u <poolUser> agy, and complete the
 #      Google login for that account. This script reports who is still pending.
 #      Model availability and Neon reservation are discovered dynamically per
@@ -63,11 +63,11 @@
 #
 # ADD OR REMOVE AN ACCOUNT
 #   Add: append the username to POOL_CONF, re-run this script, then
-#   bin/fm-agy-pool-setup.sh apply, then sign in as the new user (setup order 4),
-#   then add it to the models allowlist.
-#   Remove from rotation: delete the username from POOL_CONF, re-run this script
-#   (the sudoers rule shrinks to the remaining users), and remove it from the
-#   models allowlist. The Linux user and its home are left in place.
+#   bin/fm-agy-pool-setup.sh apply, then sign in as the new user (setup order 4);
+#   its model catalog is discovered automatically on first use.
+#   Remove from rotation: delete the username from POOL_CONF and re-run this
+#   script (the sudoers rule shrinks to the remaining users). The Linux user and
+#   its home are left in place.
 #
 # HOW TO UNDO (manual; this script never deletes anything)
 #   sudo rm /etc/sudoers.d/firstmate-gpro

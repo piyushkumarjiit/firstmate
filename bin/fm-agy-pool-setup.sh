@@ -34,7 +34,8 @@
 #                Gemini runs. Check only: the operator config is never edited.
 #
 # Environment overrides (tests and non-default homes):
-#   POOL_CONF, MODELS_CONF          pool account list and model allowlist
+#   POOL_CONF                       pool account list
+#   MODELS_CONF                     legacy model-map path, reported and ignored
 #   FM_NM_WORKTREES                 default $NM_HOME or ~/.no-mistakes, + /worktrees
 #   FM_NM_CONFIG                    default $NM_HOME or ~/.no-mistakes, + /config.yaml
 #   FM_AGY_USAGE_LOG, FM_AGY_STATE_DIR   pool run-log locations

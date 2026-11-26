@@ -204,7 +204,9 @@ is_neon_model() {
 
 # Serialize every live agy query (models and /usage) across all homes and tasks
 # on this host under one flock file, enforcing PACING_SECONDS between queries on
-# different accounts (same-account back-to-back queries are not gapped).
+# different accounts (same-account back-to-back queries are not gapped). The
+# pacing exists because one host and IP issuing the same command on several
+# accounts at once risks Google banning those accounts.
 run_live_agy_query() {
   local user="$1"
   shift
