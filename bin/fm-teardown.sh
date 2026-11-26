@@ -3946,7 +3946,10 @@ teardown_stop_deliver_drivers() {
   for cmd in /proc/[0-9]*/cmdline; do
     pid=${cmd#/proc/}; pid=${pid%/cmdline}
     [ "$pid" != "$$" ] || continue
-    tr '\0' ' ' < "$cmd" 2>/dev/null | grep -Eq "fm-deliver\.sh $ID (run|respond|autostart)( |\$)" \
+    # cat opens the cmdline itself so a pid that exits between the glob
+    # expansion and this read is a suppressed open failure instead of a bash
+    # redirection error on teardown's stderr.
+    cat "$cmd" 2>/dev/null | tr '\0' ' ' | grep -Eq "fm-deliver\.sh $ID (run|respond|autostart)( |\$)" \
       && kill "$pid" 2>/dev/null || true
   done
 }
