@@ -26,8 +26,9 @@
 #                operator's own git credential and gh login instead.
 #                The operator account itself must also hold a github.com gh login
 #                and a git credential helper that serves github.com (check only).
-#   3. models    the models allowlist maps Neon and Hydrogen models to accounts;
-#                its account order is the quota failover order.
+#   3. models    model availability and Neon reservation come from per-account
+#                cached `agy models` catalogs under FM_AGY_STATE_DIR; legacy
+#                /etc/firstmate/gpro-models.conf is ignored.
 #   4. run-log   the operator can read the pool usage log and per-run logs.
 #   5. nm-config reports the no-mistakes reviewer/fixer configuration for
 #                Gemini runs. Check only: the operator config is never edited.
@@ -282,36 +283,16 @@ step_operator_push_auth() {
   fi
 }
 
-# --- 3. models allowlist --------------------------------------------------------
+# --- 3. models discovery (legacy gpro-models.conf ignored) ---------------------
 step_models() {
-  local u pat
-  if [[ ! -f "$MODELS_CONF" ]]; then
-    need_root "models allowlist $MODELS_CONF is missing" \
-      "sudo install -D -m 0644 /dev/stdin '$MODELS_CONF' <<'EOF'
-*hydrogen* ${POOL_USERS[*]// /,}
-*neon* ${POOL_USERS[*]// /,}
-EOF"
+  if (( ${#POOL_USERS[@]} == 0 )); then
+    miss "no pool accounts in $POOL_CONF"
     return
   fi
-  for pat in '*neon*' '*hydrogen*'; do
-    local line
-    line=$(grep -Ev '^\s*(#|$)' "$MODELS_CONF" | awk -v p="$pat" '$1 == p {print; exit}')
-    if [[ -z "$line" ]]; then
-      need_root "no '$pat' rule in $MODELS_CONF" "echo '$pat ${POOL_USERS[*]}' | sudo tee -a '$MODELS_CONF'  # list accounts comma-separated, first is tried first"
-      continue
-    fi
-    local accts; accts=$(awk '{$1=""; print}' <<<"$line" | tr ',' ' ')
-    local listed=0
-    for u in "${POOL_USERS[@]}"; do
-      grep -Eqw -- "$u" <<<"$accts" && listed=$((listed + 1))
-    done
-    if (( listed == 0 )); then
-      miss "'$pat' rule in $MODELS_CONF names no pool account"
-    else
-      ok "'$pat' -> ${accts# } (order is the quota failover order)"
-    fi
-  done
-  (( ${#POOL_USERS[@]} > 0 )) || miss "no pool accounts in $POOL_CONF"
+  ok "model discovery uses per-account cached 'agy models' catalogs in $STATE_DIR (Neon accounts reserved automatically)"
+  if [[ -f "$MODELS_CONF" ]]; then
+    echo "info    legacy $MODELS_CONF is present and ignored; model availability comes from per-account catalogs"
+  fi
 }
 
 # --- 4. run-log readability for the operator -------------------------------------------

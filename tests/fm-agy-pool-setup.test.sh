@@ -84,12 +84,15 @@ test_apply_is_idempotent_and_check_then_passes() {
 
 test_root_steps_print_commands() {
   local out rc
-  MODELS="$TMP_ROOT/absent-models.conf" out=$(MODELS="$TMP_ROOT/absent-models.conf" run_setup check); rc=$?
-  [[ $rc -eq 1 ]] || { fail "missing models conf should fail check"; }
-  grep -q 'run: sudo install -D' <<<"$out" || { fail "root command not printed: $out"; }
+  out=$(MODELS="$TMP_ROOT/absent-models.conf" run_setup check); rc=$?
+  [[ $rc -eq 0 ]] || { fail "missing legacy models conf must not fail check (rc=$rc): $out"; }
+  grep -q "ok      model discovery uses per-account cached 'agy models' catalogs" <<<"$out" || { fail "model discovery ok line missing: $out"; }
+  out=$(run_setup check); rc=$?
+  [[ $rc -eq 0 ]] || { fail "present legacy models conf must not fail check (rc=$rc): $out"; }
+  grep -q 'info    legacy .* is present and ignored' <<<"$out" || { fail "legacy models conf ignored notice missing: $out"; }
   out=$(SUDOCMD=none run_setup apply)
   grep -q "sudo -u $ME git config --global" <<<"$out" || { fail "per-account command not printed when sudo disabled: $out"; }
-  pass "root-needing steps print exact commands"
+  pass "legacy models conf is ignored and root-needing steps print exact commands"
 }
 
 test_nm_config_never_edited() {

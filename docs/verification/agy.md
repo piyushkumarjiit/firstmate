@@ -83,8 +83,8 @@ gemini-3.8-flash-low	Gemini 3.8 Flash (Low)
 
 `agy --help` documents `--effort` as `low|medium|high` and `--model` as the model for the session.
 The bare `gemini-3.8-flash` id from this home's previous config is not listed; only the suffixed `-high`, `-medium`, and `-low` variants are.
-`bin/fm-spawn.sh`'s `agy_model_validate` refuses a requested id a reachable `agy models` listing omits, and launches unvalidated with a stderr notice when the listing is unreachable.
-On the pool launcher, an id naming Hydrogen or Neon skips the listing probe entirely, so resolving a pool model never signs in as a reserved pool account.
+`bin/fm-spawn.sh`'s `agy_model_validate` refuses a requested id a reachable `agy models` listing omits on plain `agy`, and launches unvalidated with a stderr notice when the listing is unreachable.
+On the pool launcher, `bin/fm-spawn.sh` checks cached per-account catalogs read-only (`--check-model` or `--check-account`) with no live query, refusing when a fresh catalog omits the id and allowing with a notice when the catalog is unknown.
 The listing is a remote fetch (`Fetching available models...`), so the probe runs with stdin detached under the shared hard bound from `bin/fm-timeout-lib.sh` (15 seconds by default, `FM_AGY_MODELS_TIMEOUT`; a non-positive or non-numeric value clamps back to that default); a stalled fetch or a sign-in prompt is cut off and falls through to the unvalidated launch instead of blocking the spawn before any pane exists.
 Print mode (`agy -p "Reply with exactly: AGY_PRINT_PROBE_OK" --model gemini-3.8-flash-low`) returned the exact reply with exit 0 in about 8 seconds, proving the credential path without a pane.
 

@@ -2770,28 +2770,22 @@ omp_model_validate() { # <omp-bin> <model> [<profile>]
   return 1
 }
 
-# agy pre-launch model validation. `agy models` (agy 1.2.0) prints one model per
-# line as "<id>\t<label>" for the account's catalog only; model ids are bare
-# (gemini-3.8-flash-high), never provider-prefixed. A requested model absent
-# from a reachable listing is concrete unsupported evidence and refuses the
-# spawn, so a stale id (the unlisted bare gemini-3.8-flash) fails loudly here
-# instead of wedging a worker pane. The listing is a remote fetch that needs
-# network and a signed-in account, so the probe runs under the shared hard
-# bound (bin/fm-timeout-lib.sh) with stdin detached: a stalled fetch or a
-# sign-in prompt can never block the spawn before any pane exists. An
-# unreachable listing establishes nothing (harness-adapters
-# model-and-effort.md) and launches unvalidated with a notice.
-agy_model_validate() {  # <agy-bin> <model>
-  local bin=$1 model=$2 listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
+# agy pre-launch model validation. On the plain agy binary, `agy models` (agy
+# 1.2.0+) prints "<id>\t<label>" rows after "Fetching available models..." for
+# the operator's catalog; model ids are bare (gemini-3.8-flash-high), never
+# provider-prefixed. A requested model absent from a reachable listing refuses
+# the spawn, while an unreachable listing launches unvalidated with a notice.
+# On the pool launcher (bin/agy-pool/agy), validation is strictly read-only and
+# checks cached per-account catalogs via --check-model (or --check-account when
+# --account is named): a fresh catalog omitting the model refuses, while a
+# missing or stale catalog allows with a notice without running a live query.
+agy_model_validate() {  # <agy-bin> <model> [pool-account]
+  local bin=$1 model=$2 account=${3:-} listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
   case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
   [ -n "$model" ] && [ "$model" != default ] || return 0
-  # Skip model-listing validation probe for Hydrogen and Neon on the pool launcher so a spawn does not
-  # log in as reserved accounts (e.g. piyushjiit) just to list models. Keep the
-  # probe for Flash.
   if [ "$bin" = "$SCRIPT_DIR/agy-pool/agy" ]; then
-    case "${model,,}" in
-      *hydrogen*|*neon*) return 0 ;;
-    esac
+    "$bin" --check-model "$model" ${account:+"$account"} >/dev/null
+    return $?
   fi
   listing=$(FM_AGY_POOL_MODEL="$model" fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
   if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
@@ -2802,7 +2796,7 @@ agy_model_validate() {  # <agy-bin> <model>
     fi
     return 0
   fi
-  if printf '%s\n' "$listing" | awk '{print $1}' | grep -qxF -- "$model"; then
+  if printf '%s\n' "$listing" | tr -d '\r' | awk -F'\t' '{id = (NF >= 2 ? $1 : $0); gsub(/^[[:space:]]+|[[:space:]]+$/, "", id); if (id ~ /^[A-Za-z0-9][A-Za-z0-9._-]+$/) print id}' | grep -qxF -- "$model"; then
     return 0
   fi
   echo "error: agy model '$model' is not listed by 'agy models'; choose a listed id or omit --model" >&2
@@ -3528,7 +3522,13 @@ if [ "$HARNESS" = omp ]; then
   omp_model_validate "$OMP_BIN" "$MODEL" "$OMP_PROFILE_PIN" || exit 1
 fi
 if [ "$HARNESS" = agy ]; then
-  agy_model_validate "$AGY_BIN" "$MODEL" || exit 1
+  AGY_POOL_REQUEST=$ACCOUNT_ARG
+  if [ -z "$AGY_POOL_REQUEST" ] && [ "$RELAUNCH" -eq 1 ] && [ "$RELAUNCH_PRIOR_HARNESS" = agy ]; then
+    AGY_POOL_REQUEST=$(fm_meta_get "$RELAUNCH_META" account)
+  fi
+  if [ -z "$AGY_POOL_REQUEST" ] || [ "$AGY_BIN" != "$SCRIPT_DIR/agy-pool/agy" ]; then
+    agy_model_validate "$AGY_BIN" "$MODEL" || exit 1
+  fi
 fi
 # polytoken's model validation composes firstmate's model and effort axes into
 # the launch model reference (bin/fm-polytoken-lib.sh owns the reasoning): the

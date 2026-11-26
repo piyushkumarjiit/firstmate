@@ -19,7 +19,7 @@ Verified as a full Firstmate harness (Primary, Secondmate, and Crewmate/Scout).
 | Autonomy | `--dangerously-skip-permissions` auto-approves tool calls for the run. |
 | Marker | None; a live TUI carries no `AGY_*` or `ANTIGRAVITY_*` variable. |
 | Resume | `--continue` and `--conversation` exist but carry no verified pane-resume contract; use deterministic relaunch. |
-| Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-3.8-flash-high`); `bin/fm-spawn.sh` refuses a requested id a reachable listing omits, except an id naming Hydrogen or Neon on the pool launcher, which skips the probe so the spawn never signs in as a reserved pool account. The listing is a remote fetch, so the probe runs stdin-detached under the shared hard bound and an unreachable or hung listing launches unvalidated with a notice. |
+| Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-3.8-flash-high`); on plain `agy`, `bin/fm-spawn.sh` refuses a requested id a reachable listing omits and launches unvalidated with a notice if unreachable, while on the pool launcher it checks cached per-account catalogs read-only (`--check-model` or `--check-account`) with no live query, refusing when a fresh catalog omits the id and allowing with a notice when the catalog is missing or stale. |
 | Effort | `--effort low\|medium\|high`; `xhigh` and `max` stay in task metadata under the record-and-omit contract. |
 | Composer | An agy-scoped empty-composer recognition reads the idle screen (horizontal rule, bare `>` row, horizontal rule, footer with `? for shortcuts` or model name and NOT `esc to cancel`) as `empty`; typed text and queued doorbells read `pending`. Without agy scope, the dead-shell rule preserves `unknown`. |
 
@@ -62,9 +62,14 @@ See `../../../../../docs/supervision-protocols/agy.md` for the complete supervis
 ## Account pool quota
 
 Live pool quota is read only via `bin/agy-pool/agy --usage <account>`; never call Google endpoints or other workarounds.
+Per-account model availability is cached under `FM_AGY_STATE_DIR` (`<account>.models.json`, TTL `FM_AGY_MODELS_TTL`, default 24h) and refreshed one account at a time via `agy models`; legacy `/etc/firstmate/gpro-models.conf` is ignored.
+An account whose catalog lists any Neon model is reserved; non-Neon models (Flash, Hydrogen, and others) prefer non-reserved accounts and fall back to reserved accounts only when no non-reserved account can serve, while Neon routes only to accounts whose catalog lists it.
+Selection starts with the sticky last-active account when eligible, then checks remaining candidates ordered by their last recorded quota reading for that model's usage group (`Gemini Models` or `Claude and GPT models`), skipping accounts at or below floor until their reset.
+All live `agy models` and `agy -p /usage` calls serialize under one machine-wide flock in `FM_AGY_STATE_DIR` with a minimum cross-account gap (`FM_AGY_PACING_SEC`, default 60s; same-account calls are not gapped).
+At launch (`usage_check`) and at task end (`quota_end`), live group readings (weekly and five-hour pct and reset) are appended to `FM_AGY_USAGE_LOG`.
 Pool launches pass `queuedMessages=send-immediately` so steering doorbells land after the current step.
 On a home whose pool config (`POOL_CONF`, default `/etc/firstmate/gpro-pool.conf`) lists at least one account, an `agy` `no-mistakes` ship launches through `bin/agy-pool/agy` and its brief must be scaffolded with `fm-brief.sh --pool-build`; `bin/fm-spawn.sh` refuses either mismatch.
 Every other agy ship or scout (`direct-PR`, `local-only`, scouts) launches through the same launcher with its ordinary brief; a raw launch command keeps its own command line, and a secondmate is not routed through the pool, keeps the plain binary, and refuses `--account`.
-`--account <pool account>` names the account for an agy task: `bin/fm-spawn.sh` validates it with `bin/agy-pool/agy --check-account`, refuses rather than falling back, records `account=`, passes `FM_AGY_USER`, and a relaunch reuses it unless a new `--account` moves it.
+`--account <pool account>` names the account for an agy task: `bin/fm-spawn.sh` validates it read-only with `bin/agy-pool/agy --check-account`, refuses rather than falling back, records `account=`, passes `FM_AGY_USER`, and a relaunch reuses it unless a new `--account` moves it.
 A relaunch never moves silently: when the recorded account is exhausted or cannot serve a switched `--model`, it refuses, and `fm-control.sh <task> relaunch --account <other>` is the recovery.
 Pool-routed tasks spend pool quota rather than the operator's own agy sign-in, and their commits carry the pool worker identity.

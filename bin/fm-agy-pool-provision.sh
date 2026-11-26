@@ -24,9 +24,8 @@
 #      (as the operator; non-root ACLs, git auth, models allowlist, run logs).
 #   4. Sign in once per pool account: sudo -H -u <poolUser> agy, and complete the
 #      Google login for that account. This script reports who is still pending.
-#   5. Edit the models allowlist /etc/firstmate/gpro-models.conf so model patterns
-#      name the pool accounts (listed order is the quota failover order); the
-#      setup script's check reports it. See docs/agy-pool-setup.md.
+#      Model availability and Neon reservation are discovered dynamically per
+#      account via `agy models`; legacy /etc/firstmate/gpro-models.conf is not needed.
 #
 # ENVIRONMENT VARIABLES READ (all optional)
 #   POOL_CONF       pool account list         (default /etc/firstmate/gpro-pool.conf)

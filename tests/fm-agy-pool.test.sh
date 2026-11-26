@@ -20,6 +20,7 @@ set -u
 
 # shellcheck disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+unset FM_AGY_USER
 
 POOL="$ROOT/bin/fm-agy-pool.sh"
 LINK="$ROOT/bin/agy-pool/agy"
@@ -118,12 +119,18 @@ EOF
 
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "Fetching available models...\n"
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
-  echo "${SUDO_TARGET_USER:-unknown}" >> "${FM_TEST_USAGE_LOG_FILE:-/tmp/agy_test_usage.log}"
+  echo "usage:${SUDO_TARGET_USER:-unknown}" >> "${FM_TEST_USAGE_LOG_FILE:-/tmp/agy_test_usage.log}"
   printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
   printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
   exit 0
 fi
+echo "run:${SUDO_TARGET_USER:-unknown}" >> "${FM_TEST_USAGE_LOG_FILE:-/tmp/agy_test_usage.log}"
 exit 0
 EOF
   chmod +x "$fixture_dir/bin/agy"
@@ -139,7 +146,7 @@ EOF
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
     FM_TEST_USAGE_LOG_FILE="$usage_calls" \
     FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
-    FM_AGY_MAX_ACTIVE=1 \
+    FM_AGY_MAX_ACTIVE=1 FM_AGY_PACING_SEC=0 \
     "$POOL" --user gpro2 -p hello 2>&1) || rc=$?
 
   [ "$rc" -eq 75 ] || fail "starting second account when gpro1 active under cap=1 must exit 75, got $rc"
@@ -154,7 +161,7 @@ EOF
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
     FM_TEST_USAGE_LOG_FILE="$usage_calls" \
     FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
-    FM_AGY_MAX_ACTIVE=1 \
+    FM_AGY_MAX_ACTIVE=1 FM_AGY_PACING_SEC=0 \
     FM_AGY_USER=gpro2 \
     "$POOL" -p hello 2>&1) || rc=$?
 
@@ -170,11 +177,13 @@ EOF
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
     FM_TEST_USAGE_LOG_FILE="$usage_calls" \
     FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PACING_SEC=0 \
     "$POOL" --user gpro2 -p hello 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "default cap=2 must allow a second active account, got $rc: $err"
   : > "$usage_calls"
+  : > "$fixture_dir/usage.jsonl"
 
-  # Concurrent worker on same active account (gpro1) is allowed
+  # Concurrent worker on same active account (gpro1) is allowed without pre-run /usage check
   rc=0
   err=$(env PATH="$fixture_dir/bin:$PATH" \
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
@@ -182,9 +191,13 @@ EOF
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
     FM_TEST_USAGE_LOG_FILE="$usage_calls" \
     FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PACING_SEC=0 \
     "$POOL" --user gpro1 -p hello 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "concurrent run on same active account must succeed, got $rc: $err"
-  [ ! -s "$usage_calls" ] || fail "active account reuse must decide without /usage call, got: $(cat "$usage_calls")"
+  [ "$(head -n 1 "$usage_calls")" = "run:gpro1" ] || fail "active account reuse must run without pre-run /usage call, got: $(cat "$usage_calls")"
+  local start_chk
+  start_chk=$(jq -s '[.[] | select(.event == "usage_check")] | length' "$fixture_dir/usage.jsonl")
+  [ "$start_chk" -eq 0 ] || fail "active account reuse must not log selection usage_check"
 
   pass "single active account refusal works and allows concurrent on same account"
 }
@@ -212,24 +225,33 @@ EOF
 
   cat > "$fixture_dir/bin/sudo" <<'EOF'
 #!/usr/bin/env bash
+T=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -n|-H) shift ;;
-    -u) USER="$2"; shift 2 ;;
+    -u) T="$2"; shift 2 ;;
     *) break ;;
   esac
 done
 if [[ "${1:-}" == "test" ]]; then exit 0; fi
-exec "$@"
+SUDO_TARGET_USER="$T" exec "$@"
 EOF
   chmod +x "$fixture_dir/bin/sudo"
 
-  cat > "$fixture_dir/state/gpro1.state.json" <<EOF
-{"user": "gpro1", "window_start": 1000, "reset_at": 9999999999, "used_sec": 100, "budget_sec": 100, "exhausted": true}
-EOF
-
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "Fetching available models...\n"
+  if [[ "${SUDO_TARGET_USER:-}" == "piyushjiit" ]]; then
+    printf "gemini-4-neon-high\tGemini 4 Neon (High)\n"
+    printf "gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n"
+    printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  else
+    printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+    printf "gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n"
+  fi
+  exit 0
+fi
 if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
   printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
   printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
@@ -245,45 +267,92 @@ exit 1
 EOF
   chmod +x "$fixture_dir/bin/fake-pgrep"
 
-  local err rc=0
-  err=$(env PATH="$fixture_dir/bin:$PATH" \
+  # 1. With gpro1 healthy, Flash prefers non-reserved gpro1 (even if piyushjiit is earlier in pool.conf)
+  printf 'piyushjiit\ngpro1\n' > "$fixture_dir/pool.conf"
+  local out rc=0
+  out=$(env PATH="$fixture_dir/bin:$PATH" \
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
+    "$POOL" --model gemini-3.8-flash-high -p hello 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "Flash must prefer non-reserved gpro1, got $rc: $out"
+  assert_contains "$out" "Routing model 'gemini-3.8-flash-high' to 'gpro1'" "Flash prefers non-reserved gpro1"
+
+  # 2. When non-reserved gpro1 is exhausted, Flash falls back to reserved piyushjiit
+  cat > "$fixture_dir/state/gpro1.state.json" <<EOF
+{"user": "gpro1", "window_start": 1000, "reset_at": 9999999999, "used_sec": 100, "budget_sec": 100, "exhausted": true}
+EOF
+  rc=0
+  out=$(env PATH="$fixture_dir/bin:$PATH" \
+    POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
+    AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
+    FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
+    "$POOL" --model gemini-3.8-flash-high -p hello 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "Flash must fall back to reserved piyushjiit when non-reserved exhausted, got $rc: $out"
+  assert_contains "$out" "Routing model 'gemini-3.8-flash-high' to 'piyushjiit'" "Flash falls back to reserved piyushjiit"
+
+  # 3. When reserved piyushjiit is also exhausted, Flash exits 75
+  cat > "$fixture_dir/state/piyushjiit.state.json" <<EOF
+{"user": "piyushjiit", "window_start": 1000, "reset_at": 9999999999, "used_sec": 100, "budget_sec": 100, "exhausted": true}
+EOF
+  rc=0
+  out=$(env PATH="$fixture_dir/bin:$PATH" \
+    POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
+    AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
+    FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello 2>&1) || rc=$?
 
-  [ "$rc" -eq 75 ] || fail "Flash model must exit 75 when normal accounts exhausted, got $rc: $err"
-  assert_contains "$err" "No eligible account" "must say no eligible account"
+  [ "$rc" -eq 75 ] || fail "Flash model must exit 75 when all accounts exhausted, got $rc: $out"
+  assert_contains "$out" "No eligible account" "must say no eligible account"
 
-  pass "Flash model does not spill onto reserved accounts"
+  pass "Flash prefers non-reserved accounts and falls back to reserved only when none can serve"
 }
 
 test_probe_skip_for_hydrogen_and_neon() {
-  local d="$TMP_ROOT/probe" out rc
-  mkdir -p "$d"
+  local d="$TMP_ROOT/probe" out rc now_ts
+  mkdir -p "$d/sd/agy-pool" "$d/state"
+  now_ts=$(date +%s)
   printf '#!/usr/bin/env bash\necho ran >> "%s/models-ran"\necho gemini-3.8-flash-high\n' "$d" > "$d/agy"
   chmod +x "$d/agy"
-  mkdir -p "$d/sd/agy-pool"
-  cp "$d/agy" "$d/sd/agy-pool/agy"
+  ln -sf "$POOL" "$d/sd/agy-pool/agy"
+  printf 'gpro1\n' > "$d/pool.conf"
+
   run_validate() {
     rm -f "$d/models-ran"
-    out=$(SCRIPT_DIR="$d/sd" bash -c '
+    out=$(SCRIPT_DIR="$d/sd" POOL_CONF="$d/pool.conf" FM_AGY_STATE_DIR="$d/state" AGY_BIN="$d/agy" bash -c '
       . "'"$ROOT"'/bin/fm-timeout-lib.sh"
       eval "$(sed -n "/^agy_model_validate() {/,/^}/p" "'"$ROOT"'/bin/fm-spawn.sh")"
-      agy_model_validate "$1" "$2"' _ "$1" "$2" 2>&1); rc=$?
+      agy_model_validate "$1" "$2" "${3:-}"' _ "$1" "$2" "${3:-}" 2>&1); rc=$?
   }
+
+  # Plain agy still runs `agy models` live and refuses unlisted ids
   run_validate "$d/agy" gemini-4-neon-typo
   [ "$rc" -ne 0 ] || fail "plain agy must refuse an unlisted neon id"
   assert_contains "$out" "is not listed by 'agy models'" "plain agy lost its listing check"
   [ -e "$d/models-ran" ] || fail "plain agy must run the listing probe"
-  run_validate "$d/sd/agy-pool/agy" gemini-4-neon-typo
-  [ "$rc" -eq 0 ] || fail "pool launcher must skip the probe for neon (rc=$rc): $out"
-  [ ! -e "$d/models-ran" ] || fail "pool launcher must not sign in to list models"
-  run_validate "$d/sd/agy-pool/agy" gemini-3.8-flash-high
-  [ "$rc" -eq 0 ] || fail "pool launcher must accept a listed flash id (rc=$rc): $out"
-  [ -e "$d/models-ran" ] || fail "pool launcher must still probe non-Neon/Hydrogen models"
-  pass "probe skip applies to Hydrogen and Neon only on the pool launcher"
+
+  # Pool launcher never runs live `agy models`; missing catalog allows with notice (read-only)
+  rm -rf "$d/state"
+  run_validate "$d/sd/agy-pool/agy" gemini-4-neon-medium
+  [ "$rc" -eq 0 ] || fail "pool launcher must allow unknown catalog with notice (rc=$rc): $out"
+  assert_contains "$out" "unknown" "missing catalog must print unknown notice"
+  [ ! -e "$d/models-ran" ] || fail "pool launcher probe must never run live agy models"
+  [ ! -e "$d/state" ] || fail "pool launcher probe must stay read-only"
+
+  # Fresh catalog on pool launcher allows listed models and refuses unlisted ones (including neon/hydrogen)
+  mkdir -p "$d/state"
+  printf '{"user":"gpro1","fetched_at":%s,"models":["gemini-3.8-flash-high","gemini-4-hydrogen-high"]}\n' "$now_ts" > "$d/state/gpro1.models.json"
+  run_validate "$d/sd/agy-pool/agy" gemini-4-hydrogen-high gpro1
+  [ "$rc" -eq 0 ] || fail "fresh catalog listing hydrogen must pass (rc=$rc): $out"
+  run_validate "$d/sd/agy-pool/agy" gemini-4-neon-medium gpro1
+  [ "$rc" -ne 0 ] || fail "fresh catalog omitting neon must refuse (rc=$rc): $out"
+  assert_contains "$out" "is not listed in pool account 'gpro1' cached catalog" "refusal must name missing model"
+  [ ! -e "$d/models-ran" ] || fail "pool launcher probe must never run live agy models"
+
+  pass "pool launcher probe validates against cached catalogs read-only with no Hydrogen/Neon skip"
 }
 
 test_false_positive_quota_hit_fix() {
@@ -325,6 +394,10 @@ EOF
   # Middle of log has 429, but last 50 lines are clean and exit code is 0
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
   printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
   printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
@@ -342,7 +415,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello >/dev/null 2>&1
 
   local exh
@@ -352,6 +425,10 @@ EOF
   # Exit 42 logs quota_hit as suspicion in usage log, but must not mark account exhausted in state file
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
   printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
   printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
@@ -366,13 +443,13 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello >/dev/null 2>&1 || true
 
   exh=$(jq -r '.exhausted' "$fixture_dir/state/gpro1.state.json")
   [ "$exh" = "false" ] || fail "end-of-session exit 42 must not mark account exhausted in state file"
   local last_quota_hit
-  last_quota_hit=$(tail -n 1 "$fixture_dir/usage.jsonl" | jq -r '.quota_hit')
+  last_quota_hit=$(jq -s '[.[] | select(has("quota_hit"))] | last | .quota_hit' "$fixture_dir/usage.jsonl")
   [ "$last_quota_hit" = "true" ] || fail "end-of-session exit 42 must record quota_hit: true in usage log"
 
   # A successful answer whose final lines discuss quota errors (a review of rate
@@ -388,6 +465,10 @@ EOF
   : > "$run_log"
   cat > "$fixture_dir/bin/agy" <<EOF
 #!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
   printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
   printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
@@ -407,7 +488,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello >/dev/null 2>&1 || rc=$?
 
   [ "$rc" -eq 0 ] || fail "successful run whose findings mention quota errors must exit 0, got $rc"
@@ -460,6 +541,10 @@ EOF
   # Case A: Above floor (96% weekly, 89% 5-hour) -> selects gpro1
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
   printf "Gemini Models\tWeekly Limit Remaining\t96%%\t2026-11-29T06:08:50Z\n"
   printf "Gemini Models\tFive Hour Limit Remaining\t89%%\t2026-11-22T18:34:55Z\n"
@@ -475,7 +560,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello 2>&1)
   assert_contains "$out" "Routing model 'gemini-3.8-flash-high' to 'gpro1'" "above floor routes to gpro1"
 
@@ -487,6 +572,10 @@ EOF
   # Case B: Below floor on gpro1 (10% 5-hour), normal on gpro2 (89%) -> gpro1 marked exhausted, switches to gpro2
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
   if [[ "$USER" == "gpro1" ]]; then
     printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T06:08:50Z\n"
@@ -506,7 +595,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello 2>&1)
   assert_contains "$out" "exhausted until 2026-11-29T20:00:00Z; skipping to next account" "must log skip"
   assert_contains "$out" "Routing model 'gemini-3.8-flash-high' to 'gpro2'" "switches to gpro2"
@@ -523,6 +612,10 @@ EOF
   # Case C: Switch-and-skip: on subsequent task, gpro1 is already exhausted so it is skipped immediately
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
   if [[ "$USER" == "gpro1" ]]; then
     echo "gpro1 /usage should not be called!" >&2
@@ -541,14 +634,19 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello 2>&1)
   assert_contains "$out" "Routing model 'gemini-3.8-flash-high' to 'gpro2'" "subsequent run directly selects gpro2"
 
   # Case D: Unparsable /usage output -> treated as unknown, starts on account
-  rm -f "$fixture_dir/state"/*.json
+  rm -f "$fixture_dir/state"/*.json "$fixture_dir/state/last-active"
+  : > "$fixture_dir/usage.jsonl"
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
   echo "Random unparsable output error 500"
   exit 1
@@ -562,7 +660,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello 2>&1)
   assert_contains "$out" "Routing model 'gemini-3.8-flash-high' to 'gpro1'" "unparsable usage treated as unknown and starts on gpro1"
 
@@ -740,7 +838,11 @@ exit 99
 EOF
   chmod +x "$fixture_dir/bin/agy"
 
-  # Pre-populate usage.jsonl with known check entries
+  # Pre-populate usage.jsonl with known check entries and cached catalogs
+  local now_ts
+  now_ts=$(date +%s)
+  printf '{"user":"gpro1","fetched_at":%s,"models":["gemini-3.8-flash-high","gemini-4-hydrogen-high"]}\n' "$now_ts" > "$fixture_dir/state/gpro1.models.json"
+  printf '{"user":"piyushjiit","fetched_at":%s,"models":["gemini-4-neon-high","gemini-4-hydrogen-high"]}\n' "$now_ts" > "$fixture_dir/state/piyushjiit.models.json"
   cat > "$fixture_dir/usage.jsonl" <<EOF
 {"ts":"2026-11-23T01:00:00Z","event":"usage_check","user":"gpro1","decision":"manual","reset":"2026-11-29T18:34:55Z","gemini_min_pct":89}
 {"ts":"2026-11-23T01:05:00Z","event":"usage_check","user":"gpro2","decision":"skip","reset":"2026-11-23T05:00:00Z","gemini_min_pct":10}
@@ -761,13 +863,14 @@ EOF
   assert_contains "$out" "RESET_AT" "header must contain RESET_AT"
   assert_contains "$out" "CHECKED_AT" "header must contain CHECKED_AT"
 
-  # gpro1: 89%, 2026-11-29T18:34:55Z, 2026-11-23T01:00:00Z
+  # gpro1: 89%, 2026-11-29T18:34:55Z, 2026-11-23T01:00:00Z, standard
   local gpro1_line
   gpro1_line=$(grep '^gpro1 ' <<<"$out")
   [ -n "$gpro1_line" ] || fail "missing gpro1 row in --status output: $out"
   assert_contains "$gpro1_line" "89%" "gpro1 must show 89%"
   assert_contains "$gpro1_line" "2026-11-29T18:34:55Z" "gpro1 must show reset"
   assert_contains "$gpro1_line" "2026-11-23T01:00:00Z" "gpro1 must show checked_at"
+  assert_contains "$gpro1_line" "standard" "non-reserved cached account must show standard"
 
   # gpro2: 10% (skip), 2026-11-23T05:00:00Z, 2026-11-23T01:05:00Z
   local gpro2_line
@@ -777,12 +880,12 @@ EOF
   assert_contains "$gpro2_line" "2026-11-23T05:00:00Z" "gpro2 must show reset"
   assert_contains "$gpro2_line" "2026-11-23T01:05:00Z" "gpro2 must show checked_at"
 
-  # piyushjiit: unknown
+  # piyushjiit: unknown usage, reserved (neon) catalog
   local piyush_line
   piyush_line=$(grep '^piyushjiit ' <<<"$out")
   [ -n "$piyush_line" ] || fail "missing piyushjiit row in --status output: $out"
   assert_contains "$piyush_line" "unknown" "unprobed account must show unknown"
-  assert_contains "$piyush_line" "hydrogen,neon" "piyushjiit must show special models"
+  assert_contains "$piyush_line" "reserved (neon)" "piyushjiit must show reserved (neon) from catalog"
 
   pass "--status subcommand reads usage log without network or agy invocation"
 }
@@ -826,6 +929,10 @@ EOF
   local argv_log="$fixture_dir/agy_argv.log"
   cat > "$fixture_dir/bin/agy" <<EOF
 #!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
   printf "Gemini Models\tWeekly Limit Remaining\t95%%\t2026-11-29T12:00:00Z\n"
   printf "Gemini Models\tFive Hour Limit Remaining\t88%%\t2026-11-23T06:00:00Z\n"
@@ -842,7 +949,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high --prompt-interactive "start" >/dev/null 2>&1
   local recorded
   recorded=$(cat "$argv_log")
@@ -854,7 +961,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p "print only" >/dev/null 2>&1
   recorded=$(cat "$argv_log")
   case "$recorded" in
@@ -867,7 +974,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -i "start" --settings '{"custom":true}' >/dev/null 2>&1
   recorded=$(cat "$argv_log")
   assert_contains "$recorded" '--settings {"custom":true}' "explicit --settings must be preserved"
@@ -881,7 +988,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     FM_AGY_QUEUED_MESSAGES=queue \
     "$POOL" --model gemini-3.8-flash-high -i "start" >/dev/null 2>&1
   recorded=$(cat "$argv_log")
@@ -931,6 +1038,10 @@ EOF
 
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  exit 0
+fi
 if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
   printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
   printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
@@ -951,7 +1062,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello 2>&1)
   assert_contains "$out" "Routing model 'gemini-3.8-flash-high' to 'gpro1'" \
     "large used_sec without exhausted must not skip account"
@@ -1002,10 +1113,25 @@ exit 1
 EOF
   chmod +x "$fixture_dir/bin/fake-pgrep"
 
-  # piyushjiit fails with Individual quota reached + stated reset duration; piyushk succeeds
+  # piyushjiit fails with Individual quota reached + stated reset duration; piyushk succeeds.
+  # gpro1 only lists Flash in this fixture so Hydrogen failover exercises piyushjiit -> piyushk.
   local calls_log="$fixture_dir/calls.log"
   cat > "$fixture_dir/bin/agy" <<EOF
 #!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  if [[ "\${SUDO_TARGET_USER:-}" == "gpro1" ]]; then
+    printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  else
+    printf "gemini-4-neon-high\tGemini 4 Neon (High)\n"
+    printf "gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n"
+  fi
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
 printf '%s\n' "\${SUDO_TARGET_USER:-unknown}" >> "$calls_log"
 if [[ "\${SUDO_TARGET_USER:-}" == "piyushjiit" ]]; then
   echo "antigravity reported error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h48m0s." >&2
@@ -1022,7 +1148,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-4-hydrogen-high -p hello 2>&1) || rc=$?
 
   [ "$rc" -eq 0 ] || fail "pool must rotate from exhausted piyushjiit to piyushk and succeed, got $rc: $out"
@@ -1038,7 +1164,7 @@ EOF
   (( reset_at >= expected_min && reset_at <= before_ts + 10200 )) \
     || fail "reset_at ($reset_at) should be ~2h48m from $before_ts"
 
-  # Flash (unrestricted) must not spill onto either space-separated reserved user (piyushjiit or piyushk)
+  # Flash must not spill onto reserved accounts whose catalog omits Flash when gpro1 is exhausted
   cat > "$fixture_dir/state/gpro1.state.json" <<EOF
 {"user": "gpro1", "window_start": 1000, "reset_at": 9999999999, "used_sec": 0, "budget_sec": 5400, "exhausted": true}
 EOF
@@ -1047,13 +1173,22 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-3.8-flash-high -p hello 2>&1) || rc=$?
-  [ "$rc" -eq 75 ] || fail "flash must not spill onto space-separated reserved accounts, got $rc: $out"
+  [ "$rc" -eq 75 ] || fail "flash must exit 75 when no eligible account supports it, got $rc: $out"
 
   # When all neon accounts also hit 429/RESOURCE_EXHAUSTED, pool exits 75
   cat > "$fixture_dir/bin/agy" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "gemini-4-neon-high\tGemini 4 Neon (High)\n"
+  exit 0
+fi
+if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
 echo "RESOURCE_EXHAUSTED: 429 quota exceeded" >&2
 exit 1
 EOF
@@ -1063,7 +1198,7 @@ EOF
     POOL_CONF="$fixture_dir/pool.conf" MODELS_CONF="$fixture_dir/models.conf" \
     AGY_BIN="$fixture_dir/bin/agy" FM_AGY_STATE_DIR="$fixture_dir/state" \
     FM_AGY_USAGE_LOG="$fixture_dir/usage.jsonl" \
-    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fixture_dir/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-4-neon-high -p hello 2>&1) || rc=$?
   [ "$rc" -eq 75 ] || fail "exhausting all allowed accounts must exit 75, got $rc: $out"
   assert_contains "$out" "All eligible accounts for model 'gemini-4-neon-high' are exhausted" \
@@ -1100,6 +1235,15 @@ EOF2
   printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
   cat > "$fx/bin/agy" <<EOF2
 #!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf "gemini-4-neon-medium\tGemini 4 Neon (Medium)\n"
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
 printf '%s\n' "\${SUDO_TARGET_USER:-unknown}" >> "$fx/calls.log"
 echo '{"event":"result","result":{"conversation_id":"fresh-conv-777","status":"SUCCESS"}}'
 exit 0
@@ -1108,7 +1252,7 @@ EOF2
   conv_run() {
     env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
       AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-      FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_HOME_BASE="$fx/home" \
+      FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_HOME_BASE="$fx/home" FM_AGY_PACING_SEC=0 \
       "$POOL" "$@" 2>&1
   }
   local out rc=0
@@ -1163,6 +1307,15 @@ EOF
   printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
   cat > "$fx/bin/agy" <<EOF
 #!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf "gemini-4-neon-high\tGemini 4 Neon (High)\n"
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
 cat > "$fx/stdin.\${SUDO_TARGET_USER}"
 if [[ "\${SUDO_TARGET_USER}" == "gpro1" ]]; then
   echo "antigravity reported error: Individual quota reached. Resets in 1h0m0s." >&2
@@ -1175,7 +1328,7 @@ EOF
   local rc=0 out
   out=$(printf '%s\n' "$prompt" | env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
     AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-    FM_AGY_PGREP="$fx/bin/fake-pgrep" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
     "$POOL" --model gemini-4-neon-high --print= --input-format stream-json --output-format stream-json 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "rotation must succeed on the second account, got $rc: $out"
   [ "$(cat "$fx/stdin.gpro1")" = "$prompt" ] || fail "first account must get the prompt: $(cat "$fx/stdin.gpro1")"
@@ -1199,21 +1352,33 @@ if [[ "${1:-}" == "test" ]]; then exit 0; fi
 SUDO_TARGET_USER="$T" exec "$@"
 EOF
   printf '#!/usr/bin/env bash\n[[ "$*" == *"-u gpro2"* ]] && exit 0\nexit 1\n' > "$fx/bin/fake-pgrep"
-  # shellcheck disable=SC2016 # single quotes are intentional: the fixture script expands at run time
-  printf '#!/usr/bin/env bash\necho "${SUDO_TARGET_USER}" >> "%s/calls.log"\nexit 0\n' "$fx" > "$fx/bin/agy"
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf "gemini-4-neon-high\tGemini 4 Neon (High)\n"
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
+echo "\${SUDO_TARGET_USER}" >> "$fx/calls.log"
+exit 0
+EOF
   chmod +x "$fx/bin/"*
   local rc=0 out
   out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
     AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-    FM_AGY_PGREP="$fx/bin/fake-pgrep" "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "neon call must succeed, got $rc: $out"
-  [ "$(cat "$fx/calls.log")" = gpro1 ] || fail "idle first configured account must win over active gpro2, got: $(cat "$fx/calls.log")"
+  [ "$(cat "$fx/calls.log")" = gpro1 ] || fail "idle first eligible account must win over active gpro2, got: $(cat "$fx/calls.log")"
 
   : > "$fx/calls.log"
   rc=0
   out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
     AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_MAX_ACTIVE=1 "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_MAX_ACTIVE=1 FM_AGY_PACING_SEC=0 "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "at the cap an active fitting account must be reused, got $rc: $out"
   [ "$(cat "$fx/calls.log")" = gpro2 ] || fail "at the cap the active account must be reused, got: $(cat "$fx/calls.log")"
   pass "configured account order wins over an active account until the active cap is reached"
@@ -1233,7 +1398,7 @@ test_cap_reuse_follows_model_order() {
   local fx="$TMP_ROOT/cap_order"
   mkdir -p "$fx/bin" "$fx/state"
   printf '%s\n' gpro1 gpro2 > "$fx/pool.conf"
-  printf '%s\n' '*neon* gpro2,gpro1' > "$fx/models.conf"
+  : > "$fx/models.conf"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
   cat > "$fx/bin/sudo" <<'EOF'
 #!/usr/bin/env bash
@@ -1245,16 +1410,34 @@ if [[ "${1:-}" == "test" ]]; then exit 0; fi
 SUDO_TARGET_USER="$T" exec "$@"
 EOF
   printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/fake-pgrep"
-  # shellcheck disable=SC2016 # single quotes are intentional: the fixture script expands at run time
-  printf '#!/usr/bin/env bash\necho "${SUDO_TARGET_USER}" >> "%s/calls.log"\nexit 0\n' "$fx" > "$fx/bin/agy"
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf "gemini-4-neon-high\tGemini 4 Neon (High)\n"
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
+echo "\${SUDO_TARGET_USER}" >> "$fx/calls.log"
+exit 0
+EOF
   chmod +x "$fx/bin/"*
+  local now_ts
+  now_ts=$(date +%s)
+  printf '{"user":"gpro1","fetched_at":%s,"models":["gemini-4-neon-high"]}\n' "$now_ts" > "$fx/state/gpro1.models.json"
+  printf '{"user":"gpro2","fetched_at":%s,"models":["gemini-4-neon-high"]}\n' "$now_ts" > "$fx/state/gpro2.models.json"
+  printf '{"user":"gpro1","window_start":1,"reset_at":0,"used_sec":0,"budget_sec":5400,"exhausted":false,"quota":{"Gemini Models":{"min_pct":45,"reset_at":0}}}\n' > "$fx/state/gpro1.state.json"
+  printf '{"user":"gpro2","window_start":1,"reset_at":0,"used_sec":0,"budget_sec":5400,"exhausted":false,"quota":{"Gemini Models":{"min_pct":92,"reset_at":0}}}\n' > "$fx/state/gpro2.state.json"
   local rc=0 out
   out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
     AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-    FM_AGY_PGREP="$fx/bin/fake-pgrep" "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 "$POOL" --model gemini-4-neon-high -p hi 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "capped neon call must succeed, got $rc: $out"
-  [ "$(cat "$fx/calls.log")" = gpro2 ] || fail "at the cap the first configured active account must win, got: $(cat "$fx/calls.log")"
-  pass "at the active cap reuse follows the model's configured account order"
+  [ "$(cat "$fx/calls.log")" = gpro2 ] || fail "at the cap the higher-quota active account must win, got: $(cat "$fx/calls.log")"
+  pass "at the active cap reuse follows quota-ordered account priority"
 }
 
 test_usage_follows_active_cap() {
@@ -1289,7 +1472,7 @@ EOF
     rc=0
     out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
       AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-      FM_AGY_PGREP="$fx/bin/fake-pgrep" "$POOL" --usage "$2" 2>&1) || rc=$?
+      FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 "$POOL" --usage "$2" 2>&1) || rc=$?
   }
   run_usage gpro1,gpro2 gpro1
   [ "$rc" -eq 0 ] || fail "--usage on an active target must succeed at the cap, got $rc: $out"
@@ -1318,15 +1501,31 @@ if [[ "${1:-}" == "test" ]]; then exit 0; fi
 SUDO_TARGET_USER="$T" exec "$@"
 EOF2
   printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
-  # shellcheck disable=SC2016 # single quotes are intentional: the fixture script expands at run time
-  printf '#!/usr/bin/env bash\necho "${SUDO_TARGET_USER}" >> "%s/calls.log"\nexit 0\n' "$fx" > "$fx/bin/agy"
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  if [[ "\${SUDO_TARGET_USER:-}" == "other" ]]; then
+    printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  else
+    printf "gemini-4-neon-medium\tGemini 4 Neon (Medium)\n"
+  fi
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
+echo "\${SUDO_TARGET_USER}" >> "$fx/calls.log"
+exit 0
+EOF
   chmod +x "$fx"/bin/*
   local c rc
   for c in conv-forged-1 conv-forged-2; do
     rc=0
     env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
       AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-      FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_HOME_BASE="$fx/home" \
+      FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_HOME_BASE="$fx/home" FM_AGY_PACING_SEC=0 \
       "$POOL" --model gemini-4-neon-medium --conversation "$c" -p hi >/dev/null 2>&1 || rc=$?
     [ "$rc" -eq 0 ] || fail "$c must route normally, got $rc"
   done
@@ -1339,11 +1538,15 @@ EOF2
 # reports a pool account signed in unless the account is listed in
 # $fx/unauth, a setfacl that logs its arguments, and a stub agy.
 make_named_account_fixture() {
-  local fx=$1
+  local fx=$1 now_ts
   rm -rf "$fx"
   mkdir -p "$fx/bin" "$fx/state"
   printf '%s\n' gpro1 gpro2 gpro3 > "$fx/pool.conf"
   printf '%s\n' '*neon* gpro2,gpro3' > "$fx/models.conf"
+  now_ts=$(date +%s)
+  printf '{"user":"gpro1","fetched_at":%s,"models":["gemini-3.8-flash-low","gemini-3.8-flash-high","gemini-4-hydrogen-high"]}\n' "$now_ts" > "$fx/state/gpro1.models.json"
+  printf '{"user":"gpro2","fetched_at":%s,"models":["gemini-3.8-flash-low","gemini-3.8-flash-high","gemini-4-hydrogen-high","gemini-4-neon-medium"]}\n' "$now_ts" > "$fx/state/gpro2.models.json"
+  printf '{"user":"gpro3","fetched_at":%s,"models":["gemini-3.8-flash-low","gemini-3.8-flash-high","gemini-4-hydrogen-high","gemini-4-neon-medium"]}\n' "$now_ts" > "$fx/state/gpro3.models.json"
   : > "$fx/unauth"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
   cat > "$fx/bin/sudo" <<EOF2
@@ -1357,7 +1560,20 @@ SUDO_TARGET_USER="\$T" exec "\$@"
 EOF2
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/setfacl.log"\n' "$fx" > "$fx/bin/setfacl"
   printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/agy"
+  cat > "$fx/bin/agy" <<'EOF2'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "models" ]]; then
+  printf "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n"
+  printf "gemini-4-neon-medium\tGemini 4 Neon (Medium)\n"
+  exit 0
+fi
+if [[ "${1:-}" == "-p" && "${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
+exit 0
+EOF2
   chmod +x "$fx"/bin/*
 }
 
@@ -1366,7 +1582,7 @@ named_account_run() {  # <fx> <args>...  -> sets RC and OUT
   RC=0
   OUT=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
     AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
-    FM_AGY_PGREP="$fx/bin/fake-pgrep" "$POOL" "$@" 2>&1) || RC=$?
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 "$POOL" "$@" 2>&1) || RC=$?
 }
 
 test_check_account_validates_a_named_account() {
@@ -1378,8 +1594,8 @@ test_check_account_validates_a_named_account() {
   [ "$RC" -eq 1 ] || fail "unknown account must refuse, rc=$RC"
   assert_contains "$OUT" "'nobody' is not an account in" "unknown account refusal names the account"
   named_account_run "$fx" --check-account gpro1 gemini-4-neon-medium
-  [ "$RC" -eq 1 ] || fail "account not allowed for the model must refuse, rc=$RC"
-  assert_contains "$OUT" "not allowed for model 'gemini-4-neon-medium'" "model refusal names the model"
+  [ "$RC" -eq 1 ] || fail "account whose fresh catalog omits model must refuse, rc=$RC"
+  assert_contains "$OUT" "does not list model 'gemini-4-neon-medium'" "model refusal names the model"
   named_account_run "$fx" --check-account gpro1 gemini-3.8-flash-high
   [ "$RC" -eq 0 ] || fail "unreserved account is allowed for flash, rc=$RC $OUT"
   printf 'gpro3\n' > "$fx/unauth"
@@ -1392,7 +1608,7 @@ test_check_account_validates_a_named_account() {
   assert_contains "$OUT" "marked exhausted" "exhausted refusal"
   named_account_run "$fx" --check-account
   [ "$RC" -eq 1 ] || fail "missing account argument must refuse"
-  pass "--check-account accepts only a listed, signed-in, allowed, non-exhausted account and never substitutes another"
+  pass "--check-account accepts only a listed, signed-in, catalog-allowed, non-exhausted account and never substitutes another"
 }
 
 test_task_data_acl_is_scoped_to_the_selected_account_and_task() {
@@ -1454,6 +1670,15 @@ test_gh_config_forwards_only_to_direct_pr_and_local_only_workers() {
   mkdir -p "$home/state" "$gh"
   cat > "$fx/bin/agy" <<EOF2
 #!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf "gemini-4-neon-medium\tGemini 4 Neon (Medium)\n"
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
 printf '%s\n' "\${GH_CONFIG_DIR:-unset}" >> "$fx/gh.log"
 exit 0
 EOF2
@@ -1465,6 +1690,7 @@ EOF2
     env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
       AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
       FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_HOME="$home" FM_TASK_ID=t1 XDG_CONFIG_HOME="$TMP_ROOT/gh_scope/xdg" \
+      FM_AGY_PACING_SEC=0 \
       "$POOL" --model gemini-4-neon-medium "$flag" hi >/dev/null 2>&1 </dev/null || true
     cat "$fx/gh.log"
   }
@@ -1487,10 +1713,411 @@ test_check_account_refuses_unserveable_model_on_recorded_account() {
   [ "$RC" -eq 0 ] || fail "the recorded account serves its own model: $RC $OUT"
   named_account_run "$fx" --check-account gpro1 gemini-4-neon-medium
   [ "$RC" -eq 1 ] || fail "switching --model to one the recorded account cannot serve must refuse, got $RC: $OUT"
-  assert_contains "$OUT" "not allowed for model 'gemini-4-neon-medium'" "refusal names the model"
+  assert_contains "$OUT" "does not list model 'gemini-4-neon-medium'" "refusal names the model"
   named_account_run "$fx" --check-account gpro2 gemini-4-neon-medium
   [ "$RC" -eq 0 ] || fail "relaunch --account <other> is the recovery path: $RC $OUT"
   pass "relaunch gate refuses an unserveable model on the recorded account and passes on an explicit other account"
+}
+
+test_catalog_cache_parse_ttl_and_failure_uncertainty() {
+  local fx="$TMP_ROOT/catalog_ttl"
+  mkdir -p "$fx/bin" "$fx/state"
+  printf 'gpro1\ngpro2\n' > "$fx/pool.conf"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac; done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf '%s\n' "\${SUDO_TARGET_USER}" >> "$fx/models_calls.log"
+  if [[ -f "$fx/fail_models" ]]; then
+    echo "network error" >&2
+    exit 1
+  fi
+  printf "Fetching available models...\r\n"
+  printf "gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\r\n"
+  printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\r\n"
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "$fx/bin/"*
+
+  # 1. Cold start refreshes only the selected account (gpro1), parsing <id>\t<label> after Fetching line
+  local out rc=0
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" AGY_BIN="$fx/bin/agy" \
+    FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 FM_AGY_MODELS_TTL=86400 \
+    "$POOL" --model gemini-4-hydrogen-high -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "cold catalog discovery must succeed, got $rc: $out"
+  [ "$(cat "$fx/models_calls.log")" = "gpro1" ] || fail "must refresh only gpro1, got: $(cat "$fx/models_calls.log")"
+  [ ! -e "$fx/state/gpro2.models.json" ] || fail "must not refresh gpro2 when gpro1 succeeds"
+  jq -e '(.models | index("gemini-4-hydrogen-high") != null) and (.models | index("Fetching") == null)' "$fx/state/gpro1.models.json" >/dev/null \
+    || fail "cached catalog must hold parsed model ids only: $(cat "$fx/state/gpro1.models.json")"
+
+  # 2. Fresh cache reuses without calling agy models again
+  : > "$fx/models_calls.log"
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" AGY_BIN="$fx/bin/agy" \
+    FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 FM_AGY_MODELS_TTL=86400 \
+    "$POOL" --model gemini-4-hydrogen-high -p hi 2>&1)
+  [ ! -s "$fx/models_calls.log" ] || fail "fresh cache must not invoke agy models: $(cat "$fx/models_calls.log")"
+
+  # 3. Stale cache (old fetched_at) + failed fetch keeps previous cache and reports uncertainty, never support
+  printf '{"user":"gpro1","fetched_at":1,"models":["gemini-4-hydrogen-high","gemini-3.8-flash-high"]}\n' > "$fx/state/gpro1.models.json"
+  printf '{"user":"gpro2","fetched_at":%s,"models":["gemini-4-hydrogen-high"]}\n' "$(date +%s)" > "$fx/state/gpro2.models.json"
+  : > "$fx/models_calls.log"
+  : > "$fx/fail_models"
+  rc=0
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" AGY_BIN="$fx/bin/agy" \
+    FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 FM_AGY_MODELS_TTL=3600 \
+    "$POOL" --model gemini-4-hydrogen-high -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "selection must fall back to fresh gpro2 when gpro1 fetch fails, got $rc: $out"
+  assert_contains "$out" "uncertain" "failed fetch must be reported as uncertainty"
+  assert_contains "$out" "Routing model 'gemini-4-hydrogen-high' to 'gpro2'" "failed fetch on gpro1 must not be treated as support"
+  [ "$(jq -r '.fetched_at' "$fx/state/gpro1.models.json")" = "1" ] || fail "failed fetch must preserve previous gpro1 cache"
+
+  pass "per-account catalog cache parses models, honors TTL for one account, and keeps prior cache as uncertainty on failure"
+}
+
+test_selection_sticky_quota_order_and_single_query() {
+  local fx="$TMP_ROOT/selection_order"
+  mkdir -p "$fx/bin" "$fx/state"
+  printf 'gpro1\ngpro2\ngpro3\ngpro4\n' > "$fx/pool.conf"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac; done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf "gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n"
+  printf "gpt-oss-120b-medium\tGPT-OSS 120B (Medium)\n"
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf '%s\n' "\${SUDO_TARGET_USER}" >> "$fx/usage_order.log"
+  case "\${SUDO_TARGET_USER}" in
+    gpro2)
+      printf "Gemini Models\tWeekly Limit Remaining\t10%%\t2026-12-05T00:00:00Z\n"
+      printf "Gemini Models\tFive Hour Limit Remaining\t10%%\t2026-12-05T00:00:00Z\n"
+      ;;
+    gpro3)
+      printf "Gemini Models\tWeekly Limit Remaining\t92%%\t2026-12-05T00:00:00Z\n"
+      printf "Gemini Models\tFive Hour Limit Remaining\t88%%\t2026-12-05T00:00:00Z\n"
+      ;;
+    *)
+      printf "Gemini Models\tWeekly Limit Remaining\t60%%\t2026-12-05T00:00:00Z\n"
+      printf "Gemini Models\tFive Hour Limit Remaining\t60%%\t2026-12-05T00:00:00Z\n"
+      ;;
+  esac
+  printf "Claude and GPT models\tWeekly Limit Remaining\t95%%\t2026-12-05T00:00:00Z\n"
+  printf "Claude and GPT models\tFive Hour Limit Remaining\t90%%\t2026-12-05T00:00:00Z\n"
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "$fx/bin/"*
+
+  local now_ts
+  now_ts=$(date +%s)
+  for u in gpro1 gpro2 gpro3 gpro4; do
+    printf '{"user":"%s","fetched_at":%s,"models":["gemini-4-hydrogen-high","gpt-oss-120b-medium"]}\n' "$u" "$now_ts" > "$fx/state/${u}.models.json"
+  done
+  # Sticky is gpro2 (live check will return 10% <= floor); gpro1=40%, gpro3=85%, gpro4=5% (below floor until future reset)
+  printf 'gpro2\n' > "$fx/state/last-active"
+  printf '{"user":"gpro1","window_start":1,"reset_at":0,"used_sec":0,"budget_sec":5400,"exhausted":false,"quota":{"Gemini Models":{"min_pct":40,"reset_at":0}}}\n' > "$fx/state/gpro1.state.json"
+  printf '{"user":"gpro3","window_start":1,"reset_at":0,"used_sec":0,"budget_sec":5400,"exhausted":false,"quota":{"Gemini Models":{"min_pct":85,"reset_at":0}}}\n' > "$fx/state/gpro3.state.json"
+  printf '{"user":"gpro4","window_start":1,"reset_at":9999999999,"used_sec":0,"budget_sec":5400,"exhausted":true,"quota":{"Gemini Models":{"min_pct":5,"reset_at":9999999999}}}\n' > "$fx/state/gpro4.state.json"
+
+  local out rc=0
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" AGY_BIN="$fx/bin/agy" \
+    FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
+    "$POOL" --model gemini-4-hydrogen-high -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "selection must succeed on gpro3, got $rc: $out"
+  assert_contains "$out" "Routing model 'gemini-4-hydrogen-high' to 'gpro3'" "must route to highest remaining gpro3 after sticky gpro2 fails"
+  # usage_order.log has start checks (gpro2, gpro3) and end check (gpro3)
+  [ "$(head -n 2 "$fx/usage_order.log")" = $'gpro2\ngpro3' ] || fail "must check sticky gpro2 first then highest-quota gpro3 (skipping gpro4, never checking gpro1 or gpro2 twice): $(cat "$fx/usage_order.log")"
+
+  # gpt-* model routes using "Claude and GPT models" group even when Gemini Models is low
+  : > "$fx/usage_order.log"
+  printf 'gpro2\n' > "$fx/state/last-active"
+  printf '{"user":"gpro2","window_start":1,"reset_at":0,"used_sec":0,"budget_sec":5400,"exhausted":false,"quota":{"Gemini Models":{"min_pct":10,"reset_at":9999999999}}}\n' > "$fx/state/gpro2.state.json"
+  rc=0
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" AGY_BIN="$fx/bin/agy" \
+    FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
+    "$POOL" --model gpt-oss-120b-medium -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "gpt model must use Claude and GPT models group quota on sticky gpro2, got $rc: $out"
+  assert_contains "$out" "Routing model 'gpt-oss-120b-medium' to 'gpro2'" "gpt model stays on gpro2 via Claude and GPT models group"
+
+  pass "selection tries sticky first, orders remaining by last quota descending, skips below-floor until reset, and maps model group"
+}
+
+test_reservation_from_catalog_and_hydrogen_unrestricted() {
+  local fx="$TMP_ROOT/reservation_catalog"
+  mkdir -p "$fx/bin" "$fx/state"
+  # Put reserved piyushjiit FIRST in pool.conf AND put stale *hydrogen* restriction in models.conf
+  printf 'piyushjiit\ngpro1\n' > "$fx/pool.conf"
+  printf '*hydrogen* piyushjiit\n*neon* piyushjiit\n' > "$fx/models.conf"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac; done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  if [[ "\${SUDO_TARGET_USER}" == "piyushjiit" ]]; then
+    printf "gemini-4-neon-medium\tGemini 4 Neon (Medium)\n"
+    printf "gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n"
+  else
+    printf "gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n"
+    printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  fi
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  printf '%s\n' "\${SUDO_TARGET_USER}" >> "$fx/usage_calls.log"
+  printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-11-29T00:00:00Z\n"
+  printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-11-22T20:00:00Z\n"
+  exit 0
+fi
+echo "\${SUDO_TARGET_USER}" >> "$fx/run_calls.log"
+exit 0
+EOF
+  chmod +x "$fx/bin/"*
+
+  # 1. Even with sticky=piyushjiit and stale models.conf *hydrogen* piyushjiit, Hydrogen prefers non-reserved gpro1!
+  printf 'piyushjiit\n' > "$fx/state/last-active"
+  local out rc=0
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
+    "$POOL" --model gemini-4-hydrogen-high -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "Hydrogen must prefer non-reserved gpro1, got $rc: $out"
+  [ "$(cat "$fx/run_calls.log")" = "gpro1" ] || fail "Hydrogen must route to non-reserved gpro1 despite stale models.conf and sticky piyushjiit: $(cat "$fx/run_calls.log")"
+
+  # 2. Neon routes ONLY to catalog-capable piyushjiit
+  : > "$fx/run_calls.log"
+  rc=0
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" MODELS_CONF="$fx/models.conf" \
+    AGY_BIN="$fx/bin/agy" FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 \
+    "$POOL" --model gemini-4-neon-medium -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "Neon must route to piyushjiit, got $rc: $out"
+  [ "$(cat "$fx/run_calls.log")" = "piyushjiit" ] || fail "Neon must run on piyushjiit: $(cat "$fx/run_calls.log")"
+
+  pass "Neon-capable catalog reserves account, Hydrogen/Flash ignore stale gpro-models.conf and prefer non-reserved accounts"
+}
+
+test_live_query_pacing_and_lock() {
+  local fx="$TMP_ROOT/pacing_lock"
+  mkdir -p "$fx/bin" "$fx/state"
+  printf 'gpro1\ngpro2\n' > "$fx/pool.conf"
+  printf '1000\n' > "$fx/clock"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac; done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+
+  # Fake clock + sleep: date +%s reads $fx/clock; sleep advances $fx/clock and logs slept seconds
+  cat > "$fx/bin/date" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "+%s" ]]; then
+  cat "$fx/clock"
+  exit 0
+fi
+exec /usr/bin/date "\$@"
+EOF
+  cat > "$fx/bin/sleep" <<EOF
+#!/usr/bin/env bash
+sec="\${1:-0}"
+if [[ "\$sec" =~ ^[0-9]+$ ]]; then
+  cur=\$(cat "$fx/clock")
+  echo \$(( cur + sec )) > "$fx/clock"
+  printf '%s\n' "\$sec" >> "$fx/sleeps.log"
+fi
+EOF
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "models" || ( "\${1:-}" == "-p" && "\${2:-}" == "/usage" ) ]]; then
+  # Verify no two live queries ever run concurrently
+  if [[ -f "$fx/live_inflight" ]]; then
+    echo "PARALLEL_LIVE_QUERY" >> "$fx/parallel_error.log"
+  fi
+  : > "$fx/live_inflight"
+  /usr/bin/sleep 0.15
+  rm -f "$fx/live_inflight"
+  printf '%s|%s\n' "\${SUDO_TARGET_USER}" "\$*" >> "$fx/live_queries.log"
+  if [[ "\${1:-}" == "models" ]]; then
+    printf "gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n"
+  else
+    if [[ "\${SUDO_TARGET_USER}" == "gpro1" ]]; then
+      printf "Gemini Models\tWeekly Limit Remaining\t10%%\t2026-12-05T00:00:00Z\n"
+      printf "Gemini Models\tFive Hour Limit Remaining\t10%%\t2026-12-05T00:00:00Z\n"
+    else
+      printf "Gemini Models\tWeekly Limit Remaining\t90%%\t2026-12-05T00:00:00Z\n"
+      printf "Gemini Models\tFive Hour Limit Remaining\t90%%\t2026-12-05T00:00:00Z\n"
+    fi
+  fi
+  exit 0
+fi
+exit 0
+EOF
+  chmod +x "$fx/bin/"*
+
+  # 1. Cold start on gpro1 (models + /usage -> same account, NO gap!) -> gpro1 10% skip -> gpro2 (different account -> 60s gap!) -> gpro2 /usage (same account -> NO gap!) -> end /usage (same account gpro2 -> NO gap!)
+  local out rc=0
+  out=$(env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" AGY_BIN="$fx/bin/agy" \
+    FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=60 FM_AGY_LIVE_TIMEOUT=0 \
+    "$POOL" --model gemini-3.8-flash-high -p hi 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "paced selection must succeed on gpro2, got $rc: $out"
+  [ "$(cat "$fx/sleeps.log")" = "60" ] || fail "expected exactly one 60s sleep between gpro1 and gpro2 only, got: $(cat "$fx/sleeps.log")"
+
+  # 2. Two parallel invocations serialize under live-query.lock without parallel live queries
+  : > "$fx/parallel_error.log"
+  env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" AGY_BIN="$fx/bin/agy" \
+    FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=60 FM_AGY_LIVE_TIMEOUT=0 \
+    "$POOL" --model gemini-3.8-flash-high -p hi >/dev/null 2>&1 &
+  local p1=$!
+  env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" AGY_BIN="$fx/bin/agy" \
+    FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=60 FM_AGY_LIVE_TIMEOUT=0 \
+    "$POOL" --model gemini-3.8-flash-high -p hi >/dev/null 2>&1 &
+  local p2=$!
+  wait "$p1" "$p2"
+  [ ! -s "$fx/parallel_error.log" ] || fail "live queries must never run in parallel: $(cat "$fx/parallel_error.log")"
+
+  pass "machine-wide lock serializes live queries and paces different accounts without gapping same-account queries"
+}
+
+test_check_account_and_spawn_probe_cache_gates() {
+  local fx="$TMP_ROOT/check_gates_cache"
+  make_named_account_fixture "$fx"
+  rm -rf "$fx/state"
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+echo "LIVE_CALLED" >> "$fx/live.log"
+exit 1
+EOF
+  chmod +x "$fx/bin/agy"
+
+  # 1. Missing catalog -> --check-account allows with notice and stays read-only
+  named_account_run "$fx" --check-account gpro1 gemini-4-neon-medium
+  [ "$RC" -eq 0 ] || fail "missing catalog must allow with notice, got $RC: $OUT"
+  assert_contains "$OUT" "unknown (missing)" "missing catalog notice"
+  [ ! -e "$fx/state" ] || fail "--check-account must stay read-only"
+  [ ! -e "$fx/live.log" ] || fail "--check-account must never query live"
+
+  # 2. Stale catalog -> --check-account and --check-model allow with notice
+  mkdir -p "$fx/state"
+  printf '{"user":"gpro1","fetched_at":1,"models":["gemini-3.8-flash-high"]}\n' > "$fx/state/gpro1.models.json"
+  named_account_run "$fx" --check-account gpro1 gemini-4-neon-medium
+  [ "$RC" -eq 0 ] || fail "stale catalog must allow with notice, got $RC: $OUT"
+  assert_contains "$OUT" "unknown (stale)" "stale catalog notice"
+  named_account_run "$fx" --check-model gemini-4-neon-medium gpro1
+  [ "$RC" -eq 0 ] || fail "stale catalog --check-model must allow with notice, got $RC: $OUT"
+  [ ! -e "$fx/live.log" ] || fail "--check-model must never query live"
+
+  # 3. Fresh catalog omitting model refuses; fresh catalog listing model passes
+  local now_ts
+  now_ts=$(date +%s)
+  printf '{"user":"gpro1","fetched_at":%s,"models":["gemini-3.8-flash-high"]}\n' "$now_ts" > "$fx/state/gpro1.models.json"
+  printf '{"user":"gpro2","fetched_at":%s,"models":["gemini-3.8-flash-high"]}\n' "$now_ts" > "$fx/state/gpro2.models.json"
+  printf '{"user":"gpro3","fetched_at":%s,"models":["gemini-3.8-flash-high"]}\n' "$now_ts" > "$fx/state/gpro3.models.json"
+  named_account_run "$fx" --check-model gemini-4-neon-medium
+  [ "$RC" -eq 1 ] || fail "all-fresh pool omitting model must refuse --check-model, got $RC: $OUT"
+  printf '{"user":"gpro2","fetched_at":%s,"models":["gemini-3.8-flash-high","gemini-4-neon-medium"]}\n' "$now_ts" > "$fx/state/gpro2.models.json"
+  named_account_run "$fx" --check-model gemini-4-neon-medium
+  [ "$RC" -eq 0 ] || fail "pool with a fresh catalog listing model must pass --check-model, got $RC: $OUT"
+
+  pass "--check-account and --check-model enforce fresh catalogs read-only and allow unknown catalogs with a notice"
+}
+
+test_start_and_end_quota_records() {
+  local fx="$TMP_ROOT/start_end_records"
+  mkdir -p "$fx/bin" "$fx/state"
+  printf 'gpro1\n' > "$fx/pool.conf"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fx/bin/id"
+  cat > "$fx/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+T=""
+while [[ $# -gt 0 ]]; do case "$1" in -n|-H) shift ;; -u) T="$2"; shift 2 ;; *) break ;; esac; done
+if [[ "${1:-}" == "test" ]]; then exit 0; fi
+SUDO_TARGET_USER="$T" exec "$@"
+EOF
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fx/bin/fake-pgrep"
+  cat > "$fx/bin/agy" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "models" ]]; then
+  printf "gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n"
+  exit 0
+fi
+if [[ "\${1:-}" == "-p" && "\${2:-}" == "/usage" ]]; then
+  if [[ ! -f "$fx/started" ]]; then
+    printf "Gemini Models\tWeekly Limit Remaining\t80%%\t2026-12-01T00:00:00Z\n"
+    printf "Gemini Models\tFive Hour Limit Remaining\t95%%\t2026-11-26T05:00:00Z\n"
+  else
+    printf "Gemini Models\tWeekly Limit Remaining\t78%%\t2026-12-01T00:00:00Z\n"
+    printf "Gemini Models\tFive Hour Limit Remaining\t85%%\t2026-11-26T05:00:00Z\n"
+  fi
+  exit 0
+fi
+: > "$fx/started"
+exit 0
+EOF
+  chmod +x "$fx/bin/"*
+
+  local rc=0
+  env PATH="$fx/bin:$PATH" POOL_CONF="$fx/pool.conf" AGY_BIN="$fx/bin/agy" \
+    FM_AGY_STATE_DIR="$fx/state" FM_AGY_USAGE_LOG="$fx/usage.jsonl" \
+    FM_AGY_PGREP="$fx/bin/fake-pgrep" FM_AGY_PACING_SEC=0 FM_TASK_ID="task-fqd-1" \
+    "$POOL" --model gemini-4-hydrogen-high -p hi >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "run must exit 0, got $rc"
+
+  local start_rec end_rec sum_rec
+  start_rec=$(jq -sc '[.[] | select(.event == "usage_check" and .decision == "start")] | last' "$fx/usage.jsonl")
+  end_rec=$(jq -sc '[.[] | select(.event == "quota_end")] | last' "$fx/usage.jsonl")
+  sum_rec=$(jq -sc '[.[] | select(has("duration_sec"))] | last' "$fx/usage.jsonl")
+
+  [ "$(jq -r '.task + "|" + .user + "|" + .model + "|" + .group + "|" + (.weekly_pct|tostring) + "|" + .weekly_reset + "|" + (.five_hour_pct|tostring) + "|" + .five_hour_reset' <<<"$start_rec")" = "task-fqd-1|gpro1|gemini-4-hydrogen-high|Gemini Models|80|2026-12-01T00:00:00Z|95|2026-11-26T05:00:00Z" ] \
+    || fail "start usage_check record mismatch: $start_rec"
+  [ "$(jq -r '.task + "|" + .user + "|" + .model + "|" + .group + "|" + (.weekly_pct|tostring) + "|" + .weekly_reset + "|" + (.five_hour_pct|tostring) + "|" + .five_hour_reset' <<<"$end_rec")" = "task-fqd-1|gpro1|gemini-4-hydrogen-high|Gemini Models|78|2026-12-01T00:00:00Z|85|2026-11-26T05:00:00Z" ] \
+    || fail "quota_end record mismatch: $end_rec"
+  [ "$(jq -r '.task + "|" + .user + "|" + (.exit_code|tostring)' <<<"$sum_rec")" = "task-fqd-1|gpro1|0" ] \
+    || fail "backward-compatible run summary mismatch: $sum_rec"
+
+  pass "usage log records both group windows at start (usage_check) and end (quota_end) while keeping run summary"
 }
 
 fm_test_run \
@@ -1519,4 +2146,10 @@ fm_test_run \
   test_named_unavailable_account_never_falls_back \
   test_spawn_gates_are_read_only_and_capacity_aware \
   test_gh_config_forwards_only_to_direct_pr_and_local_only_workers \
-  test_check_account_refuses_unserveable_model_on_recorded_account
+  test_check_account_refuses_unserveable_model_on_recorded_account \
+  test_catalog_cache_parse_ttl_and_failure_uncertainty \
+  test_selection_sticky_quota_order_and_single_query \
+  test_reservation_from_catalog_and_hydrogen_unrestricted \
+  test_live_query_pacing_and_lock \
+  test_check_account_and_spawn_probe_cache_gates \
+  test_start_and_end_quota_records
