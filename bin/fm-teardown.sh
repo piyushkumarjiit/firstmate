@@ -3934,10 +3934,11 @@ elif [ "$BACKEND" = herdr ]; then
 fi
 
 # bin/fm-deliver.sh opens a "deliver: <task>" progress tab and records its pane
-# in data/<task>/deliver-tab. Close exactly that recorded pane at the same point
-# as the task pane, through the same locked focus-safe close, so a finished task
-# leaves no Herdr workspace behind. Best effort: a gone pane or a missing lock
-# never blocks teardown.
+# in data/<task>/deliver-tab; bin/agy-pool/nm-agy records its review/fix viewer
+# tabs the same way in data/<task>/nm-<role>-tab. Close exactly those recorded
+# panes at the same point as the task pane, through the same locked focus-safe
+# close, so a finished task leaves no Herdr workspace behind. Best effort: a gone
+# pane or a missing lock never blocks teardown.
 teardown_stop_deliver_drivers() {
   local pid_file pid cmd
   pid_file="$DATA/$ID/autostart.pid"
