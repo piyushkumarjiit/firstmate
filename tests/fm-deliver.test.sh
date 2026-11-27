@@ -437,7 +437,7 @@ EOF2
 }
 
 test_run_exits_finished_pool_builder_once() {
-  local sha tdir ctl_log
+  local sha tdir ctl_log new_sha
   sha=$(setup_fixture task_slot)
   tdir="$TMP_ROOT/task_slot"
   ctl_log="$tdir/control.log"
@@ -467,7 +467,19 @@ test_run_exits_finished_pool_builder_once() {
   : > "$ctl_log"
   run_slot env FAKE_CONTROL_RC=0
   [ ! -s "$ctl_log" ] || fail "an already released builder must not be exited again"
-  pass "run exits a finished pool builder once and keeps delivery going on refusal"
+  [ "$(cat "$tdir/data/task_slot/pool-slot-released")" = "$sha" ] || fail "the release marker must record the exited commit"
+
+  # A relaunched builder that reports a new commit still holds a fresh slot, so
+  # it must be exited again for that commit.
+  printf 'fix\n' >> "$tdir/wt/file.txt"
+  git -C "$tdir/wt" commit -qam "relaunched fix"
+  new_sha=$(git -C "$tdir/wt" rev-parse HEAD)
+  printf 'done [at=4]: committed %s\n' "$new_sha" >> "$tdir/state/task_slot.status"
+  : > "$ctl_log"
+  run_slot env FAKE_CONTROL_RC=0
+  [ "$(cat "$ctl_log")" = "task_slot exit" ] || fail "a builder relaunched to a new commit must be exited again, got: $(cat "$ctl_log" 2>/dev/null)"
+  [ "$(cat "$tdir/data/task_slot/pool-slot-released")" = "$new_sha" ] || fail "the release marker must record the newly exited commit"
+  pass "run exits a finished pool builder once per commit and keeps delivery going on refusal"
 }
 
 test_run_keeps_pool_builder_with_open_decision_or_other_shape() {

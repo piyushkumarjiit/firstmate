@@ -185,7 +185,8 @@ DRIVE_LOG="$FM_DATA/${TASK}/drive.log"
 mkdir -p "$(dirname "$DRIVE_LOG")"
 : >> "$DRIVE_LOG"
 
-# Free the builder's agy pool account slot (FM_AGY_MAX_ACTIVE) once per task.
+# Free the builder's agy pool account slot (FM_AGY_MAX_ACTIVE) once per
+# committed sha: a relaunched builder that reports a new commit is exited again.
 # A pool builder that reported its commit keeps its agy process alive, so it
 # would hold a slot until someone stopped it by hand. Delivery owns validation
 # from here, so the builder's agent is exited through the control plane
@@ -213,7 +214,7 @@ release_pool_builder_slot() {
   harness=$(grep -E '^harness=' "$META_FILE" | head -n 1 | cut -d= -f2- || true)
   [[ "$builder" == pool && "$harness" == agy ]] || return 0
   marker="$FM_DATA/$TASK/pool-slot-released"
-  [[ ! -e "$marker" ]] || return 0
+  [[ "$(cat "$marker" 2>/dev/null || true)" != "$EXPECTED_SHA" ]] || return 0
   last=$(grep -E '^[[:space:]]*(working|done|blocked|needs-decision|paused)([[:space:]]|\[|:)' "$STATUS_FILE" | tail -n 1 || true)
   [[ "$last" =~ ^[[:space:]]*done.*committed ]] || return 0
   OPEN_KEYS=''
@@ -225,7 +226,7 @@ release_pool_builder_slot() {
   control="${FM_DELIVER_CONTROL:-$SCRIPT_DIR/fm-control.sh}"
   out=$(FM_HOME="$FM_HOME" "$control" "$TASK" exit 2>&1) || rc=$?
   if [[ "$rc" -eq 0 ]]; then
-    : > "$marker"
+    printf '%s\n' "$EXPECTED_SHA" > "$marker"
     echo "[fm-deliver] pool builder exited to free its account slot: $out" >> "$DRIVE_LOG"
   else
     echo "[fm-deliver] could not exit the pool builder (exit $rc); its slot stays held: $out" >> "$DRIVE_LOG"
