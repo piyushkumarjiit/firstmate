@@ -28,6 +28,8 @@ Usage: bin/fm-deliver.sh <task-id> run|respond|status|sync|ready|autostart [args
 
 Subcommands:
   run                Start no-mistakes axi run in background for task worktree
+                     (a finished builder=pool agy builder is first exited once through
+                     fm-control to free its FM_AGY_MAX_ACTIVE slot)
   ready              Exit 0 when the worker's latest report is `done: committed
                      <sha>`, HEAD is that sha, the tree is clean, and no
                      validation run exists for that head yet; exit 1 otherwise
@@ -182,6 +184,54 @@ fi
 DRIVE_LOG="$FM_DATA/${TASK}/drive.log"
 mkdir -p "$(dirname "$DRIVE_LOG")"
 : >> "$DRIVE_LOG"
+
+# Free the builder's agy pool account slot (FM_AGY_MAX_ACTIVE) once per task.
+# A pool builder that reported its commit keeps its agy process alive, so it
+# would hold a slot until someone stopped it by hand. Delivery owns validation
+# from here, so the builder's agent is exited through the control plane
+# (fm-control exit; the endpoint pane, worktree, and records all stay). Only a
+# builder=pool agy task whose latest lifecycle line is the done commit report,
+# with no open keyed decision or blocker, is exited; the clean tree and the
+# HEAD==committed-sha checks already passed above. Best effort: a refusal is
+# logged and never stops delivery, and fm-pool-exit.sh remains the fallback.
+pool_builder_open_keys() {
+  local line key
+  while IFS= read -r line; do
+    key=$(sed -n 's/.*\[key=\([^]]*\)\].*/\1/p' <<<"$line")
+    [[ -n "$key" ]] || continue
+    case "$line" in
+      resolved*) OPEN_KEYS=$(grep -vxF "$key" <<<"${OPEN_KEYS:-}" || true) ;;
+      needs-decision*|blocked*) OPEN_KEYS="${OPEN_KEYS:+$OPEN_KEYS$'\n'}$key" ;;
+    esac
+  done < "$STATUS_FILE"
+  printf '%s' "${OPEN_KEYS:-}"
+}
+
+release_pool_builder_slot() {
+  local builder harness last marker open control out rc=0
+  builder=$(grep -E '^builder=' "$META_FILE" | head -n 1 | cut -d= -f2- || true)
+  harness=$(grep -E '^harness=' "$META_FILE" | head -n 1 | cut -d= -f2- || true)
+  [[ "$builder" == pool && "$harness" == agy ]] || return 0
+  marker="$FM_DATA/$TASK/pool-slot-released"
+  [[ ! -e "$marker" ]] || return 0
+  last=$(grep -E '^[[:space:]]*(working|done|blocked|needs-decision|paused)([[:space:]]|\[|:)' "$STATUS_FILE" | tail -n 1 || true)
+  [[ "$last" =~ ^[[:space:]]*done.*committed ]] || return 0
+  OPEN_KEYS=''
+  open=$(pool_builder_open_keys)
+  if [[ -n "$open" ]]; then
+    echo "[fm-deliver] not exiting the pool builder: open decision or blocker ($open)" >> "$DRIVE_LOG"
+    return 0
+  fi
+  control="${FM_DELIVER_CONTROL:-$SCRIPT_DIR/fm-control.sh}"
+  out=$(FM_HOME="$FM_HOME" "$control" "$TASK" exit 2>&1) || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    : > "$marker"
+    echo "[fm-deliver] pool builder exited to free its account slot: $out" >> "$DRIVE_LOG"
+  else
+    echo "[fm-deliver] could not exit the pool builder (exit $rc); its slot stays held: $out" >> "$DRIVE_LOG"
+  fi
+  return 0
+}
 
 # Visible progress: delivery runs as a background job, so on a herdr-backed task
 # open one "deliver: <task>" tab in the task's workspace that follows the drive
@@ -1208,6 +1258,7 @@ case "$SUBCMD" in
       exit 0
     fi
 
+    release_pool_builder_slot
     build_run_intent_and_args
 
     if [[ "${FM_DELIVER_FOREGROUND:-0}" == "1" ]]; then
