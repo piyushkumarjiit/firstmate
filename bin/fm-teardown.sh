@@ -3934,10 +3934,11 @@ elif [ "$BACKEND" = herdr ]; then
 fi
 
 # bin/fm-deliver.sh opens a "deliver: <task>" progress tab and records its pane
-# in data/<task>/deliver-tab. Close exactly that recorded pane at the same point
-# as the task pane, through the same locked focus-safe close, so a finished task
-# leaves no Herdr workspace behind. Best effort: a gone pane or a missing lock
-# never blocks teardown.
+# in data/<task>/deliver-tab; bin/agy-pool/nm-agy records its review/fix viewer
+# tabs the same way in data/<task>/nm-<role>-tab. Close exactly those recorded
+# panes at the same point as the task pane, through the same locked focus-safe
+# close, so a finished task leaves no Herdr workspace behind. Best effort: a gone
+# pane or a missing lock never blocks teardown.
 teardown_stop_deliver_drivers() {
   local pid_file pid cmd
   pid_file="$DATA/$ID/autostart.pid"
@@ -3955,20 +3956,32 @@ teardown_stop_deliver_drivers() {
       && kill "$pid" 2>/dev/null || true
   done
 }
-teardown_close_deliver_tab() {
-  local tab_file pane
-  tab_file="$DATA/$ID/deliver-tab"
+# Close one recorded viewer pane (first field of its record file) through the
+# locked focus-safe close; a gone pane or missing lock never blocks teardown.
+teardown_close_viewer_pane() {  # <record-file> <label>
+  local tab_file=$1 label=$2 pane
   [ -s "$tab_file" ] || return 0
-  pane=$(head -n 1 "$tab_file" 2>/dev/null | tr -d '[:space:]')
+  pane=$(head -n 1 "$tab_file" 2>/dev/null | cut -f1 | tr -d '[:space:]')
   [ -n "$pane" ] || return 0
-  teardown_stop_deliver_drivers
   [ "$pane" != "$TEARDOWN_HERDR_PANE" ] || return 0
   [ "$(fm_backend_herdr_pane_presence_state "$TEARDOWN_HERDR_SESSION" "$pane" 2>/dev/null)" = present ] || return 0
   if teardown_herdr_session_lock_held "$TEARDOWN_HERDR_SESSION"; then
     fm_backend_herdr_kill_serialized "$TEARDOWN_HERDR_SESSION" "$pane" 2>/dev/null || true
   else
-    echo "warning: herdr session presentation lock path is unavailable; leaving the deliver tab for $ID open rather than closing unlocked" >&2
+    echo "warning: herdr session presentation lock path is unavailable; leaving the $label tab for $ID open rather than closing unlocked" >&2
   fi
+}
+# bin/agy-pool/nm-agy also records each review/fix viewer tab in
+# data/<task>/nm-<role>-tab (pane<TAB>tab-id). Their self-exit loop depends on
+# the typed command having run in a ready shell, so teardown closes them too.
+teardown_close_deliver_tab() {
+  local rec
+  [ ! -s "$DATA/$ID/deliver-tab" ] || teardown_stop_deliver_drivers
+  teardown_close_viewer_pane "$DATA/$ID/deliver-tab" deliver
+  for rec in "$DATA/$ID"/nm-*-tab; do
+    [ -e "$rec" ] || continue
+    teardown_close_viewer_pane "$rec" viewer
+  done
 }
 if [ "$BACKEND" = herdr ] && [ "$KIND" != secondmate ]; then
   teardown_close_deliver_tab

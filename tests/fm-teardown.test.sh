@@ -3735,6 +3735,27 @@ test_herdr_teardown_closes_recorded_deliver_tab() {
   pass "herdr teardown closes the recorded deliver tab pane with the task pane"
 }
 
+test_herdr_teardown_closes_recorded_nm_viewer_tabs() {
+  local case_dir
+  case_dir=$(make_case herdr-nm-viewer-tabs)
+  write_meta "$case_dir" local-only ship
+  configure_deliver_tab_herdr_case "$case_dir" 1
+  printf 'wG:pR\twG:tR\n' > "$case_dir/data/task-x1/nm-review-tab"
+  printf 'wG:pF\twG:tF\n' > "$case_dir/data/task-x1/nm-fix-tab"
+  : > "$case_dir/closed-panes/wG_pF"
+  : > "$case_dir/herdr.log"
+  FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "herdr-nm-viewer-tabs: teardown failed: $(cat "$case_dir/stderr")"
+  [ -e "$case_dir/closed-panes/wG_pR" ] || fail "herdr-nm-viewer-tabs: the recorded review viewer pane was left open"
+  if grep -q "^pane close wG:pF" "$case_dir/herdr.log"; then
+    fail "herdr-nm-viewer-tabs: a close was attempted on a viewer pane that was already gone"
+  fi
+  grep -q "teardown task-x1 complete" "$case_dir/stdout" \
+    || fail "herdr-nm-viewer-tabs: teardown did not report completion"
+  pass "herdr teardown closes recorded nm-agy viewer tabs and skips gone ones"
+}
+
 test_herdr_teardown_ignores_stale_deliver_tab_record() {
   local case_dir
   case_dir=$(make_case herdr-deliver-tab-stale)
@@ -6710,6 +6731,7 @@ test_teardown_leaves_polytoken_layer_for_other_harnesses
 test_herdr_teardown_clears_escalation_marker
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
 test_herdr_teardown_closes_recorded_deliver_tab
+test_herdr_teardown_closes_recorded_nm_viewer_tabs
 test_herdr_teardown_ignores_stale_deliver_tab_record
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence
 test_herdr_flat_teardown_preflight_refuses_before_changes
