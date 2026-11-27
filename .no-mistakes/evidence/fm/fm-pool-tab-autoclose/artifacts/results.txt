@@ -1,0 +1,3 @@
+pass	scenario1 recorded nm-agy review/fix viewer tabs and deliver tab close at cleanup, leaving no empty space	task=w2:p1 deliver=w2:p2 review=w2:p3 fix=w2:p4 ws=w2 all gone; teardown rc=0
+pass	scenario2 stale, self-referential, empty and blank viewer records skip cleanly while recorded panes still close	gone=w4:p2 self=w4:p1 review=w4:p3; teardown rc=0
+pass	scenario3 cleanup closes only recorded panes and leaves an unrecorded operator tab and its workspace intact	task=w6:p1 deliver=w6:p2 review=w6:p3 closed; operator tab w6:p4 survives in w6

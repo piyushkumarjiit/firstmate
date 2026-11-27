@@ -1,0 +1,3 @@
+teardown task-x1 complete (window fm-lab-pooltab-3681369-9159:w2:p1, worktree /tmp/fm-pool-tab-live.9bughq/s1/wt)
+Backlog: task-x1 just finished (this home keeps no markdown backlog at /tmp/fm-pool-tab-live.9bughq/s1/data/backlog.md). Update /tmp/fm-pool-tab-live.9bughq/s1/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+teardown rc=0

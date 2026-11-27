@@ -1,0 +1,1 @@
+fail	scenario1 recorded nm-agy review/fix viewer tabs and deliver tab close at cleanup, leaving no empty space	see ~/.no-mistakes/evidence/01M8DE0CDPTPN40X6JMQXWJV97/negative-control/s1.*
