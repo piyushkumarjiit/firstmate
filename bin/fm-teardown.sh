@@ -185,10 +185,12 @@
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
 # an Orca target from ambient CLI state.
 # A Herdr presentation journal never authorizes cleanup. Teardown still closes
-# only the exact task pane from ordinary endpoint metadata and never calls
-# `workspace close`. It retires the non-authoritative journal only when a
-# read-only token correlation agrees with that endpoint and pane closure is
-# confirmed. Otherwise the journal stays quarantined for manual inspection.
+# only the exact task pane from ordinary endpoint metadata plus, best effort,
+# the delivery progress pane bin/fm-deliver.sh records in the task's data
+# directory, and never calls `workspace close`. It retires the
+# non-authoritative journal only when a read-only token correlation agrees with
+# that endpoint and pane closure is confirmed. Otherwise the journal stays
+# quarantined for manual inspection.
 # Projected closes share the presentation-order lock, refuse to close the
 # captain's active tab, and restore the exact response-derived pre-close tab
 # if Herdr's last-pane cleanup focuses an unrelated neighboring workspace.
@@ -3929,6 +3931,47 @@ elif [ "$BACKEND" = herdr ]; then
   else
     echo "warning: herdr session presentation lock path is unavailable; skipping the pane close rather than closing unlocked" >&2
   fi
+fi
+
+# bin/fm-deliver.sh opens a "deliver: <task>" progress tab and records its pane
+# in data/<task>/deliver-tab. Close exactly that recorded pane at the same point
+# as the task pane, through the same locked focus-safe close, so a finished task
+# leaves no Herdr workspace behind. Best effort: a gone pane or a missing lock
+# never blocks teardown.
+teardown_stop_deliver_drivers() {
+  local pid_file pid cmd
+  pid_file="$DATA/$ID/autostart.pid"
+  pid=$(cat "$pid_file" 2>/dev/null || true)
+  if [[ "$pid" =~ ^[0-9]+$ ]] && grep -q 'fm-deliver-autostart' "/proc/$pid/cmdline" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+  fi
+  for cmd in /proc/[0-9]*/cmdline; do
+    pid=${cmd#/proc/}; pid=${pid%/cmdline}
+    [ "$pid" != "$$" ] || continue
+    # cat opens the cmdline itself so a pid that exits between the glob
+    # expansion and this read is a suppressed open failure instead of a bash
+    # redirection error on teardown's stderr.
+    cat "$cmd" 2>/dev/null | tr '\0' ' ' | grep -Eq "fm-deliver\.sh $ID (run|respond|autostart)( |\$)" \
+      && kill "$pid" 2>/dev/null || true
+  done
+}
+teardown_close_deliver_tab() {
+  local tab_file pane
+  tab_file="$DATA/$ID/deliver-tab"
+  [ -s "$tab_file" ] || return 0
+  pane=$(head -n 1 "$tab_file" 2>/dev/null | tr -d '[:space:]')
+  [ -n "$pane" ] || return 0
+  teardown_stop_deliver_drivers
+  [ "$pane" != "$TEARDOWN_HERDR_PANE" ] || return 0
+  [ "$(fm_backend_herdr_pane_presence_state "$TEARDOWN_HERDR_SESSION" "$pane" 2>/dev/null)" = present ] || return 0
+  if teardown_herdr_session_lock_held "$TEARDOWN_HERDR_SESSION"; then
+    fm_backend_herdr_kill_serialized "$TEARDOWN_HERDR_SESSION" "$pane" 2>/dev/null || true
+  else
+    echo "warning: herdr session presentation lock path is unavailable; leaving the deliver tab for $ID open rather than closing unlocked" >&2
+  fi
+}
+if [ "$BACKEND" = herdr ] && [ "$KIND" != secondmate ]; then
+  teardown_close_deliver_tab
 fi
 
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then

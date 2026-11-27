@@ -300,7 +300,10 @@ The worker remains on the ordinary flat or Herdr-current-order path.
 ### Cleanup and focus safety
 
 Normal task metadata remains the sole endpoint authority after creation.
-Cleanup closes only the exact recorded task pane and never calls `workspace close`.
+Cleanup closes only the exact recorded task pane, plus the `deliver: <task>` progress tab pane that `bin/fm-deliver.sh` records in `data/<task>/deliver-tab`, and never calls `workspace close`.
+Closing that tab too is what lets a projected workspace empty, so a finished task leaves no workspace standing behind its progress view.
+The deliver tab is best effort: teardown first stops any still-running `fm-deliver.sh` run, respond, or autostart process for the task, then closes the recorded pane through the same locked close as the task pane, and only when its structured presence is confirmed.
+A gone pane, a stale record, or an unavailable lock never fails or blocks teardown.
 For a leased task copy, cleanup confirms that exact pane is gone before it reaps worktree processes or returns the copy.
 If the pane remains or its absence is ambiguous, cleanup retains the task records and copy for a retry.
 
