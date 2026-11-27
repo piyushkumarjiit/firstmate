@@ -1,0 +1,8 @@
+=== SAME SHA re-run: release marker already records this commit
+sha in marker: 4127b25bd7f0810e49f87ec6660b41cbb24b91d6
+agy pid before: 2762153
+[fm-deliver] Started no-mistakes axi run in background (PID 2762715), logging to /tmp/fm-lab.WXO1i6/data/slotfree/drive.log
+deliver rc=0
+agy pid after: 2762153
+drive log:
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-slotfree with intent: Validate the lab pool builder slot release.

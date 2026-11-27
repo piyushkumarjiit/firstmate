@@ -1,0 +1,12 @@
+=== RELAUNCHED to a new commit: agy alive, new done sha f8abb71a2fc127a969d468c4e2fb0ae8b7551b4d
+marker before: 4127b25bd7f0810e49f87ec6660b41cbb24b91d6
+agy pid before: 2762153
+[fm-deliver] Started no-mistakes axi run in background (PID 2765905), logging to /tmp/fm-lab.WXO1i6/data/slotfree/drive.log
+deliver rc=0
+agy pid after: (none)
+marker after: f8abb71a2fc127a969d468c4e2fb0ae8b7551b4d
+capacity gate: rc=0
+drive log:
+[fm-deliver] pool builder exited to free its account slot: fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.WXO1i6
+stopped slotfree harness=agy backend=tmux endpoint=lab:fm-slotfree worktree=/tmp/fm-lab.WXO1i6/wt-slotfree
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-slotfree with intent: Validate the lab pool builder slot release.

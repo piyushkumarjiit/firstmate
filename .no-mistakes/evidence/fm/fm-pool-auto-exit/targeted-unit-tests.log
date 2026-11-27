@@ -1,0 +1,10 @@
+# target unit tests for the changed behavior
+$ bash tests/fm-deliver.test.sh   # rc=0, FM_TEST_COMPLETE
+ok - run exits a finished pool builder once per commit and keeps delivery going on refusal
+ok - run never exits a non-pool task or a builder with an open decision
+FM_TEST_COMPLETE
+
+$ bash tests/fm-control.test.sh    # rc=0
+ok - fm-control exit: agy's bare idle composer is proven empty
+ok - fm-control exit: agy's typed composer text still refuses
+54 ok, 0 failures

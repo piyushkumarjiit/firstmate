@@ -1,0 +1,14 @@
+=== STILL WORKING: pool builder whose latest lifecycle line is not a done report
+status:
+working [at=1]: build
+done [at=2]: committed 4127b25bd7f0810e49f87ec6660b41cbb24b91d6
+done [at=3]: committed f8abb71a2fc127a969d468c4e2fb0ae8b7551b4d
+working [at=4]: follow-up work in flight
+agy pid before: 2767935 2788882 
+--- fm-deliver.sh run (must not exit a builder that is still working):
+[fm-deliver] Started no-mistakes axi run in background (PID 2789565), logging to /tmp/fm-lab.WXO1i6/data/slotfree/drive.log
+deliver rc=0
+agy pid after: 2767935 2788882 
+marker: (absent)
+drive log:
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-slotfree with intent: Validate the lab pool builder slot release.

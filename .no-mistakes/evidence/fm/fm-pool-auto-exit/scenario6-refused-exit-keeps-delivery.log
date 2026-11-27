@@ -1,0 +1,11 @@
+=== REFUSED EXIT: real agy composer holds typed text, so fm-control exit refuses
+agy pid before: 2767935 2779627 
+--- fm-deliver.sh run:
+[fm-deliver] Started no-mistakes axi run in background (PID 2781435), logging to /tmp/fm-lab.WXO1i6/data/retry/drive.log
+deliver rc=0
+agy pid after: 2767935 2779627 
+marker: (absent)
+drive log:
+[fm-deliver] could not exit the pool builder (exit 1); its slot stays held: fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.WXO1i6
+error: task retry's composer visibly holds pending text; refusing to type the /quit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-retry with intent: Validate the lab pool builder slot release.

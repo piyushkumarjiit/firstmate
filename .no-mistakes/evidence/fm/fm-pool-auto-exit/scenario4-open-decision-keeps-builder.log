@@ -1,0 +1,22 @@
+=== OPEN KEYED DECISION under a done report: status
+working [at=1]: build
+needs-decision [at=2] [key=k1]: which path do you prefer
+done [at=3]: committed 1229bd047be4ff23ef4f805747a6e233b4e38e0e
+agy pid before: 2767586 2767935 
+--- fm-deliver.sh run (must keep the builder answerable):
+[fm-deliver] Started no-mistakes axi run in background (PID 2772802), logging to /tmp/fm-lab.WXO1i6/data/opendec/drive.log
+deliver rc=0
+agy pids after: 2767586 2767935 
+marker: (absent)
+drive log:
+[fm-deliver] not exiting the pool builder: open decision or blocker (k1)
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-opendec with intent: Validate the lab pool builder slot release.
+--- after resolving k1, fm-deliver.sh run again:
+[fm-deliver] Started no-mistakes axi run in background (PID 2774561), logging to /tmp/fm-lab.WXO1i6/data/opendec/drive.log
+deliver rc=0
+agy pids after resolve: 2767935 
+marker: 1229bd047be4ff23ef4f805747a6e233b4e38e0e
+drive log:
+[fm-deliver] pool builder exited to free its account slot: fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.WXO1i6
+stopped opendec harness=agy backend=tmux endpoint=lab:fm-opendec worktree=/tmp/fm-lab.WXO1i6/wt-opendec
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-opendec with intent: Validate the lab pool builder slot release.

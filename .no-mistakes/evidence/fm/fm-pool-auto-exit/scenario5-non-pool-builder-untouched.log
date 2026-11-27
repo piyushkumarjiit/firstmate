@@ -1,0 +1,21 @@
+=== NON-POOL agy ship (no builder=pool): must be untouched
+endpoint_task_id=plain
+worktree=/tmp/fm-lab.WXO1i6/wt-plain
+branch=fm/plain
+mode=local-only
+harness=agy
+kind=ship
+project=lab
+window=lab:fm-plain
+agy pid before: 2767935 
+--- fm-deliver.sh run:
+[fm-deliver] Started no-mistakes axi run in background (PID 2776924), logging to /tmp/fm-lab.WXO1i6/data/plain/drive.log
+deliver rc=0
+agy pid after: 2767935 
+marker: (absent)
+drive log:
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-plain with intent: Validate the lab pool builder slot release.
+pane tail:
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                                                     Gemini 4 Hydrogen · high

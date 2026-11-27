@@ -1,0 +1,13 @@
+=== BASE 3e1d570 (before the fix): pool builder reports done, agy alive
+--- capacity gate BEFORE delivery:
+[fm-agy-pool] ERROR: 1 pool accounts already active (agentic); cap is 1 (FM_AGY_MAX_ACTIVE). Retry once a pool worker finishes or exits.
+gate rc=75
+--- fm-deliver.sh run (base version):
+[fm-deliver] Started no-mistakes axi run in background (PID 2752433), logging to /tmp/fm-lab.WXO1i6/data/slotfree/drive.log
+deliver rc=0
+--- agy after base delivery:
+2750949 agy --dangerously-skip-permissions
+--- capacity gate AFTER base delivery:
+[fm-agy-pool] ERROR: 1 pool accounts already active (agentic); cap is 1 (FM_AGY_MAX_ACTIVE). Retry once a pool worker finishes or exits.
+gate rc=75
+--- release marker: (absent)

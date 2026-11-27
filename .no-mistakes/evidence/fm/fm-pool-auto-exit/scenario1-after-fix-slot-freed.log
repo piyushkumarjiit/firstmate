@@ -1,0 +1,19 @@
+=== TARGET 843f0ad (with the fix): same live done pool builder
+--- fm-deliver.sh run:
+[fm-deliver] Started no-mistakes axi run in background (PID 2757239), logging to /tmp/fm-lab.WXO1i6/data/slotfree/drive.log
+deliver rc=0
+--- agy after target delivery:
+(none)
+--- capacity gate AFTER target delivery:
+gate rc=0
+--- release marker: 4127b25bd7f0810e49f87ec6660b41cbb24b91d6
+--- worktree (commit + clean tree preserved): 4127b25bd7f0810e49f87ec6660b41cbb24b91d6 0 dirty
+--- drive log:
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-slotfree with intent: Validate the lab pool builder slot release.
+[fm-deliver] pool builder exited to free its account slot: fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.WXO1i6
+stopped slotfree harness=agy backend=tmux endpoint=lab:fm-slotfree worktree=/tmp/fm-lab.WXO1i6/wt-slotfree
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-slotfree with intent: Validate the lab pool builder slot release.
+--- pane (agent gone, shell endpoint preserved):
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+agentic-dev%

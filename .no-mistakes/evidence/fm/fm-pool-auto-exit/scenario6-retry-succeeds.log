@@ -1,0 +1,9 @@
+=== RETRY after the composer was cleared:
+[fm-deliver] Started no-mistakes axi run in background (PID 2785983), logging to /tmp/fm-lab.WXO1i6/data/retry/drive.log
+deliver rc=0
+agy pid after: 2767935 
+marker: c6c9706a434afdd89e46ff04c87f142eb1e511c6
+drive log:
+[fm-deliver] pool builder exited to free its account slot: fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.WXO1i6
+stopped retry harness=agy backend=tmux endpoint=lab:fm-retry worktree=/tmp/fm-lab.WXO1i6/wt-retry
+[fm-deliver] Starting axi run in /tmp/fm-lab.WXO1i6/wt-retry with intent: Validate the lab pool builder slot release.

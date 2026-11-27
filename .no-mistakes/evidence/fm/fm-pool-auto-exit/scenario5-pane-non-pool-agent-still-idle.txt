@@ -1,0 +1,46 @@
+# live agy pane: task 'plain' (non-pool) still idle after deliver run
+This is the Z Shell configuration function for new users,
+zsh-newuser-install.
+You are seeing this message because you have no zsh startup files
+(the files .zshenv, .zprofile, .zshrc, .zlogin in the directory
+~).  This function can help you with a few settings that should
+make your use of the shell easier.
+
+You can:
+
+(q)  Quit and do nothing.  The function will be run again next time.
+
+(0)  Exit, creating the file ~/.zshrc containing just a comment.
+     That will prevent this function being run again.
+
+(1)  Continue to the main menu.
+
+(2)  Populate your ~/.zshrc with the configuration recommended
+     by the system administrator and exit (you will need to edit
+     the file by hand, if so desired).
+
+--- Type one of the keys in parentheses ---
+Aborting.
+The function will be run again next time.  To prevent this, execute:
+  touch ~/.zshrc
+
+agentic-dev% OME="/tmp/fm-lab.WXO1i6/agyscale" agy --dangerously-skip-permissions
+
+      ▄▀▀▄        Antigravity CLI 1.5.14
+     ▀▀▀▀▀▀       vishakhagemini1@gmail.com (Google AI Pro)
+    ▀▀▀▀▀▀▀▀      Gemini 4 Hydrogen (High)
+   ▄▀▀    ▀▀▄     /tmp/fm-lab.WXO1i6/wt-plain
+  ▄▀▀      ▀▀▄
+
+
+ ┃ Gemini 4 Hydrogen now available!
+ ┃ esc to dismiss
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                                                     Gemini 4 Hydrogen · high
+
+
+
+
+
