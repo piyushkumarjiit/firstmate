@@ -436,6 +436,87 @@ EOF2
   pass "run opens a live delivery progress tab on herdr-backed tasks"
 }
 
+test_run_exits_finished_pool_builder_once() {
+  local sha tdir ctl_log new_sha
+  sha=$(setup_fixture task_slot)
+  tdir="$TMP_ROOT/task_slot"
+  ctl_log="$tdir/control.log"
+  mkdir -p "$tdir/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tdir/bin/no-mistakes"
+  # shellcheck disable=SC2016  # the stub script expands its own variables
+  printf '#!/usr/bin/env bash\necho "$*" >> %q\nexit "${FAKE_CONTROL_RC:-0}"\n' "$ctl_log" > "$tdir/control"
+  chmod +x "$tdir/bin/no-mistakes" "$tdir/control"
+  printf 'builder=pool\nharness=agy\n' >> "$tdir/state/task_slot.meta"
+  run_slot() {
+    env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" FM_STATE_OVERRIDE="$tdir/state" \
+      FM_DATA_OVERRIDE="$tdir/data" FM_MAIN_USER="$(id -un)" FM_DELIVER_TAB=off \
+      FM_DELIVER_CONTROL="$tdir/control" "$@" "$DELIVER" task_slot run >/dev/null 2>&1 || true
+  }
+
+  # A refused exit is logged, keeps delivery going, and is retried next run.
+  run_slot env FAKE_CONTROL_RC=1
+  [ "$(cat "$ctl_log")" = "task_slot exit" ] || fail "run must exit the finished pool builder through fm-control, got: $(cat "$ctl_log" 2>/dev/null)"
+  assert_contains "$(cat "$tdir/data/task_slot/drive.log")" "slot stays held" "a refused exit must be logged"
+  [ ! -e "$tdir/data/task_slot/pool-slot-released" ] || fail "a refused exit must not record the slot as released"
+
+  : > "$ctl_log"
+  run_slot env FAKE_CONTROL_RC=0
+  [ "$(cat "$ctl_log")" = "task_slot exit" ] || fail "retry must exit the builder, got: $(cat "$ctl_log")"
+  [ -e "$tdir/data/task_slot/pool-slot-released" ] || fail "a successful exit must record the release"
+
+  : > "$ctl_log"
+  run_slot env FAKE_CONTROL_RC=0
+  [ ! -s "$ctl_log" ] || fail "an already released builder must not be exited again"
+  [ "$(cat "$tdir/data/task_slot/pool-slot-released")" = "$sha" ] || fail "the release marker must record the exited commit"
+
+  # A relaunched builder that reports a new commit still holds a fresh slot, so
+  # it must be exited again for that commit.
+  printf 'fix\n' >> "$tdir/wt/file.txt"
+  git -C "$tdir/wt" commit -qam "relaunched fix"
+  new_sha=$(git -C "$tdir/wt" rev-parse HEAD)
+  printf 'done [at=4]: committed %s\n' "$new_sha" >> "$tdir/state/task_slot.status"
+  : > "$ctl_log"
+  run_slot env FAKE_CONTROL_RC=0
+  [ "$(cat "$ctl_log")" = "task_slot exit" ] || fail "a builder relaunched to a new commit must be exited again, got: $(cat "$ctl_log" 2>/dev/null)"
+  [ "$(cat "$tdir/data/task_slot/pool-slot-released")" = "$new_sha" ] || fail "the release marker must record the newly exited commit"
+  pass "run exits a finished pool builder once per commit and keeps delivery going on refusal"
+}
+
+test_run_keeps_pool_builder_with_open_decision_or_other_shape() {
+  local sha tdir
+  sha=$(setup_fixture task_slot2)
+  tdir="$TMP_ROOT/task_slot2"
+  mkdir -p "$tdir/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tdir/bin/no-mistakes"
+  printf '#!/usr/bin/env bash\necho "$*" >> %q\n' "$tdir/control.log" > "$tdir/control"
+  chmod +x "$tdir/bin/no-mistakes" "$tdir/control"
+  run_slot2() {
+    env PATH="$tdir/bin:$PATH" FM_HOME="$tdir" FM_STATE_OVERRIDE="$tdir/state" \
+      FM_DATA_OVERRIDE="$tdir/data" FM_MAIN_USER="$(id -un)" FM_DELIVER_TAB=off \
+      FM_DELIVER_CONTROL="$tdir/control" "$DELIVER" task_slot2 run >/dev/null 2>&1 || true
+  }
+
+  # Not a pool builder: untouched.
+  printf 'harness=agy\n' >> "$tdir/state/task_slot2.meta"
+  run_slot2
+  [ ! -e "$tdir/control.log" ] || fail "a non-pool task must not be exited"
+
+  # A pool builder with an unresolved keyed decision keeps its agent.
+  printf 'builder=pool\n' >> "$tdir/state/task_slot2.meta"
+  { printf 'needs-decision [at=1] [key=k1]: pick\n'; cat "$tdir/state/task_slot2.status"; } > "$tdir/status.new"
+  mv "$tdir/status.new" "$tdir/state/task_slot2.status"
+  run_slot2
+  [ ! -e "$tdir/control.log" ] || fail "an open keyed decision must keep the builder running"
+  assert_contains "$(cat "$tdir/data/task_slot2/drive.log")" "open decision or blocker (k1)" "the open key must be named"
+
+  # Once resolved, the builder is exited.
+  printf 'resolved [at=2] [key=k1]: answered\n' >> "$tdir/state/task_slot2.status"
+  printf '%s\n' "done [at=3]: committed $sha" >> "$tdir/state/task_slot2.status"
+  run_slot2
+  [ "$(cat "$tdir/control.log")" = "task_slot2 exit" ] || fail "a resolved decision must let the builder exit"
+  pass "run never exits a non-pool task or a builder with an open decision"
+}
+
 test_run_reattaches_while_run_in_progress() {
   local sha
   sha=$(setup_fixture task_reattach)
@@ -1609,6 +1690,8 @@ fm_test_run \
   test_respond_closes_every_named_gate_key \
   test_run_intent_includes_firstmate_decisions \
   test_run_opens_progress_tab_on_herdr \
+  test_run_exits_finished_pool_builder_once \
+  test_run_keeps_pool_builder_with_open_decision_or_other_shape \
   test_run_reattaches_while_run_in_progress \
   test_respond_normalizes_supervisor_forms \
   test_run_resolves_roles_and_nm_agy_consumes_them \

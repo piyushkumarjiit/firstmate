@@ -293,6 +293,39 @@ keys_sent() {  # <case-dir>
 
 # --- 1. adapter contract across every verified harness -----------------------
 
+# agy's real idle composer (agy 1.5.14, captured live) is a bare `>` between two
+# rules; exit must read it as proven empty under the recorded agy harness and
+# type /quit, and must still refuse typed text.
+agy_idle_screen() {  # [typed-text]
+  local rule='────────────────────────────────────────────────────────────────────────────────'
+  printf '● Ran (echo hi)\n  DONE\n%s\n>%s\n%s\n? for shortcuts                          Gemini 4 Hydrogen · high\n' \
+    "$rule" "${1:+ $1}" "$rule"
+}
+
+test_agy_exit_reads_the_bare_composer_as_empty() {
+  local dir out rc
+  dir=$(new_case agy-exit-empty)
+  add_task "$dir" t1 agy
+  alive_as "$dir" agy
+  agy_idle_screen > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "agy exit should accept its bare idle composer"$'\n'"$out"
+  [ "$(literals "$dir")" = "/quit" ] || fail "agy exit should type /quit, got: $(literals "$dir")"
+  pass "fm-control exit: agy's bare idle composer is proven empty"
+}
+
+test_agy_exit_refuses_typed_composer_text() {
+  local dir out rc
+  dir=$(new_case agy-exit-typed)
+  add_task "$dir" t1 agy
+  alive_as "$dir" agy
+  agy_idle_screen 'half a steer' > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "agy exit must refuse typed composer text"$'\n'"$out"
+  [ ! -s "$dir/fake/literal" ] || fail "typed agy composer text must not be typed over"
+  pass "fm-control exit: agy's typed composer text still refuses"
+}
+
 test_exit_types_each_harness_verified_command() {
   local dir out rc harness expected key repeat clear
   for harness in $VERIFIED_HARNESSES; do
@@ -1372,6 +1405,8 @@ EOF
 }
 
 test_exit_types_each_harness_verified_command
+test_agy_exit_reads_the_bare_composer_as_empty
+test_agy_exit_refuses_typed_composer_text
 test_opencode_exit_matches_recorded_major
 test_opencode2_exit_retries_ctrl_c_once
 test_interrupt_sends_each_harness_verified_key
